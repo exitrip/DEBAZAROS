@@ -3,7 +3,7 @@
 <!--                                                         -->
 <!-- Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.   -->
 
-<Project Version="7" Minor="61" Path="/home/guido/Github/EBAZ4205_SDR_spectrum/Vivado/Vivado.xpr">
+<Project Version="7" Minor="61" Path="/home/aescape/Documents/github/DEBAZAROS/Vivado/Vivado.xpr">
   <DefaultLaunch Dir="$PRUNDIR"/>
   <Configuration>
     <Option Name="Id" Val="df2fccc27a6445afa27e0f43b719226f"/>
@@ -69,13 +69,13 @@
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="163"/>
-    <Option Name="WTModelSimExportSim" Val="163"/>
-    <Option Name="WTQuestaExportSim" Val="163"/>
+    <Option Name="WTXSimExportSim" Val="164"/>
+    <Option Name="WTModelSimExportSim" Val="164"/>
+    <Option Name="WTQuestaExportSim" Val="164"/>
     <Option Name="WTIesExportSim" Val="5"/>
-    <Option Name="WTVcsExportSim" Val="163"/>
-    <Option Name="WTRivieraExportSim" Val="163"/>
-    <Option Name="WTActivehdlExportSim" Val="163"/>
+    <Option Name="WTVcsExportSim" Val="164"/>
+    <Option Name="WTRivieraExportSim" Val="164"/>
+    <Option Name="WTActivehdlExportSim" Val="164"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
