@@ -6,6 +6,34 @@ use ieee.std_logic_unsigned.all;
 library UNISIM;
 use UNISIM.VComponents.all;
 
+entity Clock_Divider is
+port ( clk,reset: in std_logic;
+clock_out: out std_logic);
+end Clock_Divider;
+  
+architecture bhv of Clock_Divider is
+  
+signal count: integer:=1;
+signal tmp : std_logic := '0';
+  
+begin
+  
+process(clk,reset)
+begin
+if(reset='1') then
+count<=1;
+tmp<='0';
+elsif(clk'event and clk='1') then
+count <=count+1;
+if (count = 25000) then
+tmp <= NOT tmp;
+count <= 1;
+end if;
+end if;
+clock_out <= tmp;
+end process;
+  
+end bhv;
 
 entity axi_dynclk is
 	generic (
@@ -29,7 +57,7 @@ entity axi_dynclk is
 		-- Do not modify the ports beyond this line
 
 
-		-- Ports of Axi Slave Bus Interface S00_AXI
+		-- Ports of Axi Slave Bus Interface S00_AXI/home/aescape/Documents/github/DEBAZAROS/Vivado/IP_axi_dynclk/IP_axi_dynclk.srcs/sources_1/imports/axi_dynclk_v1_0/src/axi_dynclk.vhd
 		s00_axi_aclk	: in std_logic;
 		s00_axi_aresetn	: in std_logic;
 		s00_axi_awaddr	: in std_logic_vector(C_S00_AXI_ADDR_WIDTH-1 downto 0);
@@ -118,6 +146,14 @@ architecture arch_imp of axi_dynclk is
 		);
 	end component;
 	
+	COMPONENT Clock_Divider
+	PORT(
+		clk_in_div : IN std_logic;
+		reset_div : IN std_logic;
+		clock_out_div : OUT std_logic
+	);
+	END COMPONENT;
+
 	
     signal CTRL_REG                       : std_logic_vector(C_S00_AXI_DATA_WIDTH-1 downto 0);
     signal STAT_REG                       : std_logic_vector(C_S00_AXI_DATA_WIDTH-1 downto 0);
@@ -201,17 +237,17 @@ end generate DontGenerateBUFMR;
 		I => bufio_in  -- 1-bit input: Clock input (connect to an IBUF or BUFMR).
 	);
 
-	BUFR_inst : BUFR
-	generic map (
-		BUFR_DIVIDE => "5",   -- Values: "BYPASS, 1, 2, 3, 4, 5, 6, 7, 8" 
-		SIM_DEVICE => "7SERIES"  -- Must be set to "7SERIES" 
-	)
-	port map (
-		O => pxl_clk,     -- 1-bit output: Clock output port
-		CE => '1',   -- 1-bit input: Active high, clock enable (Divided modes only)
-		CLR => locked_n, -- 1-bit input: Active high, asynchronous clear (Divided modes only)		
-		I => bufio_in      -- 1-bit input: Clock buffer input driven by an IBUF, MMCM or local interconnect
-	);
+--	BUFR_inst : BUFR
+--	generic map (
+--		BUFR_DIVIDE => "5",   -- Values: "BYPASS, 1, 2, 3, 4, 5, 6, 7, 8" 
+--		SIM_DEVICE => "7SERIES"  -- Must be set to "7SERIES" 
+--	)
+--	port map (
+--		O => pxl_clk,     -- 1-bit output: Clock output port
+--		CE => '1',   -- 1-bit input: Active high, clock enable (Divided modes only)
+--		CLR => locked_n, -- 1-bit input: Active high, asynchronous clear (Divided modes only)		
+--		I => bufio_in      -- 1-bit input: Clock buffer input driven by an IBUF, MMCM or local interconnect
+--	);
    
 	locked_n <= not(locked);
   

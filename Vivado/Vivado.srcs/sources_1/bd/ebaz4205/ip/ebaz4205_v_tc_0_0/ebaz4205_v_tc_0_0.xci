@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_v_tc_0_0",
-    "cell_name": "v_tc_0",
+    "cell_name": "HDMI/v_tc_0",
     "component_reference": "xilinx.com:ip:v_tc:6.2",
     "ip_revision": "5",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_tc_0_0",

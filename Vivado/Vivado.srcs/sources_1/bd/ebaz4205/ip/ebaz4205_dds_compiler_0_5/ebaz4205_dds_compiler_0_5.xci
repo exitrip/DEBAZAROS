@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_dds_compiler_0_5",
-    "cell_name": "dds_compiler_1khx",
+    "cell_name": "I2S/dds_compiler_1khx",
     "component_reference": "xilinx.com:ip:dds_compiler:6.0",
     "ip_revision": "22",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_dds_compiler_0_5",

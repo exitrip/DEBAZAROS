@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_rgb2dvi_0_3",
-    "cell_name": "rgb2dvi_0",
+    "cell_name": "HDMI/rgb2dvi_0",
     "component_reference": "digilentinc.com:ip:rgb2dvi:1.3",
     "ip_revision": "11",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_rgb2dvi_0_3",

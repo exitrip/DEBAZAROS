@@ -103,12 +103,12 @@ set_property PACKAGE_PIN J18 [get_ports ps2_clock_0_tri_io]
 set_property IOSTANDARD LVCMOS33 [get_ports ps2_clock_0_tri_io]
 set_property PULLUP true [get_ports ps2_clock_0_tri_io]
 
-# AD9851
-set_property -dict {PACKAGE_PIN G19 IOSTANDARD LVCMOS33} [get_ports AD9851_sd_out]
-set_property -dict {PACKAGE_PIN H20 IOSTANDARD LVCMOS33} [get_ports AD9851_clock_out]
-set_property -dict {PACKAGE_PIN J19 IOSTANDARD LVCMOS33} [get_ports AD9851_fq_ud_out]
-set_property -dict {PACKAGE_PIN K18 IOSTANDARD LVCMOS33} [get_ports AD9851_pwm_out]
-set_property -dict {PACKAGE_PIN K19 IOSTANDARD LVCMOS33} [get_ports AD9851_tx]
+## AD9851
+#set_property -dict {PACKAGE_PIN G19 IOSTANDARD LVCMOS33} [get_ports AD9851_sd_out]
+#set_property -dict {PACKAGE_PIN H20 IOSTANDARD LVCMOS33} [get_ports AD9851_clock_out]
+#set_property -dict {PACKAGE_PIN J19 IOSTANDARD LVCMOS33} [get_ports AD9851_fq_ud_out]
+#set_property -dict {PACKAGE_PIN K18 IOSTANDARD LVCMOS33} [get_ports AD9851_pwm_out]
+#set_property -dict {PACKAGE_PIN K19 IOSTANDARD LVCMOS33} [get_ports AD9851_tx]
 
 #set_property -dict { PACKAGE_PIN J20   IOSTANDARD LVCMOS33 } [get_ports { DATA2_14 }];
 #set_property -dict { PACKAGE_PIN L16   IOSTANDARD LVCMOS33 } [get_ports { DATA2_15 }];
