@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_auto_pc_6",
-    "cell_name": "ps7_axi_periph/m14_couplers/auto_pc",
+    "cell_name": "ps7_axi_periph/m05_couplers/auto_pc",
     "component_reference": "xilinx.com:ip:axi_protocol_converter:2.1",
     "ip_revision": "27",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_auto_pc_6_1",
@@ -131,7 +131,7 @@
           "abstraction_type": "xilinx.com:interface:aximm_rtl:1.0",
           "mode": "slave",
           "parameters": {
-            "DATA_WIDTH": [ { "value": "32", "value_src": "constant", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
+            "DATA_WIDTH": [ { "value": "32", "value_src": "user_prop", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
             "PROTOCOL": [ { "value": "AXI4", "value_src": "user_prop", "value_permission": "bd", "resolve_type": "generated", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
             "FREQ_HZ": [ { "value": "100000000", "value_src": "user_prop", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
             "ID_WIDTH": [ { "value": "0", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
@@ -206,7 +206,7 @@
           "abstraction_type": "xilinx.com:interface:aximm_rtl:1.0",
           "mode": "master",
           "parameters": {
-            "DATA_WIDTH": [ { "value": "32", "value_src": "constant_prop", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
+            "DATA_WIDTH": [ { "value": "32", "value_src": "auto_prop", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
             "PROTOCOL": [ { "value": "AXI4LITE", "value_src": "user_prop", "value_permission": "bd", "resolve_type": "generated", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
             "FREQ_HZ": [ { "value": "100000000", "value_src": "user_prop", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
             "ID_WIDTH": [ { "value": "0", "value_permission": "bd", "resolve_type": "generated", "format": "long", "usage": "simulation.tlm", "is_ips_inferred": true, "is_static_object": false } ],
