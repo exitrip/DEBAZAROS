@@ -65,8 +65,8 @@ set_property -dict { PACKAGE_PIN B20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Dat
 set_property -dict { PACKAGE_PIN C20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_0[1]}]; 
 set_property -dict { PACKAGE_PIN F20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Clk_n_0  }];  
 set_property -dict { PACKAGE_PIN D20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_0[0]}]; 
-set_property -dict { PACKAGE_PIN D18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_tri_i[0]    }]; 
-set_property -dict { PACKAGE_PIN H18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_OEN[0] }]; 
+set_property -dict { PACKAGE_PIN D18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_0_tri_i[0]    }]; 
+set_property -dict { PACKAGE_PIN H18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_OEN_0[0] }]; 
 set_property -dict { PACKAGE_PIN B19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_0[2]}]; 
 #set_property -dict { PACKAGE_PIN F20   IOSTANDARD LVCMOS33 } [get_ports { mouse_data_new }]; # DATA1_17   FOR TESTING PURPOSE ONLY! 
 set_property -dict { PACKAGE_PIN H16   IOSTANDARD LVCMOS33 } [get_ports { I2SDATA }]; # DATA1_18
@@ -94,14 +94,25 @@ set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { SCLK  
 
 
 ##DATA2
+#HDMI1
+set_property -dict { PACKAGE_PIN J20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_p_1 }];
+set_property -dict { PACKAGE_PIN H20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_n_1 }];
+set_property -dict { PACKAGE_PIN L19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_1[2]}]; 
+set_property -dict { PACKAGE_PIN L20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_1[2]}]; 
+set_property -dict { PACKAGE_PIN L16   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_1[1]}]; 
+set_property -dict { PACKAGE_PIN L17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_1[1]}]; 
+set_property -dict { PACKAGE_PIN G19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_1[0]}]; 
+set_property -dict { PACKAGE_PIN G20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_1[0]}]; 
+set_property -dict { PACKAGE_PIN J18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_1_tri_i[0]    }]; 
+set_property -dict { PACKAGE_PIN J19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_OEN_1[0] }]; 
 
-#PS2
-set_property PACKAGE_PIN G20 [get_ports ps2_dat_0_tri_io]
-set_property IOSTANDARD LVCMOS33 [get_ports ps2_dat_0_tri_io]
-set_property PULLUP true [get_ports ps2_dat_0_tri_io]
-set_property PACKAGE_PIN J18 [get_ports ps2_clock_0_tri_io]
-set_property IOSTANDARD LVCMOS33 [get_ports ps2_clock_0_tri_io]
-set_property PULLUP true [get_ports ps2_clock_0_tri_io]
+##PS2
+#set_property PACKAGE_PIN  G20   [get_ports ps2_dat_0_tri_io]
+#set_property IOSTANDARD LVCMOS33 [get_ports ps2_dat_0_tri_io]
+#set_property PULLUP true [get_ports ps2_dat_0_tri_io]
+#set_property PACKAGE_PIN J18 [get_ports ps2_clock_0_tri_io]
+#set_property IOSTANDARD LVCMOS33 [get_ports ps2_clock_0_tri_io]
+#set_property PULLUP true [get_ports ps2_clock_0_tri_io]
 
 ## AD9851
 #set_property -dict {PACKAGE_PIN G19 IOSTANDARD LVCMOS33} [get_ports AD9851_sd_out]
