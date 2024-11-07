@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_v_axi4s_vid_out_0_1",
-    "cell_name": "HDMI/v_axi4s_vid_out_0",
+    "cell_name": "HDMI_0/v_axi4s_vid_out_0",
     "component_reference": "xilinx.com:ip:v_axi4s_vid_out:4.0",
     "ip_revision": "15",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_axi4s_vid_out_0_1",
@@ -64,7 +64,7 @@
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],
-        "SYNTHESISFLOW": [ { "value": "GLOBAL" } ]
+        "SYNTHESISFLOW": [ { "value": "OUT_OF_CONTEXT" } ]
       }
     },
     "boundary": {

@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_axi_interconnect_0_2",
-    "cell_name": "HDMI/axi_interconnect_1",
+    "cell_name": "HDMI_0/axi_interconnect_1",
     "component_reference": "xilinx.com:ip:axi_interconnect:2.1",
     "ip_revision": "28",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_axi_interconnect_0_2",
