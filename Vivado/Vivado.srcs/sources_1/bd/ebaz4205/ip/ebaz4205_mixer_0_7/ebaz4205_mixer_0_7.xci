@@ -1,18 +1,18 @@
 {
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
-    "xci_name": "ebaz4205_mixer_0_2",
-    "cell_name": "HDMI_0/mixerMatrix/mixer_0",
+    "xci_name": "ebaz4205_mixer_0_7",
+    "cell_name": "HDMI_0/mixerMatrix/mixer_6",
     "component_reference": "user.org:user:mixer:1.0",
     "ip_revision": "5",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_mixer_0_2",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_mixer_0_7",
     "parameters": {
       "component_parameters": {
         "C_S00_AXI_DATA_WIDTH": [ { "value": "32", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "C_S00_AXI_ADDR_WIDTH": [ { "value": "6", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "C_S00_AXI_BASEADDR": [ { "value": "0xFFFFFFFF", "resolve_type": "user", "format": "bitString", "enabled": false, "usage": "all" } ],
         "C_S00_AXI_HIGHADDR": [ { "value": "0x00000000", "resolve_type": "user", "format": "bitString", "enabled": false, "usage": "all" } ],
-        "Component_Name": [ { "value": "ebaz4205_mixer_0_2", "resolve_type": "user", "usage": "all" } ],
+        "Component_Name": [ { "value": "ebaz4205_mixer_0_7", "resolve_type": "user", "usage": "all" } ],
         "OUT_WIDTH": [ { "value": "16", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "IN_WIDTH": [ { "value": "24", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "IN_NUM": [ { "value": "3", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ]
@@ -43,7 +43,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "5" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_mixer_0_2" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_mixer_0_7" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],
@@ -109,8 +109,8 @@
             "HAS_WSTRB": [ { "value": "1", "value_src": "constant", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "HAS_BRESP": [ { "value": "1", "value_src": "constant", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "HAS_RRESP": [ { "value": "1", "value_src": "constant", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
-            "NUM_READ_OUTSTANDING": [ { "value": "2", "value_src": "ip_propagated", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
-            "NUM_WRITE_OUTSTANDING": [ { "value": "2", "value_src": "ip_propagated", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
+            "NUM_READ_OUTSTANDING": [ { "value": "1", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
+            "NUM_WRITE_OUTSTANDING": [ { "value": "1", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "MAX_BURST_LENGTH": [ { "value": "1", "value_src": "ip_propagated", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "PHASE": [ { "value": "0.0", "value_permission": "bd", "resolve_type": "generated", "format": "float", "is_ips_inferred": true, "is_static_object": false } ],
             "CLK_DOMAIN": [ { "value": "ebaz4205_processing_system7_0_0_FCLK_CLK0", "value_src": "default_prop", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],

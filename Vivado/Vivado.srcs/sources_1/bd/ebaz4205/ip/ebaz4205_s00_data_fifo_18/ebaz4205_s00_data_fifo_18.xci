@@ -1,11 +1,11 @@
 {
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
-    "xci_name": "ebaz4205_s00_data_fifo_10",
+    "xci_name": "ebaz4205_s00_data_fifo_18",
     "cell_name": "HDMI_0/axi_interconnect_1/s00_couplers/s00_data_fifo",
     "component_reference": "xilinx.com:ip:axi_data_fifo:2.1",
     "ip_revision": "26",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_s00_data_fifo_10",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_s00_data_fifo_18",
     "parameters": {
       "component_parameters": {
         "PROTOCOL": [ { "value": "AXI3", "value_src": "propagated", "value_permission": "bd_and_user", "resolve_type": "user", "usage": "all" } ],
@@ -22,7 +22,7 @@
         "READ_FIFO_DEPTH": [ { "value": "512", "value_src": "propagated", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "WRITE_FIFO_DELAY": [ { "value": "0", "value_src": "propagated", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "READ_FIFO_DELAY": [ { "value": "1", "value_src": "propagated", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "Component_Name": [ { "value": "ebaz4205_s00_data_fifo_10", "resolve_type": "user", "usage": "all" } ]
+        "Component_Name": [ { "value": "ebaz4205_s00_data_fifo_18", "resolve_type": "user", "usage": "all" } ]
       },
       "model_parameters": {
         "C_FAMILY": [ { "value": "zynq", "resolve_type": "generated", "usage": "all" } ],
@@ -62,7 +62,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "26" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_s00_data_fifo_10" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_s00_data_fifo_18" } ],
         "SELECTEDSIMMODEL": [ { "value": "rtl" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

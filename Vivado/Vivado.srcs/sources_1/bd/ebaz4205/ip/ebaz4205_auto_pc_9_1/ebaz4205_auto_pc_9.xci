@@ -1,11 +1,11 @@
 {
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
-    "xci_name": "ebaz4205_auto_pc_5",
-    "cell_name": "ps7_axi_periph/m10_couplers/auto_pc",
+    "xci_name": "ebaz4205_auto_pc_9",
+    "cell_name": "ps7_axi_periph/m15_couplers/auto_pc",
     "component_reference": "xilinx.com:ip:axi_protocol_converter:2.1",
     "ip_revision": "27",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_auto_pc_5_1",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_auto_pc_9_1",
     "parameters": {
       "component_parameters": {
         "SI_PROTOCOL": [ { "value": "AXI4", "value_src": "user", "value_permission": "bd_and_user", "resolve_type": "user", "usage": "all" } ],
@@ -20,7 +20,7 @@
         "RUSER_WIDTH": [ { "value": "0", "value_permission": "bd_and_user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "WUSER_WIDTH": [ { "value": "0", "value_permission": "bd_and_user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "BUSER_WIDTH": [ { "value": "0", "value_permission": "bd_and_user", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "Component_Name": [ { "value": "ebaz4205_auto_pc_5", "resolve_type": "user", "usage": "all" } ]
+        "Component_Name": [ { "value": "ebaz4205_auto_pc_9", "resolve_type": "user", "usage": "all" } ]
       },
       "model_parameters": {
         "C_FAMILY": [ { "value": "zynq", "resolve_type": "generated", "usage": "all" } ],
@@ -59,7 +59,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "27" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_auto_pc_5_1" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_auto_pc_9_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "rtl" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],
