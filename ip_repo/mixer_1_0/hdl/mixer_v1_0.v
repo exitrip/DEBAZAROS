@@ -5,8 +5,8 @@
 	(
 		// Users to add parameters here
         parameter integer OUT_WIDTH	= 16,
-        parameter integer IN_WIDTH	= 8,
-        parameter integer IN_NUM	= 8,
+        parameter integer IN_WIDTH	= 16,
+        parameter integer IN_NUM	= 4,
 		// User parameters ends
 		// Do not modify the parameters beyond this line
 
@@ -23,10 +23,10 @@
         input wire [IN_WIDTH-1 : 0] din1,
         input wire [IN_WIDTH-1 : 0] din2,
         input wire [IN_WIDTH-1 : 0] din3,   
-        input wire [IN_WIDTH-1 : 0] din4,
-        input wire [IN_WIDTH-1 : 0] din5,
-        input wire [IN_WIDTH-1 : 0] din6,
-        input wire [IN_WIDTH-1 : 0] din7,
+//        input wire [IN_WIDTH-1 : 0] din4,
+//        input wire [IN_WIDTH-1 : 0] din5,
+//        input wire [IN_WIDTH-1 : 0] din6,
+//        input wire [IN_WIDTH-1 : 0] din7,
 
 		// User ports ends
 		// Do not modify the ports beyond this line
@@ -56,8 +56,9 @@
 		input wire  s00_axi_rready
 	);
 	
-    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain [8];
-    wire [C_S00_AXI_DATA_WIDTH-1 : 0] ctrl [2];
+    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_0, gain_1, gain_2, gain_3;
+//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_4, gain_5, gain_6, gain_7;
+    wire [C_S00_AXI_DATA_WIDTH-1 : 0] ctrl_0, ctrl_1;
 // Instantiation of Axi Bus Interface S00_AXI
 	mixer_v1_0_S00_AXI # ( 
 		.C_S_AXI_DATA_WIDTH(C_S00_AXI_DATA_WIDTH),
@@ -84,28 +85,37 @@
 		.S_AXI_RRESP(s00_axi_rresp),
 		.S_AXI_RVALID(s00_axi_rvalid),
 		.S_AXI_RREADY(s00_axi_rready),
-		.GAIN(gain),
-        .CTRL(ctrl)
+		.GAIN_0(gain_0),
+		.GAIN_1(gain_1),
+		.GAIN_2(gain_2),
+		.GAIN_3(gain_3),
+//		.GAIN_4(gain_4),
+//		.GAIN_5(gain_5),
+//		.GAIN_6(gain_6),
+//		.GAIN_7(gain_7),
+        .CTRL_0(ctrl_0),
+        .CTRL_1(ctrl_1)
 	);
  
 	// Add user logic here
 	//TODO figure out sane ctrl regs
 	always @( posedge pix_clk )
 	begin
-	  case ( ctrl[0][2:0] )
-        2'h0:
+	  case ( ctrl_0[2:0] )
+        3'h0:
           dout <= 0;
-        2'h1:
-          dout <= gain[0]*din0 + gain[1]*din1 + gain[2]*din2 + gain[3]*din3 
-            + gain[4]*din4 + gain[5]*din5 + gain[6]*din6 + gain[7]*din7;
-        2'h2:
-          dout <= gain[0][7:0]*din0 + gain[1][7:0]*din1 + gain[2][7:0]*din2 
-            + gain[3][7:0]*din3 + gain[4][7:0]*din4 + gain[5][7:0]*din5 
-            + gain[6][7:0]*din6 + gain[7][7:0]*din7;
-        2'h3:
+        3'h1:
+          dout <= gain_0*din0 + gain_1*din1 + gain_2*din2 + gain_3*din3; 
+//            + gain_4*din4 + gain_5*din5 + gain_6*din6 + gain_7*din7;
+        3'h2:
+          dout <= gain_0[7:0]*din0 + gain_1[7:0]*din1 + gain_2[7:0]*din2 
+            + gain_3[7:0]*din3; 
+//            + gain_4[7:0]*din4 + gain_5[7:0]*din5 
+//            + gain_6[7:0]*din6 + gain_7[7:0]*din7;
+        3'h3:
           dout <= din0;
         default:
-            dout <=  {OUT_WIDTH{1'b1}};
+          dout <=  {OUT_WIDTH{1'b1}};
       endcase    
     end
 	// User logic ends

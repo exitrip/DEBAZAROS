@@ -69,9 +69,9 @@ set_property -dict { PACKAGE_PIN D18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_H
 set_property -dict { PACKAGE_PIN H18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_OEN_0[0] }]; 
 set_property -dict { PACKAGE_PIN B19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_0[2]}]; 
 #set_property -dict { PACKAGE_PIN F20   IOSTANDARD LVCMOS33 } [get_ports { mouse_data_new }]; # DATA1_17   FOR TESTING PURPOSE ONLY! 
-set_property -dict { PACKAGE_PIN H16   IOSTANDARD LVCMOS33 } [get_ports { I2SDATA }]; # DATA1_18
-set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { LRCLK }]; # DATA1_19 
-set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { SCLK  }]; # DATA1_20
+#set_property -dict { PACKAGE_PIN H16   IOSTANDARD LVCMOS33 } [get_ports { I2SDATA }]; # DATA1_18
+#set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { LRCLK }]; # DATA1_19 
+#set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { SCLK  }]; # DATA1_20
 
 ##DATA1
 #set_property -dict { PACKAGE_PIN A20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_0[1]}]; # DATA1_5 IO_L2N_T0_AD8N_35  
@@ -131,23 +131,23 @@ set_property -dict { PACKAGE_PIN J19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_O
 
 
 #EBAZ4205 DATA3 connector
-set_property -dict {PACKAGE_PIN M19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[0]}]
-set_property -dict {PACKAGE_PIN N20 IOSTANDARD LVCMOS33} [get_ports ADC_clk_64M]
-set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {ADC_in[2]}]
-set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports {ADC_in[1]}]
-set_property -dict {PACKAGE_PIN N17 IOSTANDARD LVCMOS33} [get_ports {ADC_in[4]}]
-set_property -dict {PACKAGE_PIN P20 IOSTANDARD LVCMOS33} [get_ports {ADC_in[3]}]
-set_property -dict {PACKAGE_PIN R18 IOSTANDARD LVCMOS33} [get_ports {ADC_in[6]}]
-set_property -dict {PACKAGE_PIN R19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[5]}]
-set_property -dict {PACKAGE_PIN P19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[8]}]
-set_property -dict {PACKAGE_PIN T20 IOSTANDARD LVCMOS33} [get_ports {ADC_in[7]}]
-set_property -dict {PACKAGE_PIN U20 IOSTANDARD LVCMOS33} [get_ports {ADC_in[10]}]
-set_property -dict {PACKAGE_PIN T19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[9]}]
-set_property -dict {PACKAGE_PIN V20 IOSTANDARD LVCMOS33} [get_ports OTR]
-set_property -dict {PACKAGE_PIN U19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[11]}]
+#set_property -dict {PACKAGE_PIN M19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[0]}]
+#set_property -dict {PACKAGE_PIN N20 IOSTANDARD LVCMOS33} [get_ports ADC_clk_64M]
+#set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {ADC_in[2]}]
+#set_property -dict {PACKAGE_PIN M17 IOSTANDARD LVCMOS33} [get_ports {ADC_in[1]}]
+#set_property -dict {PACKAGE_PIN N17 IOSTANDARD LVCMOS33} [get_ports {ADC_in[4]}]
+#set_property -dict {PACKAGE_PIN P20 IOSTANDARD LVCMOS33} [get_ports {ADC_in[3]}]
+#set_property -dict {PACKAGE_PIN R18 IOSTANDARD LVCMOS33} [get_ports {ADC_in[6]}]
+#set_property -dict {PACKAGE_PIN R19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[5]}]
+#set_property -dict {PACKAGE_PIN P19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[8]}]
+#set_property -dict {PACKAGE_PIN T20 IOSTANDARD LVCMOS33} [get_ports {ADC_in[7]}]
+#set_property -dict {PACKAGE_PIN U20 IOSTANDARD LVCMOS33} [get_ports {ADC_in[10]}]
+#set_property -dict {PACKAGE_PIN T19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[9]}]
+#set_property -dict {PACKAGE_PIN V20 IOSTANDARD LVCMOS33} [get_ports OTR]
+#set_property -dict {PACKAGE_PIN U19 IOSTANDARD LVCMOS33} [get_ports {ADC_in[11]}]
 
 
 
-create_pblock pblock_AD9851
-add_cells_to_pblock [get_pblocks pblock_AD9851] [get_cells -quiet [list ebaz4205_i/AD9851]]
-resize_pblock [get_pblocks pblock_AD9851] -add {CLOCKREGION_X1Y0:CLOCKREGION_X1Y0}
+#create_pblock pblock_AD9851
+#add_cells_to_pblock [get_pblocks pblock_AD9851] [get_cells -quiet [list ebaz4205_i/AD9851]]
+#resize_pblock [get_pblocks pblock_AD9851] -add {CLOCKREGION_X1Y0:CLOCKREGION_X1Y0}
