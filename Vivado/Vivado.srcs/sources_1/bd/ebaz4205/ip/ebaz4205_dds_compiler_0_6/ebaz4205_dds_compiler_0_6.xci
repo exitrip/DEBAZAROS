@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_dds_compiler_0_6",
-    "cell_name": "HDMI_0/dds_compiler_0",
+    "cell_name": "dds_compiler_0",
     "component_reference": "xilinx.com:ip:dds_compiler:6.0",
     "ip_revision": "22",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_dds_compiler_0_6",
@@ -231,8 +231,8 @@
           "abstraction_type": "xilinx.com:signal:interrupt_rtl:1.0",
           "mode": "master",
           "parameters": {
-            "SENSITIVITY": [ { "value": "EDGE_RISING", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
-            "PortWidth": [ { "value": "1", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ]
+            "SENSITIVITY": [ { "value": "EDGE_RISING", "value_src": "constant", "usage": "all" } ],
+            "PortWidth": [ { "value": "1", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ]
           }
         },
         "event_s_phase_tlast_unexpected_intf": {
@@ -240,8 +240,8 @@
           "abstraction_type": "xilinx.com:signal:interrupt_rtl:1.0",
           "mode": "master",
           "parameters": {
-            "SENSITIVITY": [ { "value": "EDGE_RISING", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
-            "PortWidth": [ { "value": "1", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ]
+            "SENSITIVITY": [ { "value": "EDGE_RISING", "value_src": "constant", "usage": "all" } ],
+            "PortWidth": [ { "value": "1", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ]
           }
         },
         "event_s_phase_chanid_incorrect_intf": {

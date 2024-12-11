@@ -4,8 +4,8 @@
 	module mixer_v1_0 #
 	(
 		// Users to add parameters here
-        parameter integer OUT_WIDTH	= 16,
-        parameter integer IN_WIDTH	= 16,
+        parameter integer OUT_WIDTH	= 32,
+        parameter integer IN_WIDTH	= 32,
         parameter integer IN_NUM	= 4,
 		// User parameters ends
 		// Do not modify the parameters beyond this line
@@ -114,6 +114,8 @@
 //            + gain_6[7:0]*din6 + gain_7[7:0]*din7;
         3'h3:
           dout <= din0;
+        3'h4:
+          dout <=  {OUT_WIDTH{1'b1}};
         default:
           dout <=  {OUT_WIDTH{1'b1}};
       endcase    
