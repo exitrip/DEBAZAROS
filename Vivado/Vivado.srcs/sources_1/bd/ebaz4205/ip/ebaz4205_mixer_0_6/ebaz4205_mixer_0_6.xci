@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_mixer_0_6",
-    "cell_name": "mixer_3",
+    "cell_name": "HDMI_0/mixerMatrix/mixer_3",
     "component_reference": "user.org:user:mixer:1.0",
     "ip_revision": "9",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_mixer_0_6",
