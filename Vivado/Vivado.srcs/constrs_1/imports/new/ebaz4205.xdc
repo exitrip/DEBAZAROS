@@ -67,7 +67,7 @@ set_property -dict { PACKAGE_PIN F20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Clk
 set_property -dict { PACKAGE_PIN D20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_0[0]}]; 
 set_property -dict { PACKAGE_PIN D18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_0_tri_i[0]    }]; 
 set_property -dict { PACKAGE_PIN H18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_OEN_0[0] }]; 
-set_property -dict { PACKAGE_PIN B19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_0[2]}]; 
+set_property -dict { PACKAGE_PIN D19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_0[0]}]; 
 #set_property -dict { PACKAGE_PIN F20   IOSTANDARD LVCMOS33 } [get_ports { mouse_data_new }]; # DATA1_17   FOR TESTING PURPOSE ONLY! 
 #set_property -dict { PACKAGE_PIN H16   IOSTANDARD LVCMOS33 } [get_ports { I2SDATA }]; # DATA1_18
 #set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { LRCLK }]; # DATA1_19 

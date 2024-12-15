@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_auto_pc_6",
-    "cell_name": "ps7_axi_periph/m13_couplers/auto_pc",
+    "cell_name": "ps7_axi_periph/m12_couplers/auto_pc",
     "component_reference": "xilinx.com:ip:axi_protocol_converter:2.1",
     "ip_revision": "27",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_auto_pc_6_1",
