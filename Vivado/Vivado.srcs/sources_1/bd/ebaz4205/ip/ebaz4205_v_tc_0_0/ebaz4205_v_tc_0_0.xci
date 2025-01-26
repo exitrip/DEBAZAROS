@@ -5,7 +5,7 @@
     "cell_name": "HDMI_0/v_tc_0",
     "component_reference": "xilinx.com:ip:v_tc:6.2",
     "ip_revision": "5",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_tc_0_0",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_tc_0_0_1",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "ebaz4205_v_tc_0_0", "resolve_type": "user", "usage": "all" } ],
@@ -207,7 +207,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "5" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_tc_0_0" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_tc_0_0_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

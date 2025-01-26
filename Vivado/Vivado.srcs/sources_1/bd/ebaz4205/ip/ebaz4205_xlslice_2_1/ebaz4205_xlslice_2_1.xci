@@ -2,22 +2,22 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_xlslice_2_1",
-    "cell_name": "HDMI_0/colorGainMain/xlslice_2",
+    "cell_name": "HDMI_0/mixerMatrix/xlslice_2",
     "component_reference": "xilinx.com:ip:xlslice:1.0",
     "ip_revision": "2",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_2_1",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_2_1_1",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "ebaz4205_xlslice_2_1", "resolve_type": "user", "usage": "all" } ],
-        "DIN_TO": [ { "value": "8", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "DIN_FROM": [ { "value": "15", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
+        "DIN_TO": [ { "value": "0", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
+        "DIN_FROM": [ { "value": "7", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "DIN_WIDTH": [ { "value": "24", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "DOUT_WIDTH": [ { "value": "8", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ]
+        "DOUT_WIDTH": [ { "value": "8", "resolve_type": "user", "format": "long", "usage": "all" } ]
       },
       "model_parameters": {
         "DIN_WIDTH": [ { "value": "24", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "DIN_FROM": [ { "value": "15", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "DIN_TO": [ { "value": "8", "resolve_type": "generated", "format": "long", "usage": "all" } ]
+        "DIN_FROM": [ { "value": "7", "resolve_type": "generated", "format": "long", "usage": "all" } ],
+        "DIN_TO": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ]
       },
       "project_parameters": {
         "ARCHITECTURE": [ { "value": "zynq" } ],
@@ -38,7 +38,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "2" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_2_1" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_2_1_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

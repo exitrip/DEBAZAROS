@@ -2,10 +2,10 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_v_axi4s_vid_out_0_1",
-    "cell_name": "HDMI_0/v_axi4s_vid_out_0",
+    "cell_name": "HDMI_1/v_axi4s_vid_out_0",
     "component_reference": "xilinx.com:ip:v_axi4s_vid_out:4.0",
     "ip_revision": "15",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_axi4s_vid_out_0_1",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_axi4s_vid_out_0_1_1",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "ebaz4205_v_axi4s_vid_out_0_1", "resolve_type": "user", "usage": "all" } ],
@@ -60,7 +60,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "15" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_axi4s_vid_out_0_1" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_v_axi4s_vid_out_0_1_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

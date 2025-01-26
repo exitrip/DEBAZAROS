@@ -2,10 +2,10 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_xlslice_4_1",
-    "cell_name": "HDMI_0/colorGainMain/xlslice_4",
+    "cell_name": "HDMI_1/colorGainMain/xlslice_4",
     "component_reference": "xilinx.com:ip:xlslice:1.0",
     "ip_revision": "2",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_4_1",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_4_1_1",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "ebaz4205_xlslice_4_1", "resolve_type": "user", "usage": "all" } ],
@@ -38,7 +38,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "2" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_4_1" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_4_1_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

@@ -2,19 +2,19 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_DivideBy4_25MHz_0",
-    "cell_name": "PS/DivideBy2_50MHz",
+    "cell_name": "PS/DivideBy4_25MHz",
     "component_reference": "xilinx.com:module_ref:DivideBy2N:1.0",
-    "ip_revision": "-1",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_DivideBy4_25MHz_0",
+    "ip_revision": "1",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_DivideBy4_25MHz_0_1",
     "parameters": {
       "component_parameters": {
         "WIDTH": [ { "value": "2", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "N": [ { "value": "1", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
+        "N": [ { "value": "2", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "Component_Name": [ { "value": "ebaz4205_DivideBy4_25MHz_0", "resolve_type": "user", "usage": "all" } ]
       },
       "model_parameters": {
         "WIDTH": [ { "value": "2", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "N": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ]
+        "N": [ { "value": "2", "resolve_type": "generated", "format": "long", "usage": "all" } ]
       },
       "project_parameters": {
         "ARCHITECTURE": [ { "value": "zynq" } ],
@@ -35,7 +35,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "1" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_DivideBy4_25MHz_0" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_DivideBy4_25MHz_0_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

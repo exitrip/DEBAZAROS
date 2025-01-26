@@ -5,7 +5,7 @@
     "cell_name": "HDMI_0/axi_vdma_0",
     "component_reference": "xilinx.com:ip:axi_vdma:6.3",
     "ip_revision": "15",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_axi_vdma_0_0",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_axi_vdma_0_0_1",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "ebaz4205_axi_vdma_0_0", "resolve_type": "user", "usage": "all" } ],
@@ -27,7 +27,7 @@
         "c_include_internal_genlock": [ { "value": "1", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "c_mm2s_genlock_mode": [ { "value": "3", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "c_mm2s_genlock_num_masters": [ { "value": "1", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "c_s2mm_genlock_mode": [ { "value": "0", "value_src": "user", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
+        "c_s2mm_genlock_mode": [ { "value": "0", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "c_s2mm_genlock_num_masters": [ { "value": "1", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
         "c_mm2s_linebuffer_depth": [ { "value": "4096", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "c_mm2s_linebuffer_thresh": [ { "value": "4", "resolve_type": "user", "format": "long", "usage": "all" } ],
@@ -152,7 +152,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "15" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_axi_vdma_0_0" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_axi_vdma_0_0_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],

@@ -2,10 +2,10 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_xbip_multadd_3_0",
-    "cell_name": "HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_6",
+    "cell_name": "HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_3",
     "component_reference": "xilinx.com:ip:xbip_multadd:3.0",
     "ip_revision": "17",
-    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xbip_multadd_3_0",
+    "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xbip_multadd_3_0_1",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "ebaz4205_xbip_multadd_3_0", "resolve_type": "user", "usage": "all" } ],
@@ -59,7 +59,7 @@
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
         "IPREVISION": [ { "value": "17" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xbip_multadd_3_0" } ],
+        "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xbip_multadd_3_0_1" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "../../ipshared" } ],
         "SWVERSION": [ { "value": "2022.2" } ],
