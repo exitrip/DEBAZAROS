@@ -1,7 +1,7 @@
 {
   "design": {
     "design_info": {
-      "boundary_crc": "0x588D572D9FC03FA9",
+      "boundary_crc": "0x28BF3DFDEFF25579",
       "device": "xc7z010clg400-1",
       "gen_directory": "../../../../Vivado.gen/sources_1/bd/ebaz4205",
       "name": "ebaz4205",
@@ -511,7 +511,7 @@
           }
         }
       },
-      "HDMI_OEN_0": {
+      "HDMI_CEC_0": {
         "direction": "O",
         "left": "0",
         "right": "0"
@@ -532,7 +532,7 @@
         "left": "2",
         "right": "0"
       },
-      "HDMI_OEN_1": {
+      "HDMI_CEC_1": {
         "direction": "O",
         "left": "0",
         "right": "0"
@@ -3227,8 +3227,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_2",
-                    "xci_path": "ip/ebaz4205_s00_regslice_2/ebaz4205_s00_regslice_2.xci",
+                    "xci_name": "ebaz4205_s00_regslice_4",
+                    "xci_path": "ip/ebaz4205_s00_regslice_4/ebaz4205_s00_regslice_4.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -3242,8 +3242,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_2",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_2/ebaz4205_s00_data_fifo_2.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_4",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_4/ebaz4205_s00_data_fifo_4.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
@@ -8628,8 +8628,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_3",
-                    "xci_path": "ip/ebaz4205_s00_regslice_3/ebaz4205_s00_regslice_3.xci",
+                    "xci_name": "ebaz4205_s00_regslice_5",
+                    "xci_path": "ip/ebaz4205_s00_regslice_5/ebaz4205_s00_regslice_5.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -8643,8 +8643,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_3",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_3/ebaz4205_s00_data_fifo_3.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_5",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_5/ebaz4205_s00_data_fifo_5.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
@@ -10099,7 +10099,7 @@
       "HDMI_1_HDMI_OEN": {
         "ports": [
           "HDMI_1/HDMI_OEN",
-          "HDMI_OEN_1"
+          "HDMI_CEC_1"
         ]
       },
       "HDMI_1_TMDS_Clk_n_0": {
@@ -10286,7 +10286,7 @@
       "xlconstant_0_dout": {
         "ports": [
           "HDMI_0/HDMI_OEN",
-          "HDMI_OEN_0"
+          "HDMI_CEC_0"
         ]
       },
       "xlslice_0_Dout": {
