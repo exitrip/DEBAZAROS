@@ -3227,8 +3227,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_4",
-                    "xci_path": "ip/ebaz4205_s00_regslice_4/ebaz4205_s00_regslice_4.xci",
+                    "xci_name": "ebaz4205_s00_regslice_10",
+                    "xci_path": "ip/ebaz4205_s00_regslice_10/ebaz4205_s00_regslice_10.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -3242,8 +3242,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_4",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_4/ebaz4205_s00_data_fifo_4.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_10",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_10/ebaz4205_s00_data_fifo_10.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
@@ -3560,6 +3560,9 @@
                 "xci_path": "ip/ebaz4205_xlslice_0_1/ebaz4205_xlslice_0_1.xci",
                 "inst_hier_path": "HDMI_0/colorGainMain/xlslice_0",
                 "parameters": {
+                  "DIN_FROM": {
+                    "value": "7"
+                  },
                   "DIN_TO": {
                     "value": "0"
                   },
@@ -3609,6 +3612,9 @@
                 "xci_path": "ip/ebaz4205_xlslice_1_0/ebaz4205_xlslice_1_0.xci",
                 "inst_hier_path": "HDMI_0/colorGainMain/xlslice_1",
                 "parameters": {
+                  "DIN_FROM": {
+                    "value": "7"
+                  },
                   "DIN_TO": {
                     "value": "0"
                   },
@@ -4054,6 +4060,9 @@
                     "xci_path": "ip/ebaz4205_b_xlslice_0_0/ebaz4205_b_xlslice_0_0.xci",
                     "inst_hier_path": "HDMI_0/mixerMatrix/colorGainMatrix/b_xlslice_0",
                     "parameters": {
+                      "DIN_FROM": {
+                        "value": "7"
+                      },
                       "DIN_TO": {
                         "value": "0"
                       },
@@ -8628,8 +8637,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_5",
-                    "xci_path": "ip/ebaz4205_s00_regslice_5/ebaz4205_s00_regslice_5.xci",
+                    "xci_name": "ebaz4205_s00_regslice_11",
+                    "xci_path": "ip/ebaz4205_s00_regslice_11/ebaz4205_s00_regslice_11.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -8643,8 +8652,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_5",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_5/ebaz4205_s00_data_fifo_5.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_11",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_11/ebaz4205_s00_data_fifo_11.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
@@ -8961,6 +8970,9 @@
                 "xci_path": "ip/ebaz4205_xlslice_0_3/ebaz4205_xlslice_0_3.xci",
                 "inst_hier_path": "HDMI_1/colorGainMain/xlslice_0",
                 "parameters": {
+                  "DIN_FROM": {
+                    "value": "7"
+                  },
                   "DIN_TO": {
                     "value": "0"
                   },
@@ -9010,6 +9022,9 @@
                 "xci_path": "ip/ebaz4205_xlslice_1_2/ebaz4205_xlslice_1_2.xci",
                 "inst_hier_path": "HDMI_1/colorGainMain/xlslice_1",
                 "parameters": {
+                  "DIN_FROM": {
+                    "value": "7"
+                  },
                   "DIN_TO": {
                     "value": "0"
                   },

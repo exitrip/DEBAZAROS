@@ -1,0 +1,71 @@
+{
+   "ActiveEmotionalView":"Default View",
+   "Default View_ScaleFactor":"0.919736",
+   "Default View_TopLeft":"356,502",
+   "ExpandedHierarchyInLayout":"",
+   "guistr":"# # String gsaved with Nlview 7.0r4  2019-12-20 bk=1.5203 VDI=41 GEI=36 GUI=JA:10.0 TLS
+#  -string -flagsOSRD
+preplace port S_AXI_LITE_MIXER_G_RR -pg 1 -lvl 0 -x 0 -y 50 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_BR -pg 1 -lvl 0 -x 0 -y 290 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_GR -pg 1 -lvl 0 -x 0 -y 510 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_RB -pg 1 -lvl 0 -x 0 -y 1390 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_BB -pg 1 -lvl 0 -x 0 -y 950 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_GB -pg 1 -lvl 0 -x 0 -y 1170 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_RG -pg 1 -lvl 0 -x 0 -y 1830 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_BG -pg 1 -lvl 0 -x 0 -y 730 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_G_GG -pg 1 -lvl 0 -x 0 -y 1610 -defaultsOSRD
+preplace port port-id_s_axi_aclk -pg 1 -lvl 0 -x 0 -y 1870 -defaultsOSRD
+preplace port port-id_s_axi_aresetn -pg 1 -lvl 0 -x 0 -y 1890 -defaultsOSRD
+preplace port port-id_PixelClk -pg 1 -lvl 0 -x 0 -y 1850 -defaultsOSRD
+preplace portBus Din -pg 1 -lvl 0 -x 0 -y 230 -defaultsOSRD
+preplace portBus dout -pg 1 -lvl 4 -x 940 -y 800 -defaultsOSRD
+preplace portBus din1 -pg 1 -lvl 0 -x 0 -y 1630 -defaultsOSRD
+preplace portBus din2 -pg 1 -lvl 0 -x 0 -y 1650 -defaultsOSRD
+preplace portBus din0 -pg 1 -lvl 0 -x 0 -y 750 -defaultsOSRD
+preplace inst colorGainMatrix -pg 1 -lvl 3 -x 810 -y 802 -defaultsOSRD
+preplace inst xlslice_0 -pg 1 -lvl 1 -x 130 -y 670 -defaultsOSRD
+preplace inst xlslice_1 -pg 1 -lvl 1 -x 130 -y 1230 -defaultsOSRD
+preplace inst xlslice_2 -pg 1 -lvl 1 -x 130 -y 890 -defaultsOSRD
+preplace inst mixer_0 -pg 1 -lvl 2 -x 440 -y 110 -defaultsOSRD
+preplace inst mixer_1 -pg 1 -lvl 2 -x 440 -y 350 -defaultsOSRD
+preplace inst mixer_2 -pg 1 -lvl 2 -x 440 -y 570 -defaultsOSRD
+preplace inst mixer_3 -pg 1 -lvl 2 -x 440 -y 1230 -defaultsOSRD
+preplace inst mixer_6 -pg 1 -lvl 2 -x 440 -y 1670 -defaultsOSRD
+preplace inst mixer_4 -pg 1 -lvl 2 -x 440 -y 1450 -defaultsOSRD
+preplace inst mixer_7 -pg 1 -lvl 2 -x 440 -y 1890 -defaultsOSRD
+preplace inst mixer_5 -pg 1 -lvl 2 -x 440 -y 1010 -defaultsOSRD
+preplace inst mixer_8 -pg 1 -lvl 2 -x 440 -y 790 -defaultsOSRD
+preplace netloc Din_1 1 0 3 NJ 230 NJ 230 600J
+preplace netloc PixelClk_1 1 0 2 NJ 1850 270
+preplace netloc colorGainMatrix_dout 1 3 1 920 800n
+preplace netloc din0_1 1 0 1 20 670n
+preplace netloc din1_1 1 0 2 NJ 1630 260
+preplace netloc din2_1 1 0 2 NJ 1650 290
+preplace netloc g_rr_1 1 2 1 610 110n
+preplace netloc mixer_1_dout 1 2 1 580 350n
+preplace netloc mixer_2_dout 1 2 1 570 570n
+preplace netloc mixer_3_dout 1 2 1 590 872n
+preplace netloc mixer_4_dout 1 2 1 610 892n
+preplace netloc mixer_5_dout 1 2 1 570 852n
+preplace netloc mixer_6_dout 1 2 1 580 812n
+preplace netloc mixer_7_dout 1 2 1 600 832n
+preplace netloc mixer_8_dout 1 2 1 600 790n
+preplace netloc s_axi_aclk_1 1 0 2 NJ 1870 300
+preplace netloc s_axi_aresetn_1 1 0 2 NJ 1890 240
+preplace netloc xlslice_0_Dout 1 1 1 280 90n
+preplace netloc xlslice_1_Dout 1 1 1 250 990n
+preplace netloc xlslice_2_Dout 1 1 1 310 770n
+preplace netloc Conn1 1 0 2 NJ 50 NJ
+preplace netloc Conn2 1 0 2 NJ 290 NJ
+preplace netloc Conn3 1 0 2 NJ 510 NJ
+preplace netloc Conn4 1 0 2 NJ 1170 NJ
+preplace netloc Conn5 1 0 2 NJ 1390 NJ
+preplace netloc Conn6 1 0 2 NJ 950 NJ
+preplace netloc Conn7 1 0 2 NJ 1610 NJ
+preplace netloc Conn8 1 0 2 NJ 1830 NJ
+preplace netloc Conn9 1 0 2 NJ 730 NJ
+levelinfo -pg 1 0 130 440 810 940
+pagesize -pg 1 -db -bbox -sgen -200 -10 1060 2010
+"
+}
+
