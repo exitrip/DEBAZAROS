@@ -75,8 +75,8 @@ set_property -dict { PACKAGE_PIN D19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Dat
 
 ##DATA2
 #HDMI1
-set_property -dict { PACKAGE_PIN J16   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_p_1 }];
-set_property -dict { PACKAGE_PIN H17   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_n_1 }];
+set_property -dict { PACKAGE_PIN L16   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_p_1 }];
+set_property -dict { PACKAGE_PIN L17   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_n_1 }];
 set_property -dict { PACKAGE_PIN G19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_1[2]}]; 
 set_property -dict { PACKAGE_PIN G20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_1[2]}]; 
 set_property -dict { PACKAGE_PIN J20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_1[1]}]; 
@@ -89,28 +89,28 @@ set_property -dict { PACKAGE_PIN J19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_C
 #set_property -dict { PACKAGE_PIN K18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_SDA_1 }]; 
 
 #HDMI2
-#set_property -dict { PACKAGE_PIN M18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[2]}]; 
-#set_property -dict { PACKAGE_PIN M20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[1]}]; 
+set_property -dict { PACKAGE_PIN M18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[2]}]; 
+set_property -dict { PACKAGE_PIN M20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[1]}]; 
 
 #DATA3
-#HDMI2
-#set_property -dict { PACKAGE_PIN N20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_p_2 }];
-#set_property -dict { PACKAGE_PIN P20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_n_2 }];
-#set_property -dict { PACKAGE_PIN M17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[2]}]; 
-##set_property -dict { PACKAGE_PIN M18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[2]}]; 
-#set_property -dict { PACKAGE_PIN M19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[1]}]; 
-##set_property -dict { PACKAGE_PIN M20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[1]}]; 
-#set_property -dict { PACKAGE_PIN N17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[0]}]; 
-#set_property -dict { PACKAGE_PIN P18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[0]}]; 
-#set_property -dict { PACKAGE_PIN R18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_2_tri_i[0]    }]; 
-#set_property -dict { PACKAGE_PIN R19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_CEC_2[0] }]; 
+HDMI2
+set_property -dict { PACKAGE_PIN N20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_p_2 }];
+set_property -dict { PACKAGE_PIN P20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_n_2 }];
+set_property -dict { PACKAGE_PIN M17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[2]}]; 
+#set_property -dict { PACKAGE_PIN M18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[2]}]; 
+set_property -dict { PACKAGE_PIN M19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[1]}]; 
+#set_property -dict { PACKAGE_PIN M20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[1]}]; 
+set_property -dict { PACKAGE_PIN N17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[0]}]; 
+set_property -dict { PACKAGE_PIN P18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[0]}]; 
+set_property -dict { PACKAGE_PIN R18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_2_tri_i[0]    }]; 
+set_property -dict { PACKAGE_PIN R19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_CEC_2[0] }]; 
 #set_property -dict { PACKAGE_PIN T20   IOSTANDARD LVCMOS33 } [get_ports { HDMI_SCL_2 }]; 
 #set_property -dict { PACKAGE_PIN P19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_SDA_2 }]; 
-##buttons
-#set_property -dict { PACKAGE_PIN U19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[0] }];
-#set_property -dict { PACKAGE_PIN V20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[1] }];
-#set_property -dict { PACKAGE_PIN T19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[2] }];
-#set_property -dict { PACKAGE_PIN U20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[3] }]; 
+#buttons
+set_property -dict { PACKAGE_PIN U19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[0] }];
+set_property -dict { PACKAGE_PIN V20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[1] }];
+set_property -dict { PACKAGE_PIN T19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[2] }];
+set_property -dict { PACKAGE_PIN U20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[3] }]; 
 
 
 

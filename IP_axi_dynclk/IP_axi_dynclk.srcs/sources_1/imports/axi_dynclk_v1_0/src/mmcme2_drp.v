@@ -63,9 +63,10 @@ module mmcme2_drp
 		input 	[35:0]	S1_CLKFBOUT,
 		input 	[13:0]	S1_DIVCLK,
 		input 	[39:0]	S1_LOCK,
-		input 	[9:0]		S1_DIGITAL_FILT,
+		input 	[9:0]	S1_DIGITAL_FILT,
 		
-		input					REF_CLK,
+		input				REF_CLK,
+		output				PXL_CLK_X5,
 		output				PXL_CLK,
 		output				CLKFBOUT_O,
 		input				CLKFBOUT_I,
@@ -76,7 +77,7 @@ module mmcme2_drp
    // 100 ps delay for behavioral simulations
    localparam  TCQ = 100;
    
-   wire [38:0]  rom [12:0];  // 39 bit word 13 words deep array of reg writes to perform (no longer a ROM)
+   wire [38:0] rom [12:0];  // 39 bit word 13 words deep array of reg writes to perform (no longer a ROM)
    reg [3:0]   rom_addr;
    reg [38:0]  rom_do;
    
@@ -91,57 +92,57 @@ module mmcme2_drp
 	
 	// These signals are to be connected to the MMCM_ADV by port name.
 	// Their use matches the MMCM port description in the Device User Guide.
-   wire      [15:0] DO;
+   wire [15:0]      DO;
    wire             DRDY;
    wire             LOCKED;
-   reg        		  DWE;
-   reg        		  DEN;
-   reg [6:0]  		  DADDR;
-   reg [15:0] 		  DI;
+   reg        	    DWE;
+   reg        		DEN;
+   reg [6:0]  		DADDR;
+   reg [15:0] 		DI;
    wire             DCLK;
-   reg        		  RST_MMCM;
+   reg        		RST_MMCM;
 
    
    // Pass SCLK to DCLK for the MMCM
    assign DCLK = SCLK;
 
-      // rom entries contain (in order) the address, a bitmask, and a bitset
-      //***********************************************************************
-      // State 1 Initialization
-      //***********************************************************************
-      
-      // Store the power bits
-      assign rom[0] = {7'h28, 16'h0000, 16'hFFFF};
-      
-      // Store CLKOUT0 divide and phase
-      assign rom[1]  =  {7'h08, 16'h1000, S1_CLKOUT0[15:0]};
-      assign rom[2]  =  {7'h09, 16'h8000, S1_CLKOUT0[31:16]};
-						
-      // Store CLKOUT0 additional frac values
-      assign rom[3] = {7'h07, 16'hC3FF, 2'b00 , S1_CLKOUT0[35:32], 10'h000}; 
-      
-      // Store CLKFBOUT additional frac values
-      assign rom[4] = {7'h13, 16'hC3FF, 2'b00 , S1_CLKFBOUT[35:32], 10'h000};
-      
-      // Store the input divider
-      assign rom[5] = {7'h16, 16'hC000, {2'h0, S1_DIVCLK[13:0]} };
-      
-      // Store CLKFBOUT divide and phase
-      assign rom[6] = {7'h14, 16'h1000, S1_CLKFBOUT[15:0]};
-      assign rom[7] = {7'h15, 16'h8000, S1_CLKFBOUT[31:16]};
-    
-      // Store the lock settings
-      assign rom[8] = {7'h18, 16'hFC00, {6'h00, S1_LOCK[29:20]} };
-      assign rom[9] = {7'h19, 16'h8000, {1'b0 , S1_LOCK[34:30], S1_LOCK[9:0]} };
-      assign rom[10] = {7'h1A, 16'h8000, {1'b0 , S1_LOCK[39:35], S1_LOCK[19:10]} };
-      
-      // Store the filter settings
-      assign rom[11] = {7'h4E, 16'h66FF, 
-                S1_DIGITAL_FILT[9], 2'h0, S1_DIGITAL_FILT[8:7], 2'h0, 
-                S1_DIGITAL_FILT[6], 8'h00 };
-      assign rom[12] = {7'h4F, 16'h666F, 
-                S1_DIGITAL_FILT[5], 2'h0, S1_DIGITAL_FILT[4:3], 2'h0,
-                S1_DIGITAL_FILT[2:1], 2'h0, S1_DIGITAL_FILT[0], 4'h0 };
+  // rom entries contain (in order) the address, a bitmask, and a bitset
+  //***********************************************************************
+  // State 1 Initialization
+  //***********************************************************************
+  
+  // Store the power bits
+  assign rom[0] = {7'h28, 16'h0000, 16'hFFFF};
+  
+  // Store CLKOUT0 divide and phase
+  assign rom[1]  =  {7'h08, 16'h1000, S1_CLKOUT0[15:0]};
+  assign rom[2]  =  {7'h09, 16'h8000, S1_CLKOUT0[31:16]};
+                    
+  // Store CLKOUT0 additional frac values
+  assign rom[3] = {7'h07, 16'hC3FF, 2'b00 , S1_CLKOUT0[35:32], 10'h000}; 
+  
+  // Store CLKFBOUT additional frac values
+  assign rom[4] = {7'h13, 16'hC3FF, 2'b00 , S1_CLKFBOUT[35:32], 10'h000};
+  
+  // Store the input divider
+  assign rom[5] = {7'h16, 16'hC000, {2'h0, S1_DIVCLK[13:0]} };
+  
+  // Store CLKFBOUT divide and phase
+  assign rom[6] = {7'h14, 16'h1000, S1_CLKFBOUT[15:0]};
+  assign rom[7] = {7'h15, 16'h8000, S1_CLKFBOUT[31:16]};
+
+  // Store the lock settings
+  assign rom[8] = {7'h18, 16'hFC00, {6'h00, S1_LOCK[29:20]} };
+  assign rom[9] = {7'h19, 16'h8000, {1'b0 , S1_LOCK[34:30], S1_LOCK[9:0]} };
+  assign rom[10] = {7'h1A, 16'h8000, {1'b0 , S1_LOCK[39:35], S1_LOCK[19:10]} };
+  
+  // Store the filter settings
+  assign rom[11] = {7'h4E, 16'h66FF, 
+            S1_DIGITAL_FILT[9], 2'h0, S1_DIGITAL_FILT[8:7], 2'h0, 
+            S1_DIGITAL_FILT[6], 8'h00 };
+  assign rom[12] = {7'h4F, 16'h666F, 
+            S1_DIGITAL_FILT[5], 2'h0, S1_DIGITAL_FILT[4:3], 2'h0,
+            S1_DIGITAL_FILT[2:1], 2'h0, S1_DIGITAL_FILT[0], 4'h0 };
 
    // Output the initialized rom value based on rom_addr each clock cycle
    always @(posedge SCLK) begin
@@ -348,7 +349,7 @@ module mmcme2_drp
   wire        psdone_unused;
   wire        clkfboutb_unused;
   wire        clkout0b_unused;
-  wire        clkout1_unused;
+//  wire        clkout1_unused;
   wire        clkout1b_unused;
   wire        clkout2_unused;
   wire        clkout2b_unused;
@@ -373,15 +374,19 @@ module mmcme2_drp
     .CLKOUT0_PHASE        (0.000),
     .CLKOUT0_DUTY_CYCLE   (0.500),
     .CLKOUT0_USE_FINE_PS  ("FALSE"),
+    .CLKOUT1_DIVIDE_F     (DIV_F),
+    .CLKOUT1_PHASE        (0.000),
+    .CLKOUT1_DUTY_CYCLE   (0.500),
+    .CLKOUT1_USE_FINE_PS  ("FALSE"),
     .CLKIN1_PERIOD        (10.000),
     .REF_JITTER1          (0.010))
   mmcm_adv_inst
     // Output clocks
    (.CLKFBOUT            (CLKFBOUT_O),
     .CLKFBOUTB           (clkfboutb_unused),
-    .CLKOUT0             (PXL_CLK),
+    .CLKOUT0             (PXL_CLK_X5),
     .CLKOUT0B            (clkout0b_unused),
-    .CLKOUT1             (clkout1_unused),
+    .CLKOUT1             (PXL_CLK),
     .CLKOUT1B            (clkout1b_unused),
     .CLKOUT2             (clkout2_unused),
     .CLKOUT2B            (clkout2b_unused),

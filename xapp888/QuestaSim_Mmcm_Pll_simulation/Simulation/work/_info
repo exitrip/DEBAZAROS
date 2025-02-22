@@ -1,0 +1,169 @@
+m255
+K4
+z2
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 dC:/Projects/A_Diablo_Ultrascale+/Projects/Xapp888/Project/Latest_27Jun19/QuestaSim_Mmcm_Pll_simulation/Simulation
+T_opt
+!s110 1561550398
+V4oBXg`eFPFTBcdgX2<`V11
+Z1 04 6 4 work top_tb fast 0
+Z2 04 4 4 work glbl fast 0
+=1-00e04c360f85-5d135e3d-1e3-5018
+o-quiet -auto_acc_if_foreign -work work -L unisims_ver -L unimacro_ver -L secureip
+Z3 tCvgOpt 0
+n@_opt
+Z4 OL;O;10.7d;67
+R0
+T_opt1
+!s110 1561552860
+V=OB5;zWjcQ1eDK:I<EaO@0
+R1
+R2
+=1-00e04c360f85-5d1367dc-185-53bc
+o-quiet -auto_acc_if_foreign -work work -L unisims_ver -L unimacro_ver -L secureip +acc
+R3
+n@_opt1
+R4
+vglbl
+Z5 !s110 1561552858
+!i10b 1
+!s100 3kS7KIGVD0WYESC>[50kc3
+IBbE1[]ogI5hOBhO4P1]]Z3
+Z6 VDg1SIo80bB@j0V0VzS_@n1
+R0
+w1558713910
+8C:\CaeTools\Xilinx\2019_1\Vivado\2019.1\data\verilog\src\glbl.v
+FC:\CaeTools\Xilinx\2019_1\Vivado\2019.1\data\verilog\src\glbl.v
+L0 6
+Z7 OL;L;10.7d;67
+r1
+!s85 0
+31
+Z8 !s108 1561552858.000000
+!s107 C:\CaeTools\Xilinx\2019_1\Vivado\2019.1\data\verilog\src\glbl.v|
+!s90 -reportprogress|300|-work|work|C:\CaeTools\Xilinx\2019_1\Vivado\2019.1\data\verilog\src\glbl.v|
+!i113 0
+Z9 o-work work -L mtiAvm -L mtiRnm -L mtiOvm -L mtiUvm -L mtiUPF -L infact
+R3
+vmmcme3_drp
+Z10 !s110 1561552655
+!i10b 1
+!s100 >>NP;gD:;PE9V4SON87ea0
+IcL9c`zzoe2alC0S4MeD`33
+R6
+R0
+w1561464018
+8../../MMCME3_DRP/mmcme3_drp.v
+F../../MMCME3_DRP/mmcme3_drp.v
+F..\..\MMCME3_DRP\mmcme3_drp_func.h
+L0 96
+R7
+r1
+!s85 0
+31
+Z11 !s108 1561552655.000000
+!s107 ..\..\MMCME3_DRP\mmcme3_drp_func.h|../../MMCME3_DRP/mmcme3_drp.v|
+!s90 -reportprogress|300|-work|work|../../MMCME3_DRP/mmcme3_drp.v|
+!i113 0
+R9
+R3
+vplle3_drp
+R5
+!i10b 1
+!s100 <NYS4bk]CP;feegQ3aU;f2
+I?j`Ie8@@ojQGHP`Uk_9EB1
+R6
+R0
+w1561534513
+8../../PLLE3_DRP/plle3_drp.v
+F../../PLLE3_DRP/plle3_drp.v
+F..\..\PLLE3_DRP\plle3_drp_func.h
+L0 74
+R7
+r1
+!s85 0
+31
+R8
+!s107 ..\..\PLLE3_DRP\plle3_drp_func.h|../../PLLE3_DRP/plle3_drp.v|
+!s90 -reportprogress|300|-work|work|../../PLLE3_DRP/plle3_drp.v|
+!i113 0
+R9
+R3
+vtop_mmcme3
+R10
+!i10b 1
+!s100 <1_EHVTJD;nb:Jk7P<GeS3
+I8OKEJ87W7QHM9JdCHi3WX2
+R6
+R0
+w1561533012
+8../../MMCME3_DRP/top_mmcme3.v
+F../../MMCME3_DRP/top_mmcme3.v
+L0 94
+R7
+r1
+!s85 0
+31
+R11
+!s107 ../../MMCME3_DRP/top_mmcme3.v|
+!s90 -reportprogress|300|-work|work|../../MMCME3_DRP/top_mmcme3.v|
+!i113 0
+R9
+R3
+Ttop_mmcme3_opt
+!s110 1561551166
+VTf17F6FmPGCgRZG?VCoFa2
+04 10 4 work top_mmcme3 fast 0
+R2
+o-L work -L unisims_ver -L unimacro_ver -L secureip -work work
+R3
+ntop_mmcme3_opt
+R4
+R0
+vtop_plle3
+R5
+!i10b 1
+!s100 Qz0@UO<`Hk50@HZGQSGL?3
+IZ77RZEUR0A0;<ao4DJUh:0
+R6
+R0
+w1561534836
+8../../PLLE3_DRP/top_plle3.v
+F../../PLLE3_DRP/top_plle3.v
+L0 90
+R7
+r1
+!s85 0
+31
+R8
+!s107 ../../PLLE3_DRP/top_plle3.v|
+!s90 -reportprogress|300|-work|work|../../PLLE3_DRP/top_plle3.v|
+!i113 0
+R9
+R3
+vtop_tb
+R5
+!i10b 1
+!s100 i;NLJkzFRVUIGT7:gPJ1W3
+I6?:55Di6BkGj^KA9JRD781
+R6
+R0
+w1561536708
+8../../PLLE3_DRP/top_plle3_tb.v
+F../../PLLE3_DRP/top_plle3_tb.v
+L0 68
+R7
+r1
+!s85 0
+31
+R8
+!s107 ../../PLLE3_DRP/top_plle3_tb.v|
+!s90 -reportprogress|300|-work|work|../../PLLE3_DRP/top_plle3_tb.v|
+!i113 0
+R9
+R3
