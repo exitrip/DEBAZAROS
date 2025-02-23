@@ -68,13 +68,13 @@
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="177"/>
-    <Option Name="WTModelSimExportSim" Val="177"/>
-    <Option Name="WTQuestaExportSim" Val="177"/>
+    <Option Name="WTXSimExportSim" Val="178"/>
+    <Option Name="WTModelSimExportSim" Val="178"/>
+    <Option Name="WTQuestaExportSim" Val="178"/>
     <Option Name="WTIesExportSim" Val="5"/>
-    <Option Name="WTVcsExportSim" Val="177"/>
-    <Option Name="WTRivieraExportSim" Val="177"/>
-    <Option Name="WTActivehdlExportSim" Val="177"/>
+    <Option Name="WTVcsExportSim" Val="178"/>
+    <Option Name="WTRivieraExportSim" Val="178"/>
+    <Option Name="WTActivehdlExportSim" Val="178"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
@@ -131,26 +131,20 @@
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_0_0/ebaz4205_mixer_0_0.xci">
           <Proxy FileSetName="ebaz4205_mixer_0_0"/>
         </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_1_0/ebaz4205_mixer_1_0.xci">
-          <Proxy FileSetName="ebaz4205_mixer_1_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_2_0/ebaz4205_mixer_2_0.xci">
-          <Proxy FileSetName="ebaz4205_mixer_2_0"/>
-        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_3_0/ebaz4205_mixer_3_0.xci">
           <Proxy FileSetName="ebaz4205_mixer_3_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_6_0/ebaz4205_mixer_6_0.xci">
-          <Proxy FileSetName="ebaz4205_mixer_6_0"/>
         </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_4_0/ebaz4205_mixer_4_0.xci">
           <Proxy FileSetName="ebaz4205_mixer_4_0"/>
         </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_7_0/ebaz4205_mixer_7_0.xci">
-          <Proxy FileSetName="ebaz4205_mixer_7_0"/>
-        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_5_0/ebaz4205_mixer_5_0.xci">
           <Proxy FileSetName="ebaz4205_mixer_5_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_6_0/ebaz4205_mixer_6_0.xci">
+          <Proxy FileSetName="ebaz4205_mixer_6_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_7_0/ebaz4205_mixer_7_0.xci">
+          <Proxy FileSetName="ebaz4205_mixer_7_0"/>
         </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_8_0/ebaz4205_mixer_8_0.xci">
           <Proxy FileSetName="ebaz4205_mixer_8_0"/>
@@ -479,27 +473,6 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="ebaz4205_mixer_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_0_0" RelGenDir="$PGENDIR/ebaz4205_mixer_0_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_mixer_0_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_mixer_1_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_1_0" RelGenDir="$PGENDIR/ebaz4205_mixer_1_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_mixer_1_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_mixer_2_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_2_0" RelGenDir="$PGENDIR/ebaz4205_mixer_2_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_mixer_2_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
     <FileSet Name="ebaz4205_mixer_3_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_3_0" RelGenDir="$PGENDIR/ebaz4205_mixer_3_0">
       <Config>
         <Option Name="TopModule" Val="ebaz4205_mixer_3_0"/>
@@ -538,6 +511,13 @@
     <FileSet Name="ebaz4205_mixer_8_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_8_0" RelGenDir="$PGENDIR/ebaz4205_mixer_8_0">
       <Config>
         <Option Name="TopModule" Val="ebaz4205_mixer_8_0"/>
+        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
+        <Option Name="UseBlackboxStub" Val="1"/>
+      </Config>
+    </FileSet>
+    <FileSet Name="ebaz4205_mixer_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_0_0" RelGenDir="$PGENDIR/ebaz4205_mixer_0_0">
+      <Config>
+        <Option Name="TopModule" Val="ebaz4205_mixer_0_0"/>
         <Option Name="dataflowViewerSettings" Val="min_width=16"/>
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
@@ -586,45 +566,7 @@
     </Run>
     <Run Id="ebaz4205_processing_system7_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_processing_system7_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_processing_system7_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_processing_system7_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_processing_system7_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_processing_system7_0_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_mixer_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_mixer_1_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_1_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_1_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_1_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_1_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_1_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_mixer_2_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_2_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_2_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_2_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_2_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_2_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -634,9 +576,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_3_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_3_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_3_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_3_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_3_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_3_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -646,9 +586,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_6_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_6_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_6_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_6_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_6_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_6_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -658,9 +596,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_4_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_4_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_4_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_4_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_4_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_4_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -670,9 +606,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_7_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_7_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_7_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_7_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_7_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_7_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -682,9 +616,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_5_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_5_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_5_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_5_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_5_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_5_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -693,6 +625,16 @@
       <RQSFiles/>
     </Run>
     <Run Id="ebaz4205_mixer_8_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_8_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_8_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_8_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_8_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_8_0_synth_1">
+      <Strategy Version="1" Minor="2">
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
+        <Step Id="synth_design"/>
+      </Strategy>
+      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
+      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
+      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
+      <RQSFiles/>
+    </Run>
+    <Run Id="ebaz4205_mixer_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_synth_1">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
           <Desc>Vivado Synthesis Defaults</Desc>
@@ -741,66 +683,7 @@
     </Run>
     <Run Id="ebaz4205_processing_system7_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_processing_system7_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_processing_system7_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_processing_system7_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_processing_system7_0_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_mixer_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_mixer_1_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_1_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_1_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_1_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_1_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_mixer_2_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_2_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_2_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_2_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_2_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -817,9 +700,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_3_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_3_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_3_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_3_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_3_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -836,9 +717,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_6_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_6_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_6_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_6_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_6_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -855,9 +734,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_4_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_4_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_4_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_4_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_4_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -874,9 +751,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_7_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_7_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_7_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_7_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_7_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -893,9 +768,7 @@
     </Run>
     <Run Id="ebaz4205_mixer_5_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_5_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_5_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_5_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_5_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -911,6 +784,23 @@
       <RQSFiles/>
     </Run>
     <Run Id="ebaz4205_mixer_8_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_8_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_8_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_8_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_8_0_impl_1">
+      <Strategy Version="1" Minor="2">
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
+        <Step Id="init_design"/>
+        <Step Id="opt_design"/>
+        <Step Id="power_opt_design"/>
+        <Step Id="place_design"/>
+        <Step Id="post_place_power_opt_design"/>
+        <Step Id="phys_opt_design"/>
+        <Step Id="route_design"/>
+        <Step Id="post_route_phys_opt_design"/>
+        <Step Id="write_bitstream"/>
+      </Strategy>
+      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
+      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
+      <RQSFiles/>
+    </Run>
+    <Run Id="ebaz4205_mixer_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_impl_1">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
           <Desc>Default settings for Implementation.</Desc>
