@@ -1,7 +1,7 @@
 {
    "ActiveEmotionalView":"Default View",
    "Default View_ScaleFactor":"0.717936",
-   "Default View_TopLeft":"726,354",
+   "Default View_TopLeft":"-206,279",
    "ExpandedHierarchyInLayout":"",
    "comment_0":"PS groups:
 - Programmable System(CPU)
@@ -38,11 +38,11 @@ preplace portBus TMDS_Data_n_1 -pg 1 -lvl 5 -x 1770 -y 550 -defaultsOSRD
 preplace portBus TMDS_Data_p_1 -pg 1 -lvl 5 -x 1770 -y 530 -defaultsOSRD
 preplace inst PS -pg 1 -lvl 4 -x 1510 -y 240 -defaultsOSRD
 preplace inst HDMI_0 -pg 1 -lvl 3 -x 1070 -y 1020 -defaultsOSRD
-preplace inst ps7_axi_periph -pg 1 -lvl 1 -x 170 -y 880 -defaultsOSRD
 preplace inst HDMI_1 -pg 1 -lvl 3 -x 1070 -y 510 -defaultsOSRD
-preplace inst axi_gpio_0 -pg 1 -lvl 4 -x 1510 -y 720 -defaultsOSRD
 preplace inst axi_dynclk_0 -pg 1 -lvl 2 -x 560 -y 1090 -defaultsOSRD
 preplace inst dds_axi_interface_0 -pg 1 -lvl 2 -x 560 -y 1300 -defaultsOSRD
+preplace inst axi_gpio_0 -pg 1 -lvl 4 -x 1510 -y 720 -defaultsOSRD
+preplace inst ps7_axi_periph -pg 1 -lvl 1 -x 170 -y 880 -defaultsOSRD
 preplace netloc ARESETN_1 1 2 3 860 20 NJ 20 1740
 preplace netloc ENET0_GMII_RX_CLK_0_1 1 0 4 NJ 220 NJ 220 NJ 220 NJ
 preplace netloc ENET0_GMII_RX_DV_0_1 1 0 4 NJ 240 NJ 240 NJ 240 NJ
