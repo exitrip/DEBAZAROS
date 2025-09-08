@@ -14,20 +14,20 @@
 
 		// Parameters of Axi Slave Bus Interface S00_AXI
 		parameter integer C_S00_AXI_DATA_WIDTH	= 32,
-		parameter integer C_S00_AXI_ADDR_WIDTH	= 6
+		parameter integer C_S00_AXI_ADDR_WIDTH	= 10
 	)
 	(
 		// Users to add ports here
 		input wire pix_clk,
-        output wire [OUT_WIDTH-1 : 0] dout0, //rr
-        output wire [OUT_WIDTH-1 : 0] dout1, //br
-        output wire [OUT_WIDTH-1 : 0] dout2, //gr
-        output wire [OUT_WIDTH-1 : 0] dout3, //rb
-        output wire [OUT_WIDTH-1 : 0] dout4, //bb
-        output wire [OUT_WIDTH-1 : 0] dout5, //gb
-        output wire [OUT_WIDTH-1 : 0] dout6, //rg
-        output wire [OUT_WIDTH-1 : 0] dout7, //bg
-        output wire [OUT_WIDTH-1 : 0] dout8, //gg
+        output reg [OUT_WIDTH-1 : 0] dout0, //rr
+        output reg [OUT_WIDTH-1 : 0] dout1, //br
+        output reg [OUT_WIDTH-1 : 0] dout2, //gr
+        output reg [OUT_WIDTH-1 : 0] dout3, //rb
+        output reg [OUT_WIDTH-1 : 0] dout4, //bb
+        output reg [OUT_WIDTH-1 : 0] dout5, //gb
+        output reg [OUT_WIDTH-1 : 0] dout6, //rg
+        output reg [OUT_WIDTH-1 : 0] dout7, //bg
+        output reg [OUT_WIDTH-1 : 0] dout8, //gg
         input wire [IN_WIDTH-1 : 0] din0,
         input wire [IN_WIDTH-1 : 0] din1,
         input wire [IN_WIDTH-1 : 0] din2,
@@ -204,17 +204,17 @@
  
 	// Add user logic here
 	
-	reg [OUT_WIDTH-1 : 0] dout[4:0];
-	assign dout0 = dout[0];
-    assign dout1 = dout[1];
-    assign dout2 = dout[2];
-    assign dout3 = dout[3];
-    assign dout4 = dout[4];
-    assign dout5 = dout[5];
-    assign dout6 = dout[6];
-    assign dout7 = dout[7];
-    assign dout8 = dout[8];
-    assign dout9 = dout[9]; 
+//	reg [OUT_WIDTH-1 : 0] dout[3:0];
+//	alias dout0 = dout[0];
+//    assign dout1 = dout[1];
+//    assign dout2 = dout[2];
+//    assign dout3 = dout[3];
+//    assign dout4 = dout[4];
+//    assign dout5 = dout[5];
+//    assign dout6 = dout[6];
+//    assign dout7 = dout[7];
+//    assign dout8 = dout[8];
+//    assign dout9 = dout[9]; 
     
 //    genvar i;
 //    generate
@@ -241,26 +241,204 @@
 //    endgenerate	
 
 	//TODO figure out sane ctrl regs
-	always @( posedge pix_clk )
-	begin
-	  case ( ctrl[0][0] )
-        3'h0:
-          dout[0] <= 0;
-        3'h1:
-          dout[0] <= gains[0][0]*din0 + gains[0][1]*din1 + gains[0][2]*din2 + gains[0][3]*din3; 
-//            + gain_4*din4 + gain_5*din5 + gain_6*din6 + gain_7*din7;
-        3'h2:
-          dout[0] <= gains[0][0][ ctrl[0][1][8:0] +: 8]*din0 + gains[0][1][ ctrl[0][1][8:0] +: 8]*din1 + 
-            gains[0][2][ ctrl[0][1][8:0] +: 8]*din2 + gains[0][3][ ctrl[0][1][8:0] +: 8]*din3; 
-        3'h3:
-          dout[0] <= din0;
-        3'h4:
-          dout[0] <=  {OUT_WIDTH{1'b1}};
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[0][0])
+        8'h0:
+          dout0 <= 0;
+        8'h1:
+          dout0 <= gains[0][0]*din0 + gains[0][1]*din1 + gains[0][2]*din2 + gains[0][3]*din3 
+            + gains[0][4]*din4 + gains[0][5]*din5 + gains[0][6]*din6 + gains[0][7]*din7;
+//        8'h2:
+//          dout0 <= gains[0][0][ctrl[0][1][8:0] -: 8]*din0 + gains[0][1][ctrl[0][1][8:0] -: 8]*din1 + 
+//            gains[0][2][ctrl[0][1][8:0] -: 8]*din2 + gains[0][3][ctrl[0][1][8:0] -: 8]*din3 +
+//            gains[0][4][ctrl[0][1][8:0] -: 8]*din4 + gains[0][5][ctrl[0][1][8:0] -: 8]*din5 + 
+//            gains[0][6][ctrl[0][1][8:0] -: 8]*din6 + gains[0][7][ctrl[0][1][8:0] -: 8]*din7;
+        8'h3:
+          dout0 <= din0;
+        8'h4:
+          dout0 <= ctrl[0][1];
         default:
-          dout[0] <=  {OUT_WIDTH{1'b1}};
-      endcase 
+          dout0 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
     end
-
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[1][0])
+        8'h0:
+          dout1 <= 0;
+        8'h1:
+          dout1 <= gains[1][0]*din0 + gains[1][1]*din1 + gains[1][2]*din2 + gains[1][3]*din3 
+            + gains[1][4]*din4 + gains[1][5]*din5 + gains[1][6]*din6 + gains[1][7]*din7;
+//        8'h2:
+//          dout1 <= gains[1][0][ctrl[1][1][8:0] -: 8]*din0 + gains[1][1][ctrl[1][1][8:0] -: 8]*din1 + 
+//            gains[1][2][ctrl[1][1][8:0] -: 8]*din2 + gains[1][3][ctrl[1][1][8:0] -: 8]*din3 +
+//            gains[1][4][ctrl[1][1][8:0] -: 8]*din4 + gains[1][5][ctrl[1][1][8:0] -: 8]*din5 + 
+//            gains[1][6][ctrl[1][1][8:0] -: 8]*din6 + gains[1][7][ctrl[1][1][8:0] -: 8]*din7;
+        8'h3:
+          dout1 <= din0;
+        8'h4:
+          dout1 <= ctrl[1][1];
+        default:
+          dout1 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[2][0])
+        8'h0:
+          dout2 <= 0;
+        8'h1:
+          dout2 <= gains[2][0]*din0 + gains[2][1]*din1 + gains[2][2]*din2 + gains[2][3]*din3 
+            + gains[2][4]*din4 + gains[2][5]*din5 + gains[2][6]*din6 + gains[2][7]*din7;
+//        8'h2:
+//          dout2 <= gains[2][0][ctrl[2][1][8:0] -: 8]*din0 + gains[2][1][ctrl[2][1][8:0] -: 8]*din1 + 
+//            gains[2][2][ctrl[2][1][8:0] -: 8]*din2 + gains[2][3][ctrl[2][1][8:0] -: 8]*din3 +
+//            gains[2][4][ctrl[2][1][8:0] -: 8]*din4 + gains[2][5][ctrl[2][1][8:0] -: 8]*din5 + 
+//            gains[2][6][ctrl[2][1][8:0] -: 8]*din6 + gains[2][7][ctrl[2][1][8:0] -: 8]*din7;
+        8'h3:
+          dout2 <= din0;
+        8'h4:
+          dout2 <= ctrl[2][1];
+        default:
+          dout2 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[3][0])
+        8'h0:
+          dout3 <= 0;
+        8'h1:
+          dout3 <= gains[3][0]*din0 + gains[3][1]*din1 + gains[3][2]*din2 + gains[3][3]*din3 
+            + gains[3][4]*din4 + gains[3][5]*din5 + gains[3][6]*din6 + gains[3][7]*din7;
+//        8'h2:
+//          dout3 <= gains[3][0][ctrl[3][1][8:0] -: 8]*din0 + gains[3][1][ctrl[3][1][8:0] -: 8]*din1 + 
+//            gains[3][2][ctrl[3][1][8:0] -: 8]*din2 + gains[3][3][ctrl[3][1][8:0] -: 8]*din3 +
+//            gains[3][4][ctrl[3][1][8:0] -: 8]*din4 + gains[3][5][ctrl[3][1][8:0] -: 8]*din5 + 
+//            gains[3][6][ctrl[3][1][8:0] -: 8]*din6 + gains[3][7][ctrl[3][1][8:0] -: 8]*din7;
+        8'h3:
+          dout3 <= din1;
+        8'h4:
+          dout3 <= ctrl[3][1];
+        default:
+          dout3 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[4][0])
+        8'h0:
+          dout4 <= 0;
+        8'h1:
+          dout4 <= gains[4][0]*din0 + gains[4][1]*din1 + gains[4][2]*din2 + gains[4][3]*din3 
+            + gains[4][4]*din4 + gains[4][5]*din5 + gains[4][6]*din6 + gains[4][7]*din7;
+//        8'h2:
+//          dout4 <= gains[4][0][ctrl[4][1][8:0] -: 8]*din0 + gains[4][1][ctrl[4][1][8:0] -: 8]*din1 + 
+//            gains[4][2][ctrl[4][1][8:0] -: 8]*din2 + gains[4][3][ctrl[4][1][8:0] -: 8]*din3 +
+//            gains[4][4][ctrl[4][1][8:0] -: 8]*din4 + gains[4][5][ctrl[4][1][8:0] -: 8]*din5 + 
+//            gains[4][6][ctrl[4][1][8:0] -: 8]*din6 + gains[4][7][ctrl[4][1][8:0] -: 8]*din7;
+        8'h3:
+          dout4 <= din1;
+        8'h4:
+          dout4 <= ctrl[4][1];
+        default:
+          dout4 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[5][0])
+        8'h0:
+          dout5 <= 0;
+        8'h1:
+          dout5 <= gains[5][0]*din0 + gains[5][1]*din1 + gains[5][2]*din2 + gains[5][3]*din3 
+            + gains[5][4]*din4 + gains[5][5]*din5 + gains[5][6]*din6 + gains[5][7]*din7;
+//        8'h2:
+//          dout5 <= gains[5][0][ctrl[5][1][8:0] -: 8]*din0 + gains[5][1][ctrl[5][1][8:0] -: 8]*din1 + 
+//            gains[5][2][ctrl[5][1][8:0] -: 8]*din2 + gains[5][3][ctrl[5][1][8:0] -: 8]*din3 +
+//            gains[5][4][ctrl[5][1][8:0] -: 8]*din4 + gains[5][5][ctrl[5][1][8:0] -: 8]*din5 + 
+//            gains[5][6][ctrl[5][1][8:0] -: 8]*din6 + gains[5][7][ctrl[5][1][8:0] -: 8]*din7;
+        8'h3:
+          dout5 <= din1;
+        8'h4:
+          dout5 <= ctrl[5][1];
+        default:
+          dout5 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[6][0])
+        8'h0:
+          dout6 <= 0;
+        8'h1:
+          dout6 <= gains[6][0]*din0 + gains[6][1]*din1 + gains[6][2]*din2 + gains[6][3]*din3 
+            + gains[6][4]*din4 + gains[6][5]*din5 + gains[6][6]*din6 + gains[6][7]*din7;
+//        8'h2:
+//          dout6 <= gains[6][0][ctrl[6][1][8:0] -: 8]*din0 + gains[6][1][ctrl[6][1][8:0] -: 8]*din1 + 
+//            gains[6][2][ctrl[6][1][8:0] -: 8]*din2 + gains[6][3][ctrl[6][1][8:0] -: 8]*din3 +
+//            gains[6][4][ctrl[6][1][8:0] -: 8]*din4 + gains[6][5][ctrl[6][1][8:0] -: 8]*din5 + 
+//            gains[6][6][ctrl[6][1][8:0] -: 8]*din6 + gains[6][7][ctrl[6][1][8:0] -: 8]*din7;
+        8'h3:
+          dout6 <= din2;
+        8'h4:
+          dout6 <= ctrl[6][1];
+        default:
+          dout6 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[7][0])
+        8'h0:
+          dout7 <= 0;
+        8'h1:
+          dout7 <= gains[7][0]*din0 + gains[7][1]*din1 + gains[7][2]*din2 + gains[7][3]*din3 
+            + gains[7][4]*din4 + gains[7][5]*din5 + gains[7][6]*din6 + gains[7][7]*din7;
+//        8'h2:
+//          dout7 <= gains[7][0][ctrl[7][1][8:0] -: 8]*din0 + gains[7][1][ctrl[7][1][8:0] -: 8]*din1 + 
+//            gains[7][2][ctrl[7][1][8:0] -: 8]*din2 + gains[7][3][ctrl[7][1][8:0] -: 8]*din3 +
+//            gains[7][4][ctrl[7][1][8:0] -: 8]*din4 + gains[7][5][ctrl[7][1][8:0] -: 8]*din5 + 
+//            gains[7][6][ctrl[7][1][8:0] -: 8]*din6 + gains[7][7][ctrl[7][1][8:0] -: 8]*din7;
+        8'h3:
+          dout7 <= din2;
+        8'h4:
+          dout7 <= ctrl[7][1];
+        default:
+          dout7 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
+    
+    always @(posedge pix_clk)
+    begin
+      case (ctrl[8][0])
+        8'h0:
+          dout8 <= 0;
+        8'h1:
+          dout8 <= gains[8][0]*din0 + gains[8][1]*din1 + gains[8][2]*din2 + gains[8][3]*din3 
+            + gains[8][4]*din4 + gains[8][5]*din5 + gains[8][6]*din6 + gains[8][7]*din7;
+//        8'h2:
+//          dout8 <= gains[8][0][ctrl[8][1][8:0] -: 8]*din0 + gains[8][1][ctrl[8][1][8:0] -: 8]*din1 + 
+//            gains[8][2][ctrl[8][1][8:0] -: 8]*din2 + gains[8][3][ctrl[8][1][8:0] -: 8]*din3 +
+//            gains[8][4][ctrl[8][1][8:0] -: 8]*din4 + gains[8][5][ctrl[8][1][8:0] -: 8]*din5 + 
+//            gains[8][6][ctrl[8][1][8:0] -: 8]*din6 + gains[8][7][ctrl[8][1][8:0] -: 8]*din7;
+        8'h3:
+          dout8 <= din2;
+        8'h4:
+          dout8 <= {OUT_WIDTH{1'b1}};
+        8'h5:
+          dout8 <= ctrl[8][1];
+        default:
+          dout8 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
+      endcase
+    end
 	// User logic ends
-
 	endmodule

@@ -11,7 +11,7 @@
 		// Width of S_AXI data bus
 		parameter integer C_S_AXI_DATA_WIDTH	= 32,
 		// Width of S_AXI address bus
-		parameter integer C_S_AXI_ADDR_WIDTH	= 6
+		parameter integer C_S_AXI_ADDR_WIDTH	= 10
 	)
 	(
 		// Users to add ports here
@@ -197,7 +197,7 @@
 	// ADDR_LSB = 2 for 32 bits (n downto 2)
 	// ADDR_LSB = 3 for 64 bits (n downto 3)
 	localparam integer ADDR_LSB = (C_S_AXI_DATA_WIDTH/32) + 1;
-	localparam integer OPT_MEM_ADDR_BITS = 3;
+	localparam integer OPT_MEM_ADDR_BITS = 7;
 	//----------------------------------------------
 	//-- Signals for user logic register space example
 	//------------------------------------------------
@@ -1461,105 +1461,98 @@
 
 	// Add user logic here
 	always @( posedge S_AXI_ACLK )
-	begin
-	  if ( S_AXI_ARESETN == 1'b0 )
-	    begin
-	      axi_rdata  <= 0;
-	    end 
-	  else
-	    begin    
-		  GAIN_0_0 <= local_reg0_0;
-          GAIN_0_1 <= local_reg0_1;
-          GAIN_0_2 <= local_reg0_2;
-          GAIN_0_3 <= local_reg0_3;
-          GAIN_0_4 <= local_reg0_4;
-          GAIN_0_5 <= local_reg0_5;
-          GAIN_0_6 <= local_reg0_6;
-          GAIN_0_7 <= local_reg0_7;
-          CTRL_0_0 <= local_reg0_8;
-          CTRL_0_1 <= local_reg0_9;
-          GAIN_1_0 <= local_reg1_0;
-          GAIN_1_1 <= local_reg1_1;
-          GAIN_1_2 <= local_reg1_2;
-          GAIN_1_3 <= local_reg1_3;
-          GAIN_1_4 <= local_reg1_4;
-          GAIN_1_5 <= local_reg1_5;
-          GAIN_1_6 <= local_reg1_6;
-          GAIN_1_7 <= local_reg1_7;
-          CTRL_1_0 <= local_reg1_8;
-          CTRL_1_1 <= local_reg1_9;
-          GAIN_2_0 <= local_reg2_0;
-          GAIN_2_1 <= local_reg2_1;
-          GAIN_2_2 <= local_reg2_2;
-          GAIN_2_3 <= local_reg2_3;
-          GAIN_2_4 <= local_reg2_4;
-          GAIN_2_5 <= local_reg2_5;
-          GAIN_2_6 <= local_reg2_6;
-          GAIN_2_7 <= local_reg2_7;
-          CTRL_2_0 <= local_reg2_8;
-          CTRL_2_1 <= local_reg2_9;
-          GAIN_3_0 <= local_reg3_0;
-          GAIN_3_1 <= local_reg3_1;
-          GAIN_3_2 <= local_reg3_2;
-          GAIN_3_3 <= local_reg3_3;
-          GAIN_3_4 <= local_reg3_4;
-          GAIN_3_5 <= local_reg3_5;
-          GAIN_3_6 <= local_reg3_6;
-          GAIN_3_7 <= local_reg3_7;
-          CTRL_3_0 <= local_reg3_8;
-          CTRL_3_1 <= local_reg3_9;
-          GAIN_4_0 <= local_reg4_0;
-          GAIN_4_1 <= local_reg4_1;
-          GAIN_4_2 <= local_reg4_2;
-          GAIN_4_3 <= local_reg4_3;
-          GAIN_4_4 <= local_reg4_4;
-          GAIN_4_5 <= local_reg4_5;
-          GAIN_4_6 <= local_reg4_6;
-          GAIN_4_7 <= local_reg4_7;
-          CTRL_4_0 <= local_reg4_8;
-          CTRL_4_1 <= local_reg4_9;
-          GAIN_5_0 <= local_reg5_0;
-          GAIN_5_1 <= local_reg5_1;
-          GAIN_5_2 <= local_reg5_2;
-          GAIN_5_3 <= local_reg5_3;
-          GAIN_5_4 <= local_reg5_4;
-          GAIN_5_5 <= local_reg5_5;
-          GAIN_5_6 <= local_reg5_6;
-          GAIN_5_7 <= local_reg5_7;
-          CTRL_5_0 <= local_reg5_8;
-          CTRL_5_1 <= local_reg5_9;
-          GAIN_6_0 <= local_reg6_0;
-          GAIN_6_1 <= local_reg6_1;
-          GAIN_6_2 <= local_reg6_2;
-          GAIN_6_3 <= local_reg6_3;
-          GAIN_6_4 <= local_reg6_4;
-          GAIN_6_5 <= local_reg6_5;
-          GAIN_6_6 <= local_reg6_6;
-          GAIN_6_7 <= local_reg6_7;
-          CTRL_6_0 <= local_reg6_8;
-          CTRL_6_1 <= local_reg6_9;
-          GAIN_7_0 <= local_reg7_0;
-          GAIN_7_1 <= local_reg7_1;
-          GAIN_7_2 <= local_reg7_2;
-          GAIN_7_3 <= local_reg7_3;
-          GAIN_7_4 <= local_reg7_4;
-          GAIN_7_5 <= local_reg7_5;
-          GAIN_7_6 <= local_reg7_6;
-          GAIN_7_7 <= local_reg7_7;
-          CTRL_7_0 <= local_reg7_8;
-          CTRL_7_1 <= local_reg7_9;
-          GAIN_8_0 <= local_reg8_0;
-          GAIN_8_1 <= local_reg8_1;
-          GAIN_8_2 <= local_reg8_2;
-          GAIN_8_3 <= local_reg8_3;
-          GAIN_8_4 <= local_reg8_4;
-          GAIN_8_5 <= local_reg8_5;
-          GAIN_8_6 <= local_reg8_6;
-          GAIN_8_7 <= local_reg8_7;
-          CTRL_8_0 <= local_reg8_8;
-          CTRL_8_1 <= local_reg8_9;   
-	    end
-	end 
+    begin    
+      GAIN_0_0 <= local_reg0_0;
+      GAIN_0_1 <= local_reg0_1;
+      GAIN_0_2 <= local_reg0_2;
+      GAIN_0_3 <= local_reg0_3;
+      GAIN_0_4 <= local_reg0_4;
+      GAIN_0_5 <= local_reg0_5;
+      GAIN_0_6 <= local_reg0_6;
+      GAIN_0_7 <= local_reg0_7;
+      CTRL_0_0 <= local_reg0_8;
+      CTRL_0_1 <= local_reg0_9;
+      GAIN_1_0 <= local_reg1_0;
+      GAIN_1_1 <= local_reg1_1;
+      GAIN_1_2 <= local_reg1_2;
+      GAIN_1_3 <= local_reg1_3;
+      GAIN_1_4 <= local_reg1_4;
+      GAIN_1_5 <= local_reg1_5;
+      GAIN_1_6 <= local_reg1_6;
+      GAIN_1_7 <= local_reg1_7;
+      CTRL_1_0 <= local_reg1_8;
+      CTRL_1_1 <= local_reg1_9;
+      GAIN_2_0 <= local_reg2_0;
+      GAIN_2_1 <= local_reg2_1;
+      GAIN_2_2 <= local_reg2_2;
+      GAIN_2_3 <= local_reg2_3;
+      GAIN_2_4 <= local_reg2_4;
+      GAIN_2_5 <= local_reg2_5;
+      GAIN_2_6 <= local_reg2_6;
+      GAIN_2_7 <= local_reg2_7;
+      CTRL_2_0 <= local_reg2_8;
+      CTRL_2_1 <= local_reg2_9;
+      GAIN_3_0 <= local_reg3_0;
+      GAIN_3_1 <= local_reg3_1;
+      GAIN_3_2 <= local_reg3_2;
+      GAIN_3_3 <= local_reg3_3;
+      GAIN_3_4 <= local_reg3_4;
+      GAIN_3_5 <= local_reg3_5;
+      GAIN_3_6 <= local_reg3_6;
+      GAIN_3_7 <= local_reg3_7;
+      CTRL_3_0 <= local_reg3_8;
+      CTRL_3_1 <= local_reg3_9;
+      GAIN_4_0 <= local_reg4_0;
+      GAIN_4_1 <= local_reg4_1;
+      GAIN_4_2 <= local_reg4_2;
+      GAIN_4_3 <= local_reg4_3;
+      GAIN_4_4 <= local_reg4_4;
+      GAIN_4_5 <= local_reg4_5;
+      GAIN_4_6 <= local_reg4_6;
+      GAIN_4_7 <= local_reg4_7;
+      CTRL_4_0 <= local_reg4_8;
+      CTRL_4_1 <= local_reg4_9;
+      GAIN_5_0 <= local_reg5_0;
+      GAIN_5_1 <= local_reg5_1;
+      GAIN_5_2 <= local_reg5_2;
+      GAIN_5_3 <= local_reg5_3;
+      GAIN_5_4 <= local_reg5_4;
+      GAIN_5_5 <= local_reg5_5;
+      GAIN_5_6 <= local_reg5_6;
+      GAIN_5_7 <= local_reg5_7;
+      CTRL_5_0 <= local_reg5_8;
+      CTRL_5_1 <= local_reg5_9;
+      GAIN_6_0 <= local_reg6_0;
+      GAIN_6_1 <= local_reg6_1;
+      GAIN_6_2 <= local_reg6_2;
+      GAIN_6_3 <= local_reg6_3;
+      GAIN_6_4 <= local_reg6_4;
+      GAIN_6_5 <= local_reg6_5;
+      GAIN_6_6 <= local_reg6_6;
+      GAIN_6_7 <= local_reg6_7;
+      CTRL_6_0 <= local_reg6_8;
+      CTRL_6_1 <= local_reg6_9;
+      GAIN_7_0 <= local_reg7_0;
+      GAIN_7_1 <= local_reg7_1;
+      GAIN_7_2 <= local_reg7_2;
+      GAIN_7_3 <= local_reg7_3;
+      GAIN_7_4 <= local_reg7_4;
+      GAIN_7_5 <= local_reg7_5;
+      GAIN_7_6 <= local_reg7_6;
+      GAIN_7_7 <= local_reg7_7;
+      CTRL_7_0 <= local_reg7_8;
+      CTRL_7_1 <= local_reg7_9;
+      GAIN_8_0 <= local_reg8_0;
+      GAIN_8_1 <= local_reg8_1;
+      GAIN_8_2 <= local_reg8_2;
+      GAIN_8_3 <= local_reg8_3;
+      GAIN_8_4 <= local_reg8_4;
+      GAIN_8_5 <= local_reg8_5;
+      GAIN_8_6 <= local_reg8_6;
+      GAIN_8_7 <= local_reg8_7;
+      CTRL_8_0 <= local_reg8_8;
+      CTRL_8_1 <= local_reg8_9;   
+    end
 	// User logic ends
 
 	endmodule
