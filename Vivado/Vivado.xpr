@@ -47,9 +47,9 @@
     <Option Name="DefaultLib" Val="xil_defaultlib"/>
     <Option Name="ProjectType" Val="Default"/>
     <Option Name="IPRepoPath" Val="$PPRDIR/../ip_repo/myip_1_0"/>
-    <Option Name="IPRepoPath" Val="$PPRDIR/../ip_repo/mixer_1_0"/>
     <Option Name="IPRepoPath" Val="$PPRDIR/../IP_rgb2dvi"/>
     <Option Name="IPRepoPath" Val="$PPRDIR/../IP_axi_dynclk"/>
+    <Option Name="IPRepoPath" Val="$PPRDIR/../ip_repo/mixer_1_0"/>
     <Option Name="IPOutputRepo" Val="$PCACHEDIR/ip"/>
     <Option Name="IPDefaultOutputPath" Val="$PGENDIR/sources_1"/>
     <Option Name="IPCachePermission" Val="read"/>
@@ -69,13 +69,13 @@
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="184"/>
-    <Option Name="WTModelSimExportSim" Val="184"/>
-    <Option Name="WTQuestaExportSim" Val="184"/>
+    <Option Name="WTXSimExportSim" Val="186"/>
+    <Option Name="WTModelSimExportSim" Val="186"/>
+    <Option Name="WTQuestaExportSim" Val="186"/>
     <Option Name="WTIesExportSim" Val="5"/>
-    <Option Name="WTVcsExportSim" Val="184"/>
-    <Option Name="WTRivieraExportSim" Val="184"/>
-    <Option Name="WTActivehdlExportSim" Val="184"/>
+    <Option Name="WTVcsExportSim" Val="186"/>
+    <Option Name="WTRivieraExportSim" Val="186"/>
+    <Option Name="WTActivehdlExportSim" Val="186"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
@@ -126,6 +126,24 @@
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_7_0/ebaz4205_xbip_multadd_7_0.xci">
+          <Proxy FileSetName="ebaz4205_xbip_multadd_7_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_8_0/ebaz4205_xbip_multadd_8_0.xci">
+          <Proxy FileSetName="ebaz4205_xbip_multadd_8_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_0_0/ebaz4205_mixer_0_0.xci">
+          <Proxy FileSetName="ebaz4205_mixer_0_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_c_addsub_0_0/ebaz4205_c_addsub_0_0.xci">
+          <Proxy FileSetName="ebaz4205_c_addsub_0_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_dds_axi_interface_0_0/ebaz4205_dds_axi_interface_0_0.xci">
+          <Proxy FileSetName="ebaz4205_dds_axi_interface_0_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbar_0/ebaz4205_xbar_0.xci">
+          <Proxy FileSetName="ebaz4205_xbar_0"/>
+        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_processing_system7_0_0/ebaz4205_processing_system7_0_0.xci">
           <Proxy FileSetName="ebaz4205_processing_system7_0_0"/>
         </CompFileExtendedInfo>
@@ -149,24 +167,6 @@
         </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_6_0/ebaz4205_xbip_multadd_6_0.xci">
           <Proxy FileSetName="ebaz4205_xbip_multadd_6_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_7_0/ebaz4205_xbip_multadd_7_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_7_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_8_0/ebaz4205_xbip_multadd_8_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_8_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_0_0/ebaz4205_mixer_0_0.xci">
-          <Proxy FileSetName="ebaz4205_mixer_0_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_dds_axi_interface_0_0/ebaz4205_dds_axi_interface_0_0.xci">
-          <Proxy FileSetName="ebaz4205_dds_axi_interface_0_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbar_0/ebaz4205_xbar_0.xci">
-          <Proxy FileSetName="ebaz4205_xbar_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_c_addsub_0_0/ebaz4205_c_addsub_0_0.xci">
-          <Proxy FileSetName="ebaz4205_c_addsub_0_0"/>
         </CompFileExtendedInfo>
       </File>
       <File Path="$PGENDIR/sources_1/bd/ebaz4205/hdl/ebaz4205_wrapper.v">
@@ -737,9 +737,7 @@
     </Run>
     <Run Id="ebaz4205_dds_axi_interface_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_dds_axi_interface_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_dds_axi_interface_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_dds_axi_interface_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -749,9 +747,7 @@
     </Run>
     <Run Id="ebaz4205_c_addsub_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_c_addsub_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_c_addsub_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_c_addsub_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_synth_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
         <Step Id="synth_design"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -995,9 +991,7 @@
     </Run>
     <Run Id="ebaz4205_dds_axi_interface_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_dds_axi_interface_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_dds_axi_interface_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
@@ -1014,9 +1008,7 @@
     </Run>
     <Run Id="ebaz4205_c_addsub_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_c_addsub_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_c_addsub_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_impl_1">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>
