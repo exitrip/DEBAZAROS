@@ -1,5 +1,5 @@
 # Vivado project for EBAZ4205_SDR_spectrum
- 
+
 ## Overview
 
 This is the Xilinx Vivado 2022.2 project that let's you to program the Zynq7010 FPGA (PL side) contained in the EBAZ4205 board. 
@@ -39,3 +39,14 @@ You need Vivado 2022.2 ... I've never tried with different versions!
   * after building the project (synthesis + implementation + bitstream) you'll notice that Vivado will complain with a Timing Error. I'm working on it but it is not blocking.
 
   
+### Numixer recipes sudo devmem 0x43d00000 32 $((0x80000000 + 0x2340))
+
+1920x1080x30fps
+```sh
+##hysnc
+sudo devmem $((0x43c50000 + (3 * 4))) 32 0x6 #sine;
+sudo devmem $((0x43c50000 + (5 * 4))) 32 0x6 #slow ramp;
+##Most ints look good up there
+sudo devmem 0x43d00000 32 $((0x80000000 + 0x509 * N))
+```
+

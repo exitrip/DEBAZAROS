@@ -69,13 +69,13 @@
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="186"/>
-    <Option Name="WTModelSimExportSim" Val="186"/>
-    <Option Name="WTQuestaExportSim" Val="186"/>
+    <Option Name="WTXSimExportSim" Val="187"/>
+    <Option Name="WTModelSimExportSim" Val="187"/>
+    <Option Name="WTQuestaExportSim" Val="187"/>
     <Option Name="WTIesExportSim" Val="5"/>
-    <Option Name="WTVcsExportSim" Val="186"/>
-    <Option Name="WTRivieraExportSim" Val="186"/>
-    <Option Name="WTActivehdlExportSim" Val="186"/>
+    <Option Name="WTVcsExportSim" Val="187"/>
+    <Option Name="WTRivieraExportSim" Val="187"/>
+    <Option Name="WTActivehdlExportSim" Val="187"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
@@ -126,20 +126,8 @@
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_7_0/ebaz4205_xbip_multadd_7_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_7_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_8_0/ebaz4205_xbip_multadd_8_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_8_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_mixer_0_0/ebaz4205_mixer_0_0.xci">
-          <Proxy FileSetName="ebaz4205_mixer_0_0"/>
-        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_c_addsub_0_0/ebaz4205_c_addsub_0_0.xci">
           <Proxy FileSetName="ebaz4205_c_addsub_0_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_dds_axi_interface_0_0/ebaz4205_dds_axi_interface_0_0.xci">
-          <Proxy FileSetName="ebaz4205_dds_axi_interface_0_0"/>
         </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbar_0/ebaz4205_xbar_0.xci">
           <Proxy FileSetName="ebaz4205_xbar_0"/>
@@ -147,26 +135,11 @@
         <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_processing_system7_0_0/ebaz4205_processing_system7_0_0.xci">
           <Proxy FileSetName="ebaz4205_processing_system7_0_0"/>
         </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_0_0/ebaz4205_xbip_multadd_0_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_0_0"/>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_axi_gpio_hdmi_2/ebaz4205_axi_gpio_hdmi_2.xci">
+          <Proxy FileSetName="ebaz4205_axi_gpio_hdmi_2"/>
         </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_1_0/ebaz4205_xbip_multadd_1_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_1_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_2_0/ebaz4205_xbip_multadd_2_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_2_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_3_0/ebaz4205_xbip_multadd_3_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_3_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_4_0/ebaz4205_xbip_multadd_4_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_4_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_5_0/ebaz4205_xbip_multadd_5_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_5_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_xbip_multadd_6_0/ebaz4205_xbip_multadd_6_0.xci">
-          <Proxy FileSetName="ebaz4205_xbip_multadd_6_0"/>
+        <CompFileExtendedInfo CompFileName="ebaz4205.bd" FileRelPathName="ip/ebaz4205_tier2_xbar_1_0/ebaz4205_tier2_xbar_1_0.xci">
+          <Proxy FileSetName="ebaz4205_tier2_xbar_1_0"/>
         </CompFileExtendedInfo>
       </File>
       <File Path="$PGENDIR/sources_1/bd/ebaz4205/hdl/ebaz4205_wrapper.v">
@@ -499,76 +472,6 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_0_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_0_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_0_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_1_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_1_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_1_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_1_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_2_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_2_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_2_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_2_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_3_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_3_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_3_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_3_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_4_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_4_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_4_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_4_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_5_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_5_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_5_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_5_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_6_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_6_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_6_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_6_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_7_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_7_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_7_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_7_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_xbip_multadd_8_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_xbip_multadd_8_0" RelGenDir="$PGENDIR/ebaz4205_xbip_multadd_8_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_xbip_multadd_8_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
-    <FileSet Name="ebaz4205_dds_axi_interface_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_dds_axi_interface_0_0" RelGenDir="$PGENDIR/ebaz4205_dds_axi_interface_0_0">
-      <Config>
-        <Option Name="TopModule" Val="ebaz4205_dds_axi_interface_0_0"/>
-        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
     <FileSet Name="ebaz4205_c_addsub_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_c_addsub_0_0" RelGenDir="$PGENDIR/ebaz4205_c_addsub_0_0">
       <Config>
         <Option Name="TopModule" Val="ebaz4205_c_addsub_0_0"/>
@@ -576,9 +479,16 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="ebaz4205_mixer_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_mixer_0_0" RelGenDir="$PGENDIR/ebaz4205_mixer_0_0">
+    <FileSet Name="ebaz4205_axi_gpio_hdmi_2" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_axi_gpio_hdmi_2" RelGenDir="$PGENDIR/ebaz4205_axi_gpio_hdmi_2">
       <Config>
-        <Option Name="TopModule" Val="ebaz4205_mixer_0_0"/>
+        <Option Name="TopModule" Val="ebaz4205_axi_gpio_hdmi_2"/>
+        <Option Name="dataflowViewerSettings" Val="min_width=16"/>
+        <Option Name="UseBlackboxStub" Val="1"/>
+      </Config>
+    </FileSet>
+    <FileSet Name="ebaz4205_tier2_xbar_1_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/ebaz4205_tier2_xbar_1_0" RelGenDir="$PGENDIR/ebaz4205_tier2_xbar_1_0">
+      <Config>
+        <Option Name="TopModule" Val="ebaz4205_tier2_xbar_1_0"/>
         <Option Name="dataflowViewerSettings" Val="min_width=16"/>
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
@@ -645,106 +555,6 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="ebaz4205_xbip_multadd_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_0_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_1_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_1_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_1_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_1_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_1_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_1_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_2_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_2_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_2_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_2_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_2_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_2_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_3_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_3_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_3_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_3_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_3_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_3_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_4_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_4_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_4_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_4_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_4_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_4_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_5_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_5_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_5_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_5_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_5_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_5_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_6_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_6_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_6_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_6_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_6_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_6_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_7_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_7_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_7_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_7_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_7_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_7_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_8_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_xbip_multadd_8_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_8_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_xbip_multadd_8_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_8_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_8_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_dds_axi_interface_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_dds_axi_interface_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_dds_axi_interface_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_dds_axi_interface_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_synth_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
     <Run Id="ebaz4205_c_addsub_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_c_addsub_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_c_addsub_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_c_addsub_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_synth_1">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022"/>
@@ -755,7 +565,19 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="ebaz4205_mixer_0_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_mixer_0_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_mixer_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_synth_1">
+    <Run Id="ebaz4205_axi_gpio_hdmi_2_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_axi_gpio_hdmi_2" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_axi_gpio_hdmi_2" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_axi_gpio_hdmi_2_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_axi_gpio_hdmi_2_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_axi_gpio_hdmi_2_synth_1">
+      <Strategy Version="1" Minor="2">
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
+          <Desc>Vivado Synthesis Defaults</Desc>
+        </StratHandle>
+        <Step Id="synth_design"/>
+      </Strategy>
+      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
+      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2022"/>
+      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
+      <RQSFiles/>
+    </Run>
+    <Run Id="ebaz4205_tier2_xbar_1_0_synth_1" Type="Ft3:Synth" SrcSet="ebaz4205_tier2_xbar_1_0" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_tier2_xbar_1_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/ebaz4205_tier2_xbar_1_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_tier2_xbar_1_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_tier2_xbar_1_0_synth_1">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2022">
           <Desc>Vivado Synthesis Defaults</Desc>
@@ -836,176 +658,6 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="ebaz4205_xbip_multadd_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_0_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_1_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_1_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_1_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_1_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_1_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_2_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_2_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_2_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_2_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_2_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_3_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_3_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_3_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_3_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_3_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_4_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_4_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_4_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_4_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_4_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_5_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_5_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_5_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_5_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_5_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_6_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_6_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_6_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_6_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_6_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_7_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_7_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_7_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_7_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_7_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_xbip_multadd_8_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_xbip_multadd_8_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_xbip_multadd_8_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_8_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_xbip_multadd_8_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="ebaz4205_dds_axi_interface_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_dds_axi_interface_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_dds_axi_interface_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_dds_axi_interface_0_0_impl_1">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
     <Run Id="ebaz4205_c_addsub_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_c_addsub_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_c_addsub_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_c_addsub_0_0_impl_1">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022"/>
@@ -1023,7 +675,26 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="ebaz4205_mixer_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_mixer_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_mixer_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_mixer_0_0_impl_1">
+    <Run Id="ebaz4205_axi_gpio_hdmi_2_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_axi_gpio_hdmi_2" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_axi_gpio_hdmi_2_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_axi_gpio_hdmi_2_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_axi_gpio_hdmi_2_impl_1">
+      <Strategy Version="1" Minor="2">
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
+          <Desc>Default settings for Implementation.</Desc>
+        </StratHandle>
+        <Step Id="init_design"/>
+        <Step Id="opt_design"/>
+        <Step Id="power_opt_design"/>
+        <Step Id="place_design"/>
+        <Step Id="post_place_power_opt_design"/>
+        <Step Id="phys_opt_design"/>
+        <Step Id="route_design"/>
+        <Step Id="post_route_phys_opt_design"/>
+        <Step Id="write_bitstream"/>
+      </Strategy>
+      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2022"/>
+      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
+      <RQSFiles/>
+    </Run>
+    <Run Id="ebaz4205_tier2_xbar_1_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z010clg400-1" ConstrsSet="ebaz4205_tier2_xbar_1_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="ebaz4205_tier2_xbar_1_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/ebaz4205_tier2_xbar_1_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/ebaz4205_tier2_xbar_1_0_impl_1">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2022">
           <Desc>Default settings for Implementation.</Desc>

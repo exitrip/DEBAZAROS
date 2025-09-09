@@ -1,7 +1,7 @@
 
 `timescale 1 ns / 1 ps
 
-	module mixer_v1_0 #
+  	module mixer_v1_0 #
 	(
 		// Users to add parameters here
         parameter integer OUT_WIDTH	= 32,
@@ -230,23 +230,23 @@
 	//TODO figure out sane ctrl regs
     always @(posedge pix_clk)
     begin
-      case (ctrl[0][0])
+      case (ctrl[0][0][7:0])
         8'h0:
           dout0 <= 0;
         8'h1:
           dout0 <= gains[0][0]*din0 + gains[0][1]*din1 + gains[0][2]*din2 + gains[0][3]*din3 
             + gains[0][4]*din4 + gains[0][5]*din5;
         8'h4:
-          dout0 <= ctrl[0][1];
+          dout0 <= ctrl[0][0][31:16];
         //level clipping
         8'h10:
-          dout0 <= (din0 >= ctrl[0][1]) ?  din0 : 0;
+          dout0 <= (din0 >= ctrl[0][1][15:0]) ?  din0 : 0;
         8'h11:
-          dout0 <= (din0 <= ctrl[0][1]) ?  din0 : 0;
+          dout0 <= (din0 <= ctrl[0][1][31:16]) ?  din0 : 0;
         8'h12:
-          dout0 <= (din0 == ctrl[0][1]) ?  din0 : 0;
-        8'h12:
-          dout0 <= (din0 >= ctrl[0][1][7:0] && din0 <= ctrl[0][1][16:8]) ?  din0 : 0;
+          dout0 <= (din0 == ctrl[0][1][15:0]) ?  din0 : 0;
+        8'h13:
+          dout0 <= (din0 >= ctrl[0][1][15:0] && din0 <= ctrl[0][1][31:16]) ?  din0 : 0;
         default:
           dout0 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -254,7 +254,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[1][0])
+      case (ctrl[1][0][7:0])
         8'h0:
           dout1 <= 0;
         8'h1:
@@ -263,16 +263,16 @@
         8'h3:
           dout1 <= din0;
         8'h4:
-          dout1 <= ctrl[1][1];
+          dout1 <= ctrl[1][0][31:16];
          //level clipping
         8'h10:
-          dout1 <= (din0 >= ctrl[1][1]) ?  din0 : 0;
+          dout1 <= (din0 >= ctrl[1][1][15:0]) ?  din0 : 0;
         8'h11:
-          dout1 <= (din0 <= ctrl[1][1]) ?  din0 : 0;
+          dout1 <= (din0 <= ctrl[1][1][31:16]) ?  din0 : 0;
         8'h12:
-          dout1 <= (din0 == ctrl[1][1]) ?  din0 : 0;
-        8'h12:
-          dout1 <= (din0 >= ctrl[1][1][7:0] && din0 <= ctrl[1][1][16:8]) ?  din0 : 0;
+          dout1 <= (din0 == ctrl[1][1][15:0]) ?  din0 : 0;
+        8'h13:
+          dout1 <= (din0 >= ctrl[1][1][15:0] && din0 <= ctrl[1][1][31:16]) ?  din0 : 0;
         default:
           dout1 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -280,7 +280,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[2][0])
+      case (ctrl[2][0][7:0])
         8'h0:
           dout2 <= 0;
         8'h1:
@@ -289,16 +289,16 @@
         8'h3:
           dout2 <= din0;
         8'h4:
-          dout2 <= ctrl[2][1];
+          dout2 <= ctrl[2][0][31:16];
         //level clipping
         8'h10:
-          dout2 <= (din0 >= ctrl[2][1]) ?  din0 : 0;
+          dout2 <= (din0 >= ctrl[2][1][15:0]) ?  din0 : 0;
         8'h11:
-          dout2 <= (din0 <= ctrl[2][1]) ?  din0 : 0;
+          dout2 <= (din0 <= ctrl[2][1][31:16]) ?  din0 : 0;
         8'h12:
-          dout2 <= (din0 == ctrl[2][1]) ?  din0 : 0;
-        8'h12:
-          dout2 <= (din0 >= ctrl[2][1][7:0] && din0 <= ctrl[2][1][16:8]) ?  din0 : 0;
+          dout2 <= (din0 == ctrl[2][1][15:0]) ?  din0 : 0;
+        8'h13:
+          dout2 <= (din0 >= ctrl[2][1][15:0] && din0 <= ctrl[2][1][31:16]) ?  din0 : 0;
         default:
           dout2 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -306,7 +306,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[3][0])
+      case (ctrl[3][0][7:0])
         8'h0:
           dout3 <= 0;
         8'h1:
@@ -315,16 +315,16 @@
         8'h3:
           dout3 <= din1;
         8'h4:
-          dout3 <= ctrl[3][1];
+          dout3 <= ctrl[3][0][31:16];
         //level clipping
         8'h10:
-          dout3 <= (din1 >= ctrl[3][1]) ?  din1 : 0;
+          dout3 <= (din1 >= ctrl[3][1][15:0]) ?  din1 : 0;
         8'h11:
-          dout3 <= (din1 <= ctrl[3][1]) ?  din1 : 0;
+          dout3 <= (din1 <= ctrl[3][1][31:16]) ?  din1 : 0;
         8'h12:
-          dout3 <= (din1 == ctrl[3][1]) ?  din1 : 0;
-        8'h12:
-          dout3 <= (din1 >= ctrl[3][1][7:0] && din1 <= ctrl[3][1][16:8]) ?  din1 : 0;
+          dout3 <= (din1 == ctrl[3][1][15:0]) ?  din1 : 0;
+        8'h13:
+          dout3 <= (din1 >= ctrl[3][1][15:0] && din1 <= ctrl[3][1][31:16]) ?  din1 : 0;
         default:
           dout3 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -332,7 +332,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[4][0])
+      case (ctrl[4][0][7:0])
         8'h0:
           dout4 <= 0;
         8'h1:
@@ -341,16 +341,16 @@
         8'h3:
           dout4 <= din1;
         8'h4:
-          dout4 <= ctrl[4][1];
+          dout4 <= ctrl[4][0][31:16];
          //level clipping
         8'h10:
-          dout4 <= (din1 >= ctrl[4][1]) ?  din1 : 0;
+          dout4 <= (din1 >= ctrl[4][1][15:0]) ?  din1 : 0;
         8'h11:
-          dout4 <= (din1 <= ctrl[4][1]) ?  din1 : 0;
+          dout4 <= (din1 <= ctrl[4][1][31:16]) ?  din1 : 0;
         8'h12:
-          dout4 <= (din1 == ctrl[4][1]) ?  din1 : 0;
-        8'h12:
-          dout4 <= (din1 >= ctrl[4][1][7:0] && din1 <= ctrl[4][1][16:8]) ?  din1 : 0;
+          dout4 <= (din1 == ctrl[4][1][15:0]) ?  din1 : 0;
+        8'h13:
+          dout4 <= (din1 >= ctrl[4][1][15:0] && din1 <= ctrl[4][1][31:16]) ?  din1 : 0;
         default:
           dout4 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -358,7 +358,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[5][0])
+      case (ctrl[5][0][7:0])
         8'h0:
           dout5 <= 0;
         8'h1:
@@ -367,16 +367,16 @@
         8'h3:
           dout5 <= din1;
         8'h4:
-          dout5 <= ctrl[5][1];
+          dout5 <= ctrl[5][0][31:16];
          //level clipping
         8'h10:
-          dout5 <= (din1 >= ctrl[5][1]) ?  din1 : 0;
+          dout5 <= (din1 >= ctrl[5][1][15:0]) ?  din1 : 0;
         8'h11:
-          dout5 <= (din1 <= ctrl[5][1]) ?  din1 : 0;
+          dout5 <= (din1 <= ctrl[5][1][31:16]) ?  din1 : 0;
         8'h12:
-          dout5 <= (din1 == ctrl[5][1]) ?  din1 : 0;
-        8'h12:
-          dout5 <= (din1 >= ctrl[5][1][7:0] && din1 <= ctrl[5][1][16:8]) ?  din1 : 0;
+          dout5 <= (din1 == ctrl[5][1][15:0]) ?  din1 : 0;
+        8'h13:
+          dout5 <= (din1 >= ctrl[5][1][15:0] && din1 <= ctrl[5][1][31:16]) ?  din1 : 0;
         default:
           dout5 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -384,7 +384,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[6][0])
+      case (ctrl[6][0][7:0])
         8'h0:
           dout6 <= 0;
         8'h1:
@@ -393,16 +393,16 @@
         8'h3:
           dout6 <= din2;
         8'h4:
-          dout6 <= ctrl[6][1];
+          dout6 <= ctrl[6][0][31:16];
                    //level clipping
         8'h10:
-          dout6 <= (din2 >= ctrl[6][1]) ?  din2 : 0;
+          dout6 <= (din2 >= ctrl[6][1][15:0]) ?  din2 : 0;
         8'h11:
-          dout6 <= (din2 <= ctrl[6][1]) ?  din2 : 0;
+          dout6 <= (din2 <= ctrl[6][1][31:16]) ?  din2 : 0;
         8'h12:
-          dout6 <= (din2 == ctrl[6][1]) ?  din2 : 0;
-        8'h12:
-          dout6 <= (din2 >= ctrl[6][1][7:0] && din2 <= ctrl[6][1][16:8]) ?  din2 : 0;
+          dout6 <= (din2 == ctrl[6][1][15:0]) ?  din2 : 0;
+        8'h13:
+          dout6 <= (din2 >= ctrl[6][1][15:0] && din2 <= ctrl[6][1][31:16]) ?  din2 : 0;
         default:
           dout6 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -410,7 +410,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[7][0])
+      case (ctrl[7][0][7:0])
         8'h0:
           dout7 <= 0;
         8'h1:
@@ -420,16 +420,16 @@
         8'h3:
           dout7 <= din2;
         8'h4:
-          dout7 <= ctrl[7][1];
+          dout7 <= ctrl[7][0][31:16];
         //level clipping
         8'h10:
-          dout7 <= (din2 >= ctrl[7][1]) ?  din2 : 0;
+          dout7 <= (din2 >= ctrl[7][1][15:0]) ?  din2 : 0;
         8'h11:
-          dout7 <= (din2 <= ctrl[7][1]) ?  din2 : 0;
+          dout7 <= (din2 <= ctrl[7][1][31:16]) ?  din2 : 0;
         8'h12:
-          dout7 <= (din2 == ctrl[7][1]) ?  din2 : 0;
-        8'h12:
-          dout7 <= (din2 >= ctrl[7][1][7:0] && din2 <= ctrl[7][1][16:8]) ?  din2 : 0;
+          dout7 <= (din2 == ctrl[7][1][15:0]) ?  din2 : 0;
+        8'h13:
+          dout7 <= (din2 >= ctrl[7][1][15:0] && din2 <= ctrl[7][1][31:16]) ?  din2 : 0;
         default:
           dout7 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -437,7 +437,7 @@
     
     always @(posedge pix_clk)
     begin
-      case (ctrl[8][0])
+      case (ctrl[8][0][7:0])
         8'h0:
           dout8 <= 0;
         8'h1:
@@ -448,16 +448,16 @@
         8'h4:
           dout8 <= {OUT_WIDTH{1'b1}};
         8'h5:
-          dout8 <= ctrl[8][1];
+          dout8 <= ctrl[8][0][31:16];
                            //level clipping
         8'h10:
-          dout8 <= (din2 >= ctrl[8][1]) ?  din2 : 0;
+          dout8 <= (din2 >= ctrl[8][1][15:0]) ?  din2 : 0;
         8'h11:
-          dout8 <= (din2 <= ctrl[8][1]) ?  din2 : 0;
+          dout8 <= (din2 <= ctrl[8][1][31:16]) ?  din2 : 0;
         8'h12:
-          dout8 <= (din2 == ctrl[8][1]) ?  din2 : 0;
-        8'h12:
-          dout8 <= (din2 >= ctrl[8][1][7:0] && din2 <= ctrl[8][1][16:8]) ?  din2 : 0;
+          dout8 <= (din2 == ctrl[8][1][15:0]) ?  din2 : 0;
+        8'h13:
+          dout8 <= (din2 >= ctrl[8][1][15:0] && din2 <= ctrl[8][1][31:16]) ?  din2 : 0;
         default:
           dout8 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase

@@ -16,9 +16,9 @@
         "B_Width": [ { "value": "16", "value_src": "user", "value_permission": "bd_and_user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "Add_Mode": [ { "value": "Add", "resolve_type": "user", "usage": "all" } ],
         "Out_Width": [ { "value": "16", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "Latency_Configuration": [ { "value": "Manual", "resolve_type": "user", "usage": "all" } ],
-        "Latency": [ { "value": "0", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
-        "B_Constant": [ { "value": "true", "value_src": "user", "resolve_type": "user", "format": "bool", "usage": "all" } ],
+        "Latency_Configuration": [ { "value": "Automatic", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
+        "Latency": [ { "value": "2", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
+        "B_Constant": [ { "value": "false", "value_src": "user", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "B_Value": [ { "value": "1000000000000000", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "CE": [ { "value": "false", "value_src": "user", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "C_In": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
@@ -33,7 +33,7 @@
         "Sync_Ctrl_Priority": [ { "value": "Reset_Overrides_Set", "resolve_type": "user", "usage": "all" } ],
         "Sync_CE_Priority": [ { "value": "Sync_Overrides_CE", "resolve_type": "user", "usage": "all" } ],
         "Bypass_CE_Priority": [ { "value": "CE_Overrides_Bypass", "resolve_type": "user", "usage": "all" } ],
-        "AINIT_Value": [ { "value": "0", "resolve_type": "user", "usage": "all" } ]
+        "AINIT_Value": [ { "value": "8000", "value_src": "user", "resolve_type": "user", "usage": "all" } ]
       },
       "model_parameters": {
         "C_VERBOSITY": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
@@ -45,11 +45,11 @@
         "C_CE_OVERRIDES_SCLR": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_A_TYPE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_B_TYPE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "C_LATENCY": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
+        "C_LATENCY": [ { "value": "2", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_ADD_MODE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "C_B_CONSTANT": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
+        "C_B_CONSTANT": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_B_VALUE": [ { "value": "1000000000000000", "resolve_type": "generated", "usage": "all" } ],
-        "C_AINIT_VAL": [ { "value": "0", "resolve_type": "generated", "usage": "all" } ],
+        "C_AINIT_VAL": [ { "value": "1000000000000000", "resolve_type": "generated", "usage": "all" } ],
         "C_SINIT_VAL": [ { "value": "0", "resolve_type": "generated", "usage": "all" } ],
         "C_CE_OVERRIDES_BYPASS": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_BYPASS_LOW": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
@@ -92,6 +92,8 @@
     "boundary": {
       "ports": {
         "A": [ { "direction": "in", "size_left": "15", "size_right": "0", "driver_value": "0" } ],
+        "B": [ { "direction": "in", "size_left": "15", "size_right": "0", "driver_value": "0" } ],
+        "CLK": [ { "direction": "in", "driver_value": "0x0" } ],
         "S": [ { "direction": "out", "size_left": "15", "size_right": "0", "driver_value": "0" } ]
       },
       "interfaces": {
@@ -114,12 +116,15 @@
             "ASSOCIATED_BUSIF": [ { "value": "s_intf:c_out_intf:sinit_intf:sset_intf:bypass_intf:c_in_intf:add_intf:b_intf:a_intf", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
             "ASSOCIATED_RESET": [ { "value": "SCLR", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
             "ASSOCIATED_CLKEN": [ { "value": "CE", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
-            "FREQ_HZ": [ { "value": "100000000", "value_permission": "bd", "resolve_type": "user", "format": "long", "usage": "all" } ],
+            "FREQ_HZ": [ { "value": "100000000", "value_src": "user_prop", "value_permission": "bd", "resolve_type": "user", "format": "long", "usage": "all" } ],
             "FREQ_TOLERANCE_HZ": [ { "value": "0", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "PHASE": [ { "value": "0.0", "value_permission": "bd", "resolve_type": "generated", "format": "float", "is_ips_inferred": true, "is_static_object": false } ],
-            "CLK_DOMAIN": [ { "value": "", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
+            "CLK_DOMAIN": [ { "value": "ebaz4205_processing_system7_0_0_FCLK_CLK0", "value_src": "default_prop", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
             "ASSOCIATED_PORT": [ { "value": "", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
             "INSERT_VIP": [ { "value": "0", "resolve_type": "user", "format": "long", "usage": "simulation.rtl", "is_ips_inferred": true, "is_static_object": false } ]
+          },
+          "port_maps": {
+            "CLK": [ { "physical_name": "CLK" } ]
           }
         },
         "sclr_intf": {
@@ -145,6 +150,9 @@
           "mode": "slave",
           "parameters": {
             "LAYERED_METADATA": [ { "value": "undef", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ]
+          },
+          "port_maps": {
+            "DATA": [ { "physical_name": "B" } ]
           }
         },
         "add_intf": {
