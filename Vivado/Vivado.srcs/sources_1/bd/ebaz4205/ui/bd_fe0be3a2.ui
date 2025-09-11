@@ -1,7 +1,7 @@
 {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"0.547805",
-   "Default View_TopLeft":"-197,-16",
+   "Default View_ScaleFactor":"0.547806",
+   "Default View_TopLeft":"-480,-365",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.0r4  2019-12-20 bk=1.5203 VDI=41 GEI=36 GUI=JA:10.0 TLS
 #  -string -flagsOSRD
@@ -40,12 +40,12 @@ preplace inst axis_subset_converter_0 -pg 1 -lvl 3 -x 1090 -y 830 -defaultsOSRD
 preplace inst axi_vdma_0 -pg 1 -lvl 2 -x 640 -y 600 -defaultsOSRD
 preplace inst colorGainMain -pg 1 -lvl 4 -x 1470 -y 760 -defaultsOSRD
 preplace inst mixerMatrix -pg 1 -lvl 3 -x 1090 -y 380 -defaultsOSRD
-preplace inst dds_compiler_0 -pg 1 -lvl 1 -x 220 -y 90 -defaultsOSRD
 preplace inst rgb2dvi_0 -pg 1 -lvl 5 -x 1850 -y 1010 -defaultsOSRD
 preplace inst v_axi4s_vid_out_0 -pg 1 -lvl 4 -x 1470 -y 1050 -defaultsOSRD
 preplace inst v_tc_0 -pg 1 -lvl 3 -x 1090 -y 1090 -defaultsOSRD
 preplace inst c_addsub_0 -pg 1 -lvl 2 -x 640 -y 400 -defaultsOSRD
 preplace inst axi_gpio_dds_shift -pg 1 -lvl 1 -x 220 -y 390 -defaultsOSRD
+preplace inst dds_compiler_0 -pg 1 -lvl 1 -x 220 -y 90 -defaultsOSRD
 preplace netloc Din_1 1 3 1 1300 380n
 preplace netloc In3_1 1 0 5 NJ 180 NJ 180 NJ 180 NJ 180 1670J
 preplace netloc In4_1 1 0 5 -10J 190 NJ 190 NJ 190 NJ 190 1650J
@@ -56,6 +56,7 @@ preplace netloc PS_FCLK_CLK0 1 0 4 0 470 430 320 860 540 1310
 preplace netloc SerialClk_1 1 0 5 NJ 920 NJ 920 NJ 920 1310J 890 1650J
 preplace netloc aRst_n_1 1 0 5 NJ 940 NJ 940 NJ 940 1250 1210 1660J
 preplace netloc axi_dynclk_0_PXL_CLK_O 1 0 5 NJ 1020 NJ 1020 890 1240 1310 1220 1670J
+preplace netloc axi_gpio_hdmi1_gpio_io_o 1 1 1 N 400
 preplace netloc axi_gpio_hdmi_ip2intc_irpt 1 4 1 1660 280n
 preplace netloc axi_vdma_0_mm2s_introut 1 2 3 920J 510 1270J 480 1640
 preplace netloc c_addsub_0_S 1 2 1 900 400n
@@ -75,12 +76,12 @@ preplace netloc v_axi4s_vid_out_0_vtg_ce 1 2 3 930 650 NJ 650 1630
 preplace netloc v_tc_0_irq 1 3 2 1290J 490 1630
 preplace netloc xlconcat_IRQ_dout 1 5 1 NJ 370
 preplace netloc xlconstant_0_dout 1 5 1 NJ 1170
-preplace netloc axi_gpio_hdmi1_gpio_io_o 1 1 1 N 400
 preplace netloc Conn2 1 5 1 NJ 630
 preplace netloc PS_M02_AXI 1 0 2 NJ 550 NJ
 preplace netloc PS_M06_AXI 1 0 3 NJ 1000 NJ 1000 NJ
 preplace netloc PS_M10_AXI 1 0 4 NJ 250 NJ 250 NJ 250 NJ
 preplace netloc S_AXI_LITE_MIXER_0_1 1 0 3 NJ 310 NJ 310 NJ
+preplace netloc S_AXI_LITE_dds_shift_1 1 0 1 NJ 370
 preplace netloc axi_gpio_hdmi_GPIO 1 4 2 NJ 260 NJ
 preplace netloc axi_vdma_0_M_AXIS_MM2S 1 2 1 840 590n
 preplace netloc axi_vdma_0_M_AXI_MM2S 1 2 3 NJ 570 NJ 570 N
@@ -89,7 +90,6 @@ preplace netloc dds_stream_s_1 1 0 1 NJ 70
 preplace netloc gain_1 1 0 4 NJ 730 NJ 730 NJ 730 NJ
 preplace netloc v_axi4s_vid_out_0_vid_io_out 1 4 1 N 950
 preplace netloc v_tc_0_vtiming_out 1 3 1 1310 990n
-preplace netloc S_AXI_LITE_dds_shift_1 1 0 1 NJ 370
 levelinfo -pg 1 -30 220 640 1090 1470 1850 2040
 pagesize -pg 1 -db -bbox -sgen -230 0 2240 1250
 "

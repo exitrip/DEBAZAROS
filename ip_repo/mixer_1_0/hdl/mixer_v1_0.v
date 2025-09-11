@@ -66,13 +66,6 @@
 	);
 	// gains[out_chan]][in_chan]
     wire [C_S00_AXI_DATA_WIDTH-1 : 0] gains [8:0][7:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_1 [3:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_2 [3:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_3 [3:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_4 [3:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_5 [3:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_6 [3:0];
-//    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gain_7 [3:0];
     // ctls[out_chan][num]
     wire [C_S00_AXI_DATA_WIDTH-1 : 0] ctrl[8:0][1:0];
 // Instantiation of Axi Bus Interface S00_AXI
@@ -217,7 +210,7 @@
 //              dout[i] <= gains[i][0][ ctrl[i][1][8:0] +: 8]*din0 + gains[i][1][ ctrl[i][1][8:0] +: 8]*din1 + 
 //                gains[i][2][ ctrl[i][1][8:0] +: 8]*din2 + gains[i][3][ ctrl[i][1][8:0] +: 8]*din3;
 //            3'h3:
-//              dout[i] <= din0;
+//              dout[i] <= {din0, 8'hff}
 //            3'h4:
 //              dout[i] <=  {OUT_WIDTH{1'b1}};
 //            default:
@@ -236,17 +229,30 @@
         8'h1:
           dout0 <= gains[0][0]*din0 + gains[0][1]*din1 + gains[0][2]*din2 + gains[0][3]*din3 
             + gains[0][4]*din4 + gains[0][5]*din5;
+        8'h3:
+          dout0 <= {din0, 8'hff};
         8'h4:
           dout0 <= ctrl[0][0][31:16];
+        
         //level clipping
         8'h10:
-          dout0 <= (din0 >= ctrl[0][1][15:0]) ?  din0 : 0;
+          dout0 <= (din0 >= ctrl[0][1][23:16]) ?  {din0, 8'hff} : 0;
         8'h11:
-          dout0 <= (din0 <= ctrl[0][1][31:16]) ?  din0 : 0;
+          dout0 <= (din0 <= ctrl[0][1][31:24]) ?  {din0, 8'hff} : 0;
         8'h12:
-          dout0 <= (din0 == ctrl[0][1][15:0]) ?  din0 : 0;
+          dout0 <= (din0 == ctrl[0][1][23:16]) ?  {din0, 8'hff} : 0;
         8'h13:
-          dout0 <= (din0 >= ctrl[0][1][15:0] && din0 <= ctrl[0][1][31:16]) ?  din0 : 0;
+          dout0 <= (din0 >= ctrl[0][1][23:16] && din0 <= ctrl[0][1][31:24]) ?  {din0, 8'hff} : 0;
+
+        8'h20:
+          dout0 <= (din0 >= ctrl[0][1][23:16]) ?  ctrl[0][0][31:16] : 0;
+        8'h21:
+          dout0 <= (din0 <= ctrl[0][1][31:24]) ?  ctrl[0][0][31:16] : 0;
+        8'h22:
+          dout0 <= (din0 == ctrl[0][1][23:16]) ?  ctrl[0][0][31:16] : 0;
+        8'h23:
+          dout0 <= (din0 >= ctrl[0][1][23:16] && din0 <= ctrl[0][1][31:24]) ?  ctrl[0][0][31:16] : 0;
+
         default:
           dout0 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -261,18 +267,28 @@
           dout1 <= gains[1][0]*din0 + gains[1][1]*din1 + gains[1][2]*din2 + gains[1][3]*din3 
             + gains[1][4]*din4 + gains[1][5]*din5;
         8'h3:
-          dout1 <= din0;
+          dout1 <= {din0, 8'hff};
         8'h4:
           dout1 <= ctrl[1][0][31:16];
          //level clipping
         8'h10:
-          dout1 <= (din0 >= ctrl[1][1][15:0]) ?  din0 : 0;
+          dout1 <= (din0 >= ctrl[1][1][23:16]) ?  {din0, 8'hff} : 0;
         8'h11:
-          dout1 <= (din0 <= ctrl[1][1][31:16]) ?  din0 : 0;
+          dout1 <= (din0 <= ctrl[1][1][31:24]) ?  {din0, 8'hff} : 0;
         8'h12:
-          dout1 <= (din0 == ctrl[1][1][15:0]) ?  din0 : 0;
+          dout1 <= (din0 == ctrl[1][1][23:16]) ?  {din0, 8'hff} : 0;
         8'h13:
-          dout1 <= (din0 >= ctrl[1][1][15:0] && din0 <= ctrl[1][1][31:16]) ?  din0 : 0;
+          dout1 <= (din0 >= ctrl[1][1][23:16] && din0 <= ctrl[1][1][31:24]) ?  {din0, 8'hff} : 0;
+
+        8'h20:
+          dout1 <= (din0 >= ctrl[1][1][23:16]) ?  ctrl[1][0][31:16] : 0;
+        8'h21:
+          dout1 <= (din0 <= ctrl[1][1][31:24]) ?  ctrl[1][0][31:16] : 0;
+        8'h22:
+          dout1 <= (din0 == ctrl[1][1][23:16]) ?  ctrl[1][0][31:16] : 0;
+        8'h23:
+          dout1 <= (din0 >= ctrl[1][1][23:16] && din0 <= ctrl[1][1][31:24]) ?  ctrl[1][0][31:16] : 0;
+
         default:
           dout1 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -287,18 +303,28 @@
           dout2 <= gains[2][0]*din0 + gains[2][1]*din1 + gains[2][2]*din2 + gains[2][3]*din3 
             + gains[2][4]*din4 + gains[2][5]*din5;
         8'h3:
-          dout2 <= din0;
+          dout2 <= {din0, 8'hff};
         8'h4:
           dout2 <= ctrl[2][0][31:16];
         //level clipping
         8'h10:
-          dout2 <= (din0 >= ctrl[2][1][15:0]) ?  din0 : 0;
+          dout2 <= (din0 >= ctrl[2][1][23:16]) ?  {din0, 8'hff} : 0;
         8'h11:
-          dout2 <= (din0 <= ctrl[2][1][31:16]) ?  din0 : 0;
+          dout2 <= (din0 <= ctrl[2][1][31:24]) ?  {din0, 8'hff} : 0;
         8'h12:
-          dout2 <= (din0 == ctrl[2][1][15:0]) ?  din0 : 0;
+          dout2 <= (din0 == ctrl[2][1][23:16]) ?  {din0, 8'hff} : 0;
         8'h13:
-          dout2 <= (din0 >= ctrl[2][1][15:0] && din0 <= ctrl[2][1][31:16]) ?  din0 : 0;
+          dout2 <= (din0 >= ctrl[2][1][23:16] && din0 <= ctrl[2][1][31:24]) ?  {din0, 8'hff} : 0;
+
+        8'h20:
+          dout2 <= (din0 >= ctrl[2][1][23:16]) ?  ctrl[2][0][31:16] : 0;
+        8'h21:
+          dout2 <= (din0 <= ctrl[2][1][31:24]) ?  ctrl[2][0][31:16] : 0;
+        8'h22:
+          dout2 <= (din0 == ctrl[2][1][23:16]) ?  ctrl[2][0][31:16] : 0;
+        8'h23:
+          dout2 <= (din0 >= ctrl[2][1][23:16] && din0 <= ctrl[2][1][31:24]) ?  ctrl[2][0][31:16] : 0;
+
         default:
           dout2 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -313,18 +339,28 @@
           dout3 <= gains[3][0]*din0 + gains[3][1]*din1 + gains[3][2]*din2 + gains[3][3]*din3 
             + gains[3][4]*din4 + gains[3][5]*din5;
         8'h3:
-          dout3 <= din1;
+          dout3 <= {din1, 8'hff};
         8'h4:
           dout3 <= ctrl[3][0][31:16];
         //level clipping
         8'h10:
-          dout3 <= (din1 >= ctrl[3][1][15:0]) ?  din1 : 0;
+          dout3 <= (din1 >= ctrl[3][1][23:16]) ?  {din1, 8'hff} : 0;
         8'h11:
-          dout3 <= (din1 <= ctrl[3][1][31:16]) ?  din1 : 0;
+          dout3 <= (din1 <= ctrl[3][1][31:24]) ?  {din1, 8'hff} : 0;
         8'h12:
-          dout3 <= (din1 == ctrl[3][1][15:0]) ?  din1 : 0;
+          dout3 <= (din1 == ctrl[3][1][23:16]) ?  {din1, 8'hff} : 0;
         8'h13:
-          dout3 <= (din1 >= ctrl[3][1][15:0] && din1 <= ctrl[3][1][31:16]) ?  din1 : 0;
+          dout3 <= (din1 >= ctrl[3][1][23:16] && din1 <= ctrl[3][1][31:24]) ?  {din1, 8'hff} : 0;
+
+        8'h20:
+          dout3 <= (din1 >= ctrl[3][1][23:16]) ?  ctrl[3][0][31:16] : 0;
+        8'h21:
+          dout3 <= (din1 <= ctrl[3][1][31:24]) ?  ctrl[3][0][31:16] : 0;
+        8'h22:
+          dout3 <= (din1 == ctrl[3][1][23:16]) ?  ctrl[3][0][31:16] : 0;
+        8'h23:
+          dout3 <= (din1 >= ctrl[3][1][23:16] && din1 <= ctrl[3][1][31:24]) ?  ctrl[3][0][31:16] : 0;
+
         default:
           dout3 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -339,18 +375,28 @@
           dout4 <= gains[4][0]*din0 + gains[4][1]*din1 + gains[4][2]*din2 + gains[4][3]*din3 
             + gains[4][4]*din4 + gains[4][5]*din5;
         8'h3:
-          dout4 <= din1;
+          dout4 <= {din1, 8'hff};
         8'h4:
           dout4 <= ctrl[4][0][31:16];
          //level clipping
         8'h10:
-          dout4 <= (din1 >= ctrl[4][1][15:0]) ?  din1 : 0;
+          dout4 <= (din1 >= ctrl[4][1][23:16]) ?  {din1, 8'hff} : 0;
         8'h11:
-          dout4 <= (din1 <= ctrl[4][1][31:16]) ?  din1 : 0;
+          dout4 <= (din1 <= ctrl[4][1][31:24]) ?  {din1, 8'hff} : 0;
         8'h12:
-          dout4 <= (din1 == ctrl[4][1][15:0]) ?  din1 : 0;
+          dout4 <= (din1 == ctrl[4][1][23:16]) ?  {din1, 8'hff} : 0;
         8'h13:
-          dout4 <= (din1 >= ctrl[4][1][15:0] && din1 <= ctrl[4][1][31:16]) ?  din1 : 0;
+          dout4 <= (din1 >= ctrl[4][1][23:16] && din1 <= ctrl[4][1][31:24]) ?  {din1, 8'hff} : 0;
+
+        8'h20:
+          dout4 <= (din1 >= ctrl[4][1][23:16]) ?  ctrl[4][0][31:16] : 0;
+        8'h21:
+          dout4 <= (din1 <= ctrl[4][1][31:24]) ?  ctrl[4][0][31:16] : 0;
+        8'h22:
+          dout4 <= (din1 == ctrl[4][1][23:16]) ?  ctrl[4][0][31:16] : 0;
+        8'h23:
+          dout4 <= (din1 >= ctrl[4][1][23:16] && din1 <= ctrl[4][1][31:24]) ?  ctrl[4][0][31:16] : 0;
+
         default:
           dout4 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -365,18 +411,28 @@
           dout5 <= gains[5][0]*din0 + gains[5][1]*din1 + gains[5][2]*din2 + gains[5][3]*din3 
             + gains[5][4]*din4 + gains[5][5]*din5;
         8'h3:
-          dout5 <= din1;
+          dout5 <= {din1, 8'hff};
         8'h4:
           dout5 <= ctrl[5][0][31:16];
          //level clipping
         8'h10:
-          dout5 <= (din1 >= ctrl[5][1][15:0]) ?  din1 : 0;
+          dout5 <= (din1 >= ctrl[5][1][23:16]) ?  {din1, 8'hff} : 0;
         8'h11:
-          dout5 <= (din1 <= ctrl[5][1][31:16]) ?  din1 : 0;
+          dout5 <= (din1 <= ctrl[5][1][31:24]) ?  {din1, 8'hff} : 0;
         8'h12:
-          dout5 <= (din1 == ctrl[5][1][15:0]) ?  din1 : 0;
+          dout5 <= (din1 == ctrl[5][1][23:16]) ?  {din1, 8'hff} : 0;
         8'h13:
-          dout5 <= (din1 >= ctrl[5][1][15:0] && din1 <= ctrl[5][1][31:16]) ?  din1 : 0;
+          dout5 <= (din1 >= ctrl[5][1][23:16] && din1 <= ctrl[5][1][31:24]) ?  {din1, 8'hff} : 0;
+
+        8'h20:
+          dout5 <= (din1 >= ctrl[5][1][23:16]) ?  ctrl[5][0][31:16] : 0;
+        8'h21:
+          dout5 <= (din1 <= ctrl[5][1][31:24]) ?  ctrl[5][0][31:16] : 0;
+        8'h22:
+          dout5 <= (din1 == ctrl[5][1][23:16]) ?  ctrl[5][0][31:16] : 0;
+        8'h23:
+          dout5 <= (din1 >= ctrl[5][1][23:16] && din1 <= ctrl[5][1][31:24]) ?  ctrl[5][0][31:16] : 0;
+
         default:
           dout5 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -391,18 +447,28 @@
           dout6 <= gains[6][0]*din0 + gains[6][1]*din1 + gains[6][2]*din2 + gains[6][3]*din3 
             + gains[6][4]*din4 + gains[6][5]*din5;
         8'h3:
-          dout6 <= din2;
+          dout6 <= {din2, 8'hff};
         8'h4:
           dout6 <= ctrl[6][0][31:16];
                    //level clipping
         8'h10:
-          dout6 <= (din2 >= ctrl[6][1][15:0]) ?  din2 : 0;
+          dout6 <= (din2 >= ctrl[6][1][23:16]) ?  {din2, 8'hff} : 0;
         8'h11:
-          dout6 <= (din2 <= ctrl[6][1][31:16]) ?  din2 : 0;
+          dout6 <= (din2 <= ctrl[6][1][31:24]) ?  {din2, 8'hff} : 0;
         8'h12:
-          dout6 <= (din2 == ctrl[6][1][15:0]) ?  din2 : 0;
+          dout6 <= (din2 == ctrl[6][1][23:16]) ?  {din2, 8'hff} : 0;
         8'h13:
-          dout6 <= (din2 >= ctrl[6][1][15:0] && din2 <= ctrl[6][1][31:16]) ?  din2 : 0;
+          dout6 <= (din2 >= ctrl[6][1][23:16] && din2 <= ctrl[6][1][31:24]) ?  {din2, 8'hff} : 0;
+
+        8'h20:
+          dout6 <= (din2 >= ctrl[6][1][23:16]) ?  ctrl[6][0][31:16] : 0;
+        8'h21:
+          dout6 <= (din2 <= ctrl[6][1][31:24]) ?  ctrl[6][0][31:16] : 0;
+        8'h22:
+          dout6 <= (din2 == ctrl[6][1][23:16]) ?  ctrl[6][0][31:16] : 0;
+        8'h23:
+          dout6 <= (din2 >= ctrl[6][1][23:16] && din2 <= ctrl[6][1][31:24]) ?  ctrl[6][0][31:16] : 0;
+
         default:
           dout6 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -418,18 +484,28 @@
             + gains[7][4]*din4 + gains[7][5]*din5;
 
         8'h3:
-          dout7 <= din2;
+          dout7 <= {din2, 8'hff};
         8'h4:
           dout7 <= ctrl[7][0][31:16];
         //level clipping
         8'h10:
-          dout7 <= (din2 >= ctrl[7][1][15:0]) ?  din2 : 0;
+          dout7 <= (din2 >= ctrl[7][1][23:16]) ?  {din2, 8'hff} : 0;
         8'h11:
-          dout7 <= (din2 <= ctrl[7][1][31:16]) ?  din2 : 0;
+          dout7 <= (din2 <= ctrl[7][1][31:24]) ?  {din2, 8'hff} : 0;
         8'h12:
-          dout7 <= (din2 == ctrl[7][1][15:0]) ?  din2 : 0;
+          dout7 <= (din2 == ctrl[7][1][23:16]) ?  {din2, 8'hff} : 0;
         8'h13:
-          dout7 <= (din2 >= ctrl[7][1][15:0] && din2 <= ctrl[7][1][31:16]) ?  din2 : 0;
+          dout7 <= (din2 >= ctrl[7][1][23:16] && din2 <= ctrl[7][1][31:24]) ?  {din2, 8'hff} : 0;
+
+        8'h20:
+          dout7 <= (din2 >= ctrl[6][1][23:16]) ?  ctrl[6][0][31:16] : 0;
+        8'h21:
+          dout7 <= (din2 <= ctrl[6][1][31:24]) ?  ctrl[6][0][31:16] : 0;
+        8'h22:
+          dout7 <= (din2 == ctrl[6][1][23:16]) ?  ctrl[6][0][31:16] : 0;
+        8'h23:
+          dout7 <= (din2 >= ctrl[6][1][23:16] && din2 <= ctrl[6][1][31:24]) ?  ctrl[6][0][31:16] : 0;
+        
         default:
           dout7 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
@@ -444,20 +520,28 @@
           dout8 <= gains[8][0]*din0 + gains[8][1]*din1 + gains[8][2]*din2 + gains[8][3]*din3 
             + gains[8][4]*din4 + gains[8][5]*din5;
         8'h3:
-          dout8 <= din2;
+          dout8 <= {din2, 8'hff};
         8'h4:
-          dout8 <= {OUT_WIDTH{1'b1}};
-        8'h5:
           dout8 <= ctrl[8][0][31:16];
-                           //level clipping
+           //level clipping
         8'h10:
-          dout8 <= (din2 >= ctrl[8][1][15:0]) ?  din2 : 0;
+          dout8 <= (din2 >= ctrl[8][1][23:16]) ?  {din2, 8'hff} : 0;
         8'h11:
-          dout8 <= (din2 <= ctrl[8][1][31:16]) ?  din2 : 0;
+          dout8 <= (din2 <= ctrl[8][1][31:24]) ?  {din2, 8'hff} : 0;
         8'h12:
-          dout8 <= (din2 == ctrl[8][1][15:0]) ?  din2 : 0;
+          dout8 <= (din2 == ctrl[8][1][23:16]) ?  {din2, 8'hff} : 0;
         8'h13:
-          dout8 <= (din2 >= ctrl[8][1][15:0] && din2 <= ctrl[8][1][31:16]) ?  din2 : 0;
+          dout8 <= (din2 >= ctrl[8][1][23:16] && din2 <= ctrl[8][1][31:24]) ?  {din2, 8'hff} : 0;
+
+        8'h20:
+          dout8 <= (din2 >= ctrl[8][1][23:16]) ?  ctrl[8][0][31:16] : 0;
+        8'h21:
+          dout8 <= (din2 <= ctrl[8][1][31:24]) ?  ctrl[8][0][31:16] : 0;
+        8'h22:
+          dout8 <= (din2 == ctrl[8][1][23:16]) ?  ctrl[8][0][31:16] : 0;
+        8'h23:
+          dout8 <= (din2 >= ctrl[8][1][23:16] && din2 <= ctrl[8][1][31:24]) ?  ctrl[8][0][31:16] : 0;
+
         default:
           dout8 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
       endcase
