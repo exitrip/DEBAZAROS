@@ -9,6 +9,15 @@ proc init_gui { IPINST } {
 
 }
 
+proc update_PARAM_VALUE.IN_NUM { PARAM_VALUE.IN_NUM } {
+	# Procedure called to update IN_NUM when any of the dependent parameters in the arguments change
+}
+
+proc validate_PARAM_VALUE.IN_NUM { PARAM_VALUE.IN_NUM } {
+	# Procedure called to validate IN_NUM
+	return true
+}
+
 proc update_PARAM_VALUE.IN_WIDTH { PARAM_VALUE.IN_WIDTH } {
 	# Procedure called to update IN_WIDTH when any of the dependent parameters in the arguments change
 }
@@ -93,10 +102,9 @@ proc update_MODELPARAM_VALUE.IN_WIDTH { MODELPARAM_VALUE.IN_WIDTH PARAM_VALUE.IN
 	set_property value [get_property value ${PARAM_VALUE.IN_WIDTH}] ${MODELPARAM_VALUE.IN_WIDTH}
 }
 
-proc update_MODELPARAM_VALUE.IN_NUM { MODELPARAM_VALUE.IN_NUM } {
+proc update_MODELPARAM_VALUE.IN_NUM { MODELPARAM_VALUE.IN_NUM PARAM_VALUE.IN_NUM } {
 	# Procedure called to set VHDL generic/Verilog parameter value(s) based on TCL parameter value
-	# WARNING: There is no corresponding user parameter named "IN_NUM". Setting updated value from the model parameter.
-set_property value 8 ${MODELPARAM_VALUE.IN_NUM}
+	set_property value [get_property value ${PARAM_VALUE.IN_NUM}] ${MODELPARAM_VALUE.IN_NUM}
 }
 
 proc update_MODELPARAM_VALUE.OUT_NUM { MODELPARAM_VALUE.OUT_NUM PARAM_VALUE.OUT_NUM } {

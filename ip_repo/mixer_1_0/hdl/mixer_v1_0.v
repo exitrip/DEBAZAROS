@@ -6,7 +6,7 @@
 		// Users to add parameters here
         parameter integer OUT_WIDTH	= 32,
         parameter integer IN_WIDTH	= 32,
-        parameter integer IN_NUM	= 8,
+        parameter integer IN_NUM	= 5,
         parameter integer OUT_NUM   = 9,
 		// User parameters ends
 		// Do not modify the parameters beyond this line
@@ -33,9 +33,9 @@
         input wire [IN_WIDTH-1 : 0] din2,
         input wire [IN_WIDTH-1 : 0] din3,   
         input wire [IN_WIDTH-1 : 0] din4,
-        input wire [IN_WIDTH-1 : 0] din5,
-        input wire [IN_WIDTH-1 : 0] din6,
-        input wire [IN_WIDTH-1 : 0] din7,
+//        input wire [IN_WIDTH-1 : 0] din5,
+//        input wire [IN_WIDTH-1 : 0] din6,
+//        input wire [IN_WIDTH-1 : 0] din7,
 
 		// User ports ends
 		// Do not modify the ports beyond this line
@@ -65,11 +65,12 @@
 		input wire  s00_axi_rready
 	);
 	// gains[out_chan]][in_chan]
-    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gains [8:0][7:0];
+    wire [C_S00_AXI_DATA_WIDTH-1 : 0] gains [(OUT_NUM-1):0][(IN_NUM-1):0];
     // ctls[out_chan][num]
-    wire [C_S00_AXI_DATA_WIDTH-1 : 0] ctrl[8:0][1:0];
+    wire [C_S00_AXI_DATA_WIDTH-1 : 0] ctrl[(OUT_NUM-1):0][1:0];
 // Instantiation of Axi Bus Interface S00_AXI
 	mixer_v1_0_S00_AXI # ( 
+	    .C_IN_NUM(IN_NUM),
 		.C_S_AXI_DATA_WIDTH(C_S00_AXI_DATA_WIDTH),
 		.C_S_AXI_ADDR_WIDTH(C_S00_AXI_ADDR_WIDTH)
 	) mixer_v1_0_S00_AXI_inst (
@@ -100,9 +101,9 @@
         .GAIN_0_2(gains[0][2]),
         .GAIN_0_3(gains[0][3]),
         .GAIN_0_4(gains[0][4]),
-        .GAIN_0_5(gains[0][5]),
-        .GAIN_0_6(gains[0][6]),
-        .GAIN_0_7(gains[0][7]),
+//        .GAIN_0_5(gains[0][5]),
+//        .GAIN_0_6(gains[0][6]),
+//        .GAIN_0_7(gains[0][7]),
         .CTRL_0_0(ctrl[0][0]),
         .CTRL_0_1(ctrl[0][1]),
     
@@ -111,9 +112,9 @@
         .GAIN_1_2(gains[1][2]),
         .GAIN_1_3(gains[1][3]),
         .GAIN_1_4(gains[1][4]),
-        .GAIN_1_5(gains[1][5]),
-        .GAIN_1_6(gains[1][6]),
-        .GAIN_1_7(gains[1][7]),
+//        .GAIN_1_5(gains[1][5]),
+//        .GAIN_1_6(gains[1][6]),
+//        .GAIN_1_7(gains[1][7]),
         .CTRL_1_0(ctrl[1][0]),
         .CTRL_1_1(ctrl[1][1]),
         
@@ -122,9 +123,9 @@
         .GAIN_2_2(gains[2][2]),
         .GAIN_2_3(gains[2][3]),
         .GAIN_2_4(gains[2][4]),
-        .GAIN_2_5(gains[2][5]),
-        .GAIN_2_6(gains[2][6]),
-        .GAIN_2_7(gains[2][7]),
+//        .GAIN_2_5(gains[2][5]),
+//        .GAIN_2_6(gains[2][6]),
+//        .GAIN_2_7(gains[2][7]),
         .CTRL_2_0(ctrl[2][0]),
         .CTRL_2_1(ctrl[2][1]),
         
@@ -133,9 +134,9 @@
         .GAIN_3_2(gains[3][2]),
         .GAIN_3_3(gains[3][3]),
         .GAIN_3_4(gains[3][4]),
-        .GAIN_3_5(gains[3][5]),
-        .GAIN_3_6(gains[3][6]),
-        .GAIN_3_7(gains[3][7]),
+//        .GAIN_3_5(gains[3][5]),
+//        .GAIN_3_6(gains[3][6]),
+//        .GAIN_3_7(gains[3][7]),
         .CTRL_3_0(ctrl[3][0]),
         .CTRL_3_1(ctrl[3][1]),
     
@@ -144,9 +145,9 @@
         .GAIN_4_2(gains[4][2]),
         .GAIN_4_3(gains[4][3]),
         .GAIN_4_4(gains[4][4]),
-        .GAIN_4_5(gains[4][5]),
-        .GAIN_4_6(gains[4][6]),
-        .GAIN_4_7(gains[4][7]),
+//        .GAIN_4_5(gains[4][5]),
+//        .GAIN_4_6(gains[4][6]),
+//        .GAIN_4_7(gains[4][7]),
         .CTRL_4_0(ctrl[4][0]),
         .CTRL_4_1(ctrl[4][1]),
         
@@ -155,9 +156,9 @@
         .GAIN_5_2(gains[5][2]),
         .GAIN_5_3(gains[5][3]),
         .GAIN_5_4(gains[5][4]),
-        .GAIN_5_5(gains[5][5]),
-        .GAIN_5_6(gains[5][6]),
-        .GAIN_5_7(gains[5][7]),
+//        .GAIN_5_5(gains[5][5]),
+//        .GAIN_5_6(gains[5][6]),
+//        .GAIN_5_7(gains[5][7]),
         .CTRL_5_0(ctrl[5][0]),
         .CTRL_5_1(ctrl[5][1]),
         
@@ -166,9 +167,9 @@
         .GAIN_6_2(gains[6][2]),
         .GAIN_6_3(gains[6][3]),
         .GAIN_6_4(gains[6][4]),
-        .GAIN_6_5(gains[6][5]),
-        .GAIN_6_6(gains[6][6]),
-        .GAIN_6_7(gains[6][7]),
+//        .GAIN_6_5(gains[6][5]),
+//        .GAIN_6_6(gains[6][6]),
+//        .GAIN_6_7(gains[6][7]),
         .CTRL_6_0(ctrl[6][0]),
         .CTRL_6_1(ctrl[6][1]),
     
@@ -177,9 +178,9 @@
         .GAIN_7_2(gains[7][2]),
         .GAIN_7_3(gains[7][3]),
         .GAIN_7_4(gains[7][4]),
-        .GAIN_7_5(gains[7][5]),
-        .GAIN_7_6(gains[7][6]),
-        .GAIN_7_7(gains[7][7]),
+//        .GAIN_7_5(gains[7][5]),
+//        .GAIN_7_6(gains[7][6]),
+//        .GAIN_7_7(gains[7][7]),
         .CTRL_7_0(ctrl[7][0]),
         .CTRL_7_1(ctrl[7][1]),
         
@@ -188,9 +189,9 @@
         .GAIN_8_2(gains[8][2]),
         .GAIN_8_3(gains[8][3]),
         .GAIN_8_4(gains[8][4]),
-        .GAIN_8_5(gains[8][5]),
-        .GAIN_8_6(gains[8][6]),
-        .GAIN_8_7(gains[8][7]),
+//        .GAIN_8_5(gains[8][5]),
+//        .GAIN_8_6(gains[8][6]),
+//        .GAIN_8_7(gains[8][7]),
         .CTRL_8_0(ctrl[8][0]),
         .CTRL_8_1(ctrl[8][1])
 	);
@@ -228,7 +229,7 @@
           dout0 <= 0;
         8'h1:
           dout0 <= gains[0][0]*din0 + gains[0][1]*din1 + gains[0][2]*din2 + gains[0][3]*din3 
-            + gains[0][4]*din4 + gains[0][5]*din5;
+            + gains[0][4]*din4;
         8'h3:
           dout0 <= {din0, 8'hff};
         8'h4:
@@ -265,7 +266,7 @@
           dout1 <= 0;
         8'h1:
           dout1 <= gains[1][0]*din0 + gains[1][1]*din1 + gains[1][2]*din2 + gains[1][3]*din3 
-            + gains[1][4]*din4 + gains[1][5]*din5;
+            + gains[1][4]*din4;
         8'h3:
           dout1 <= {din0, 8'hff};
         8'h4:
@@ -301,7 +302,7 @@
           dout2 <= 0;
         8'h1:
           dout2 <= gains[2][0]*din0 + gains[2][1]*din1 + gains[2][2]*din2 + gains[2][3]*din3 
-            + gains[2][4]*din4 + gains[2][5]*din5;
+            + gains[2][4]*din4;
         8'h3:
           dout2 <= {din0, 8'hff};
         8'h4:
@@ -337,7 +338,7 @@
           dout3 <= 0;
         8'h1:
           dout3 <= gains[3][0]*din0 + gains[3][1]*din1 + gains[3][2]*din2 + gains[3][3]*din3 
-            + gains[3][4]*din4 + gains[3][5]*din5;
+            + gains[3][4]*din4;
         8'h3:
           dout3 <= {din1, 8'hff};
         8'h4:
@@ -373,7 +374,7 @@
           dout4 <= 0;
         8'h1:
           dout4 <= gains[4][0]*din0 + gains[4][1]*din1 + gains[4][2]*din2 + gains[4][3]*din3 
-            + gains[4][4]*din4 + gains[4][5]*din5;
+            + gains[4][4]*din4;
         8'h3:
           dout4 <= {din1, 8'hff};
         8'h4:
@@ -409,7 +410,7 @@
           dout5 <= 0;
         8'h1:
           dout5 <= gains[5][0]*din0 + gains[5][1]*din1 + gains[5][2]*din2 + gains[5][3]*din3 
-            + gains[5][4]*din4 + gains[5][5]*din5;
+            + gains[5][4]*din4;
         8'h3:
           dout5 <= {din1, 8'hff};
         8'h4:
@@ -445,7 +446,7 @@
           dout6 <= 0;
         8'h1:
           dout6 <= gains[6][0]*din0 + gains[6][1]*din1 + gains[6][2]*din2 + gains[6][3]*din3 
-            + gains[6][4]*din4 + gains[6][5]*din5;
+            + gains[6][4]*din4;
         8'h3:
           dout6 <= {din2, 8'hff};
         8'h4:
@@ -481,7 +482,7 @@
           dout7 <= 0;
         8'h1:
           dout7 <= gains[7][0]*din0 + gains[7][1]*din1 + gains[7][2]*din2 + gains[7][3]*din3 
-            + gains[7][4]*din4 + gains[7][5]*din5;
+            + gains[7][4]*din4;
 
         8'h3:
           dout7 <= {din2, 8'hff};
@@ -518,7 +519,7 @@
           dout8 <= 0;
         8'h1:
           dout8 <= gains[8][0]*din0 + gains[8][1]*din1 + gains[8][2]*din2 + gains[8][3]*din3 
-            + gains[8][4]*din4 + gains[8][5]*din5;
+            + gains[8][4]*din4;
         8'h3:
           dout8 <= {din2, 8'hff};
         8'h4:
