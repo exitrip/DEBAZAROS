@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_c_addsub_0_0",
-    "cell_name": "HDMI_0/c_addsub_0",
+    "cell_name": "c_addsub_0",
     "component_reference": "xilinx.com:ip:c_addsub:12.0",
     "ip_revision": "14",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_c_addsub_0_0_1",
@@ -19,7 +19,7 @@
         "Latency_Configuration": [ { "value": "Automatic", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "Latency": [ { "value": "2", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "B_Constant": [ { "value": "false", "value_src": "user", "resolve_type": "user", "format": "bool", "usage": "all" } ],
-        "B_Value": [ { "value": "1000000000000000", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
+        "B_Value": [ { "value": "0000000000000000", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "CE": [ { "value": "false", "value_src": "user", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "C_In": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "C_Out": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
@@ -48,7 +48,7 @@
         "C_LATENCY": [ { "value": "2", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_ADD_MODE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_B_CONSTANT": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "C_B_VALUE": [ { "value": "1000000000000000", "resolve_type": "generated", "usage": "all" } ],
+        "C_B_VALUE": [ { "value": "0000000000000000", "resolve_type": "generated", "usage": "all" } ],
         "C_AINIT_VAL": [ { "value": "1000000000000000", "resolve_type": "generated", "usage": "all" } ],
         "C_SINIT_VAL": [ { "value": "0", "resolve_type": "generated", "usage": "all" } ],
         "C_CE_OVERRIDES_BYPASS": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
@@ -102,8 +102,7 @@
           "abstraction_type": "xilinx.com:signal:data_rtl:1.0",
           "mode": "slave",
           "parameters": {
-            "LAYERED_METADATA": [ { "value": "xilinx.com:interface:datatypes:1.0 {DATA {datatype {name {attribs {resolve_type immediate dependency {} format string minimum {} maximum {}} value data} bitwidth {attribs {resolve_type generated dependency bitwidth format long minimum {} maximum {}} value 16} bitoffset {attribs {resolve_type immediate dependency {} format long minimum {} maximum {}} value 0} integer {signed {attribs {resolve_type generated dependency signed format bool minimum {} maximum {}} value TRUE}}}} DATA_WIDTH 16}", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
-            "PortWidth": [ { "value": "", "value_src": "weak", "value_permission": "bd", "resolve_type": "generated", "is_static_object": false } ]
+            "LAYERED_METADATA": [ { "value": "undef", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ]
           },
           "port_maps": {
             "DATA": [ { "physical_name": "A" } ]
@@ -142,7 +141,7 @@
           "abstraction_type": "xilinx.com:signal:clockenable_rtl:1.0",
           "mode": "slave",
           "parameters": {
-            "POLARITY": [ { "value": "ACTIVE_HIGH", "value_src": "constant", "value_permission": "bd", "usage": "all" } ]
+            "POLARITY": [ { "value": "ACTIVE_HIGH", "value_src": "constant", "usage": "all" } ]
           }
         },
         "b_intf": {
