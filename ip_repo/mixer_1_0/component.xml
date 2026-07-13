@@ -282,7 +282,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>851e52a0</spirit:value>
+            <spirit:value>84f6d69b</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -298,7 +298,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>851e52a0</spirit:value>
+            <spirit:value>84f6d69b</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -959,10 +959,6 @@
   </spirit:model>
   <spirit:choices>
     <spirit:choice>
-      <spirit:name>choice_list_32c308a5</spirit:name>
-      <spirit:enumeration>5</spirit:enumeration>
-    </spirit:choice>
-    <spirit:choice>
       <spirit:name>choice_list_6fc15197</spirit:name>
       <spirit:enumeration>32</spirit:enumeration>
     </spirit:choice>
@@ -970,6 +966,10 @@
       <spirit:name>choice_list_9d8b0d81</spirit:name>
       <spirit:enumeration>ACTIVE_HIGH</spirit:enumeration>
       <spirit:enumeration>ACTIVE_LOW</spirit:enumeration>
+    </spirit:choice>
+    <spirit:choice>
+      <spirit:name>choice_list_aefbe433</spirit:name>
+      <spirit:enumeration>5</spirit:enumeration>
     </spirit:choice>
     <spirit:choice>
       <spirit:name>choice_pairs_ce1226b1</spirit:name>
@@ -987,7 +987,7 @@
       <spirit:file>
         <spirit:name>hdl/mixer_v1_0.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
-        <spirit:userFileType>CHECKSUM_7404abcf</spirit:userFileType>
+        <spirit:userFileType>CHECKSUM_75ec2ff4</spirit:userFileType>
       </spirit:file>
     </spirit:fileSet>
     <spirit:fileSet>
@@ -1124,7 +1124,7 @@
     <spirit:parameter>
       <spirit:name>IN_NUM</spirit:name>
       <spirit:displayName>In Num</spirit:displayName>
-      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.IN_NUM" spirit:choiceRef="choice_list_32c308a5">5</spirit:value>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.IN_NUM" spirit:choiceRef="choice_list_aefbe433">5</spirit:value>
     </spirit:parameter>
   </spirit:parameters>
   <spirit:vendorExtensions>
@@ -1136,20 +1136,20 @@
         <xilinx:taxonomy>AXI_Peripheral</xilinx:taxonomy>
       </xilinx:taxonomies>
       <xilinx:displayName>mixer_v2.0</xilinx:displayName>
-      <xilinx:coreRevision>16</xilinx:coreRevision>
+      <xilinx:coreRevision>18</xilinx:coreRevision>
       <xilinx:upgrades>
         <xilinx:canUpgradeFrom>user.org:user:mixer:1.0</xilinx:canUpgradeFrom>
       </xilinx:upgrades>
-      <xilinx:coreCreationDateTime>2025-09-15T18:41:25Z</xilinx:coreCreationDateTime>
+      <xilinx:coreCreationDateTime>2026-07-12T22:01:38Z</xilinx:coreCreationDateTime>
     </xilinx:coreExtensions>
     <xilinx:packagingInfo>
       <xilinx:xilinxVersion>2022.2</xilinx:xilinxVersion>
       <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="5bbfd6c1"/>
       <xilinx:checksum xilinx:scope="memoryMaps" xilinx:value="ed1368d5"/>
-      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="bc95c652"/>
+      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="3e3797a3"/>
       <xilinx:checksum xilinx:scope="ports" xilinx:value="c959e6e3"/>
       <xilinx:checksum xilinx:scope="hdlParameters" xilinx:value="63ad0036"/>
-      <xilinx:checksum xilinx:scope="parameters" xilinx:value="692ea1b8"/>
+      <xilinx:checksum xilinx:scope="parameters" xilinx:value="5fb50b3c"/>
     </xilinx:packagingInfo>
   </spirit:vendorExtensions>
 </spirit:component>

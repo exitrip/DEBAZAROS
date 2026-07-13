@@ -49,6 +49,23 @@ Three hierarchies: `PS`, `HDMI_0`, `HDMI_1`. Both HDMI channels share one pixel 
   (SerialClk) for both rgb2dvi instances; its `LOCKED_O` is the aRst_n for both output stages.
   Both displays therefore always run the same resolution; last `DisplayStart()` wins.
 
+**⚠️ Regional pixel-clock architecture (root cause of "fabric full" + 35 MHz ceiling):**
+the deployed axi_dynclk (stock Digilent, `Vivado.gen/.../ipshared/9097/src/axi_dynclk.vhd`)
+puts the MMCM 5× clock on a **BUFIO** (SerialClk) and derives PixelClk via **BUFR ÷5** —
+both *regional* buffers. Routed report (`impl_2/ebaz4205_wrapper_clock_utilization_routed.rpt`):
+pixel clock g1 = BUFR_X0Y5, and **all 5,942 pixel-domain loads are locked into clock region
+X1Y1** (one of four regions). The whole effects path (mixer, colorGain, v_tc video side,
+vid_out video side, rgb2dvi fabric) must place in ¼ of the die → congestion, the >35 MHz
+feedback ceiling, and why global-buffer experiments failed: OSERDES in rgb2dvi needs
+CLK/CLKDIV on a *skew-matched pair* (BUFIO+BUFR same region, or BUFG+BUFG); mixing
+BUFG pixel + BUFIO serial has undefined skew → garbage TMDS that mimics CDC failure.
+The repo-local `IP_axi_dynclk/` copy has the BUFR commented out and an `ADD_BUFMR`
+generic — remnants of these experiments; the *packaged* IP the BD uses is unmodified.
+Proper global fix = MMCM emits both 1× and 5× (two CLKOUTs, inherently phase-aligned)
+each through BUFG; requires extending the DRP ROM in `mmcme2_drp.v` (currently programs
+CLKOUT0/FB/DIV only) + matching updates in hdmi2.elf `dynclk.c`. CLKOUT1 divider is
+integer-only — pick serial on fractional CLKOUT0, pixel on CLKOUT1 = 5× that divide.
+
 ### Video pipeline (per channel)
 ```
 DDR (HP0 for HDMI_0 / HP2 for HDMI_1)
@@ -167,6 +184,32 @@ used by hdmi2.elf — the app maps 97 MB span; **reserved region is undersized v
 code touches** (works because nothing else claims that RAM, but worth fixing in the
 kernel/dts pass).
 
+## Third HDMI/DVI port (hard constraint)
+
+The adapter PCB (`pcb/3xHDMI/`) has a **third TMDS pinout laid out** — future input or
+output. Therefore: **never remove memory or bus capacity that accommodates a third
+frame/channel**: keep VDMA `c_num_fstores = 3`; keep spare ps7_axi_periph master ports
+and address-map gaps; HP1/HP3 stay free for a third VDMA; DDR framebuffer budgeting
+assumes up to 6 frames (3 disp × 2). The dtsi fb is already 3 frames tall (1280×2160).
+Clocking note: a third TMDS bank outside region X1Y1 cannot be served by the current
+single BUFIO/BUFR — needs either BUFMR → per-region BUFIO/BUFR (the `ADD_BUFMR` stub in
+the local dynclk copy) or the dual-BUFG MMCM scheme.
+
+## VTC sharing (resource win, previously failed — root cause understood)
+
+Both v_tc always run identical timing (shared PixelClk, same mode). Sharing one VTC
+saves ~1.3k LUTs + 3.2k FFs, much of it inside crowded region X1Y1. Past attempts hit
+"CDC issues" because **both v_axi4s_vid_out are configured `C_VTG_MASTER_SLAVE = 1`
+(Master)** — two masters fighting one VTC via `vtg_ce` causes lock/unlock oscillation
+(looks like CDC but isn't; `C_HAS_ASYNC_CLK=1` already handles the real stream↔pixel
+crossing). Correct recipe, no clock changes: re-customize both vid_outs to **Slave**
+timing mode; delete `HDMI_1/v_tc_0`; export `vtiming_out` from HDMI_0 → HDMI_1 (same
+pattern as the pixData cross-feed pins); tie the remaining VTC's `gen_clken` high;
+tie HDMI_1 `xlconcat_IRQ/In0` to constant 0 (preserves IRQ bit positions / no DT churn);
+drop VTC1 init from hdmi2.elf. Slave-mode vid_outs re-align by dropping input until
+TUSER-SOF meets vsync (a frame or two of settling at boot/mode change); both channels
+stay pixel-locked; an underflow on one channel no longer stalls shared timing.
+
 ## Known issues / future work (user's stated roadmap)
 1. **Cleanup + documentation pass** without breaking the fragile Vivado project
    (READMEs are all SDR-era; legacy folders to prune/archive)
@@ -174,9 +217,20 @@ kernel/dts pass).
    and /dev/mem mmap with UIO or real drivers; fix reserved-memory sizing; dtsi in
    PetaLinux/ tree is stale vs repo root)
 3. **Gateware stability/usage/timing**: feedback path unstable above ~35 MHz pixel clock
-   (720p30 limit); mixer dout7 ctrl[6] copy-paste bug; unregistered multiply chains;
-   only HDMI_0 has the mixerMatrix (HDMI_1 uses simpler gain blocks); frame-buffer-read
-   IP experiment previously broke the build (be careful re-attempting)
+   (720p30 limit) — primary suspect is the BUFR single-region pixel clock (see Clocking)
+   plus unregistered multiply chains; mixer dout7 ctrl[6] copy-paste bug;
+   only HDMI_0 has the mixerMatrix (HDMI_1 uses simpler gain blocks — DSP budget:
+   69/80 used, mixer alone = 45); frame-buffer-read IP experiment previously broke the
+   build (be careful re-attempting)
+4. **Resource budget** (impl_2, Jan 2026): slices 94% (binding), DSP 69/80, LUT 65%,
+   FF 54% (19.2k: v_tc ×2 ≈ 6.5k, mixer reg file ≈ 4k incl. a redundant duplicate
+   output-register stage on the same clock, VDMA ×2 ≈ 2.8k), BRAM 55%. Savings queue:
+   shared VTC (above); delete dead SDR clock tree (`PS/clk_wiz_128M` PLL,
+   `proc_sys_reset_128M`, `DivideBy2_50MHz`, `rst_ps7_0_64M` — outputs unconsumed at top;
+   KEEP `DivideBy4_25MHz` = ethernet PHY clock on U18); slim mixer register file;
+   GPIO/interconnect consolidation (addresses change → update devmem scripts).
+   Do NOT trim VDMA fstores (third-port constraint). DSP relief = time-multiplexed
+   mixer MACs at 2× pixel clock (45→~23 DSPs, also fixes timing ceiling).
 
 ## Build facts
 - Vivado 2022.2, part XC7Z010 (EBAZ4205), top `ebaz4205_wrapper`, pblock constraint on SLR0
