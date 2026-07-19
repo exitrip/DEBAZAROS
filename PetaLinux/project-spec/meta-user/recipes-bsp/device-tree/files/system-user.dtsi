@@ -1,4 +1,4 @@
-/include/ "system-conf.dtsi"
+	/include/ "system-conf.dtsi"
     / {
         chosen {
             bootargs = "earlycon console=ttyPS0,115200 clk_ignore_unused root=/dev/mmcblk0p2 rw rootwait cma=256M uio_pdrv_genirq.of_id=generic-uio";
@@ -13,16 +13,16 @@
 	      hdmi_fb_reserved_region@0x08000000 {
 		 compatible = "removed-dma-pool";
 		 no-map;
-		 reg = <0x08000000 0x01000000>;
+		 reg = <0x08000000 0x08000000>;
 	      };
    };
   
    hdmi_fb0: framebuffer0@0x08000000 {           // HDMI out
 	      compatible = "simple-framebuffer";
 	      // 512M (M modules)
-	      reg = <0x08000000 (1280 * 720 * 4)>;   
+	      reg = <0x08000000 (1280 * 720 * 3 * 4)>;   
 	      width = <1280>;                         
-	      height = <720>;                         
+	      height = <(720*3)>;                         
 	      stride = <(1280 * 4)>;                 
 	      format = "a8r8g8b8";
 	      status = "okay";
@@ -41,73 +41,124 @@
   
     
 };
+
+&HDMI_0_axi_gpio_hdmi {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_colorGainMain_axi_gpio_0 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_0 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_1 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_2 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_3 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_4 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_5 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_6 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_7 {
+	compatible = "generic-uio";
+};
+
+&HDMI_0_mixerMatrix_mixer_8 {
+	compatible = "generic-uio";
+};
+
+&HDMI_1_axi_gpio_hdmi {
+	compatible = "generic-uio";
+};
+
+&HDMI_1_colorGainMain_axi_gain_1 {
+	compatible = "generic-uio";
+};
+
+// &ADC_TestGen_TestGen_axi_gpio_ADC_TEST {
+// 	compatible = "generic-uio";
+// };
+
+// &ADC_TestGen_TestGen_dds_axi_interface_0{
+// 	compatible = "generic-uio";
+// };
+
+// &DDC_FT_DDS_LO_FT_axi_interface{
+// 	compatible = "generic-uio";
+// };
+
+// &DDC_LO_DDS_LO_axi_interface{
+// 	compatible = "generic-uio";
+// };
+
+// &FILTER_FT_axi_interface_DEC_RATE_FT_IQ{
+// 	compatible = "generic-uio";
+// };
+
+// &FILTER_FT_axis_capture_FT{
+// 	compatible = "generic-uio";
+// };
+
+// &FILTER_axi_gpio_FILTER_GAIN{
+// 	compatible = "generic-uio";
+// };
+
+// &FILTER_axi_interface_DEC_RATE_IQ{
+// 	compatible = "generic-uio";
+// };
+
+// &HDMI_axi_gpio_hdmi {
+// 	compatible = "generic-uio";
+// };
+
+// &PS2_axi_gpio_ps2_mouse {
+// 	compatible = "zgpiomouse";
+	
+// };
+
+// &PS2_axi_gpio_ps2_mouse_reset {
+// 	compatible = "generic-uio";
+	
+// };
+
+// &axis_capture_RF{
+// 	compatible = "generic-uio";
+// };
     
-&ADC_TestGen_TestGen_axi_gpio_ADC_TEST {
-	compatible = "generic-uio";
-};
+// &FILTER_FT_axi_gpio_FILTER_FT_GAIN{
+// 	compatible = "generic-uio";
+// };
 
-&ADC_TestGen_TestGen_dds_axi_interface_0{
-	compatible = "generic-uio";
-};
+// &SSB_demodulator_axi_gpio_AM_SSB{
+// 	compatible = "generic-uio";
+// };
 
-&DDC_FT_DDS_LO_FT_axi_interface{
-	compatible = "generic-uio";
-};
-
-&DDC_LO_DDS_LO_axi_interface{
-	compatible = "generic-uio";
-};
-
-&FILTER_FT_axi_interface_DEC_RATE_FT_IQ{
-	compatible = "generic-uio";
-};
-
-&FILTER_FT_axis_capture_FT{
-	compatible = "generic-uio";
-};
-
-&FILTER_axi_gpio_FILTER_GAIN{
-	compatible = "generic-uio";
-};
-
-&FILTER_axi_interface_DEC_RATE_IQ{
-	compatible = "generic-uio";
-};
-
-&HDMI_axi_gpio_hdmi {
-	compatible = "generic-uio";
-	
-};
-
-&PS2_axi_gpio_ps2_mouse {
-	compatible = "zgpiomouse";
-	
-};
-
-&PS2_axi_gpio_ps2_mouse_reset {
-	compatible = "generic-uio";
-	
-};
-
-&axis_capture_RF{
-	compatible = "generic-uio";
-};
-    
-&FILTER_FT_axi_gpio_FILTER_FT_GAIN{
-	compatible = "generic-uio";
-};
-
-&SSB_demodulator_axi_gpio_AM_SSB{
-	compatible = "generic-uio";
-};
-
-&SSB_demodulator_dds_axi_interface_BFO{
-	compatible = "generic-uio";
-};
+// &SSB_demodulator_dds_axi_interface_BFO{
+// 	compatible = "generic-uio";
+// };
  
 
-&AD9851_ad9851gfsk_0{
-	compatible = "generic-uio";
-};
+// &AD9851_ad9851gfsk_0{
+// 	compatible = "generic-uio";
+// };
 		
 		    

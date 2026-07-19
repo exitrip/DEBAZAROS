@@ -3222,8 +3222,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_128",
-                    "xci_path": "ip/ebaz4205_s00_regslice_128/ebaz4205_s00_regslice_128.xci",
+                    "xci_name": "ebaz4205_s00_regslice_130",
+                    "xci_path": "ip/ebaz4205_s00_regslice_130/ebaz4205_s00_regslice_130.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -3237,8 +3237,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_128",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_128/ebaz4205_s00_data_fifo_128.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_130",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_130/ebaz4205_s00_data_fifo_130.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
@@ -5528,8 +5528,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_129",
-                    "xci_path": "ip/ebaz4205_s00_regslice_129/ebaz4205_s00_regslice_129.xci",
+                    "xci_name": "ebaz4205_s00_regslice_131",
+                    "xci_path": "ip/ebaz4205_s00_regslice_131/ebaz4205_s00_regslice_131.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -5543,8 +5543,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_129",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_129/ebaz4205_s00_data_fifo_129.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_131",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_131/ebaz4205_s00_data_fifo_131.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {

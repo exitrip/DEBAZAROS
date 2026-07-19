@@ -35,13 +35,13 @@ preplace netloc mixer_0_dout5 1 2 1 570 170n
 preplace netloc mixer_0_dout6 1 2 1 560 230n
 preplace netloc mixer_0_dout7 1 2 1 N 250
 preplace netloc mixer_0_dout8 1 2 1 570 230n
-preplace netloc s_axi_aclk_1 1 0 2 -10J 410 260J
-preplace netloc s_axi_aresetn_1 1 0 2 -20J 90 220J
-preplace netloc xlslice_0_Dout 1 1 1 210J 120n
-preplace netloc xlslice_1_Dout 1 1 1 230J 140n
-preplace netloc xlslice_2_Dout 1 1 1 240J 160n
-preplace netloc xlslice_4_Dout 1 1 1 250J 200n
-preplace netloc Conn1 1 0 2 NJ 80 NJ
+preplace netloc s_axi_aclk_1 1 0 2 -10J 410 250J
+preplace netloc s_axi_aresetn_1 1 0 2 -20J 90 210J
+preplace netloc xlslice_0_Dout 1 1 1 NJ 150
+preplace netloc xlslice_1_Dout 1 1 1 220J 170n
+preplace netloc xlslice_2_Dout 1 1 1 230J 190n
+preplace netloc xlslice_4_Dout 1 1 1 240J 230n
+preplace netloc Conn1 1 0 2 NJ 80 220J
 levelinfo -pg 1 -60 100 420 840 980
 pagesize -pg 1 -db -bbox -sgen -260 0 1110 890
 "
