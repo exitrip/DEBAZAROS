@@ -24,9 +24,9 @@
         "OutputWidthLow": [ { "value": "8", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "UseRounding": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "RoundPoint": [ { "value": "0", "resolve_type": "user", "format": "long", "enabled": false, "usage": "all" } ],
-        "PipeStages": [ { "value": "0", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
-        "ClockEnable": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
-        "SyncClear": [ { "value": "false", "resolve_type": "user", "format": "bool", "enabled": false, "usage": "all" } ],
+        "PipeStages": [ { "value": "1", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
+        "ClockEnable": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
+        "SyncClear": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "SclrCePriority": [ { "value": "SCLR_Overrides_CE", "resolve_type": "user", "enabled": false, "usage": "all" } ],
         "ZeroDetect": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ]
       },
@@ -37,7 +37,7 @@
         "C_XDEVICEFAMILY": [ { "value": "zynq", "resolve_type": "generated", "usage": "all" } ],
         "C_HAS_CE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_HAS_SCLR": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
-        "C_LATENCY": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
+        "C_LATENCY": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_A_WIDTH": [ { "value": "16", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_A_TYPE": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_B_WIDTH": [ { "value": "8", "resolve_type": "generated", "format": "long", "usage": "all" } ],
@@ -80,6 +80,7 @@
     },
     "boundary": {
       "ports": {
+        "CLK": [ { "direction": "in", "driver_value": "0x1" } ],
         "A": [ { "direction": "in", "size_left": "15", "size_right": "0", "driver_value": "0" } ],
         "B": [ { "direction": "in", "size_left": "7", "size_right": "0", "driver_value": "0" } ],
         "P": [ { "direction": "out", "size_left": "27", "size_right": "0", "driver_value": "0" } ]
@@ -101,15 +102,18 @@
           "abstraction_type": "xilinx.com:signal:clock_rtl:1.0",
           "mode": "slave",
           "parameters": {
-            "ASSOCIATED_BUSIF": [ { "value": "p_intf:b_intf:a_intf", "value_src": "constant", "usage": "all" } ],
-            "ASSOCIATED_RESET": [ { "value": "sclr", "value_src": "constant", "usage": "all" } ],
-            "ASSOCIATED_CLKEN": [ { "value": "ce", "value_src": "constant", "usage": "all" } ],
-            "FREQ_HZ": [ { "value": "10000000", "resolve_type": "user", "format": "long", "usage": "all" } ],
-            "FREQ_TOLERANCE_HZ": [ { "value": "0", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
-            "PHASE": [ { "value": "0.0", "resolve_type": "generated", "format": "float", "is_ips_inferred": true, "is_static_object": false } ],
-            "CLK_DOMAIN": [ { "value": "", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
-            "ASSOCIATED_PORT": [ { "value": "", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
+            "ASSOCIATED_BUSIF": [ { "value": "p_intf:b_intf:a_intf", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
+            "ASSOCIATED_RESET": [ { "value": "sclr", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
+            "ASSOCIATED_CLKEN": [ { "value": "ce", "value_src": "constant", "value_permission": "bd", "usage": "all" } ],
+            "FREQ_HZ": [ { "value": "100000000", "value_src": "default_prop", "value_permission": "bd", "resolve_type": "user", "format": "long", "usage": "all" } ],
+            "FREQ_TOLERANCE_HZ": [ { "value": "0", "value_permission": "bd", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
+            "PHASE": [ { "value": "0.0", "value_permission": "bd", "resolve_type": "generated", "format": "float", "is_ips_inferred": true, "is_static_object": false } ],
+            "CLK_DOMAIN": [ { "value": "ebaz4205_axi_dynclk_0_0_PXL_CLK_O", "value_src": "default_prop", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
+            "ASSOCIATED_PORT": [ { "value": "", "value_permission": "bd", "resolve_type": "generated", "is_ips_inferred": true, "is_static_object": false } ],
             "INSERT_VIP": [ { "value": "0", "resolve_type": "user", "format": "long", "usage": "simulation.rtl", "is_ips_inferred": true, "is_static_object": false } ]
+          },
+          "port_maps": {
+            "CLK": [ { "physical_name": "CLK" } ]
           }
         },
         "sclr_intf": {

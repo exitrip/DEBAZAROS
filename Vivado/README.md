@@ -50,3 +50,7 @@ sudo devmem $((0x43c50000 + (5 * 4))) 32 0x6 #slow ramp;
 sudo devmem 0x43d00000 32 $((0x80000000 + 0x509 * N))
 ```
 
+to generate bin file:
+```
+write_cfgmem -force -format bin -interface smapx32 -disablebitswap -loadbit "up 0 {{name}}.bit" {{name}}.bin
+```

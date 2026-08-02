@@ -195,20 +195,132 @@ Clocking note: a third TMDS bank outside region X1Y1 cannot be served by the cur
 single BUFIO/BUFR — needs either BUFMR → per-region BUFIO/BUFR (the `ADD_BUFMR` stub in
 the local dynclk copy) or the dual-BUFG MMCM scheme.
 
-## VTC sharing (resource win, previously failed — root cause understood)
+## VTC sharing (resource win — correct recipe verified against RTL, Jul 2026)
 
-Both v_tc always run identical timing (shared PixelClk, same mode). Sharing one VTC
-saves ~1.3k LUTs + 3.2k FFs, much of it inside crowded region X1Y1. Past attempts hit
-"CDC issues" because **both v_axi4s_vid_out are configured `C_VTG_MASTER_SLAVE = 1`
-(Master)** — two masters fighting one VTC via `vtg_ce` causes lock/unlock oscillation
-(looks like CDC but isn't; `C_HAS_ASYNC_CLK=1` already handles the real stream↔pixel
-crossing). Correct recipe, no clock changes: re-customize both vid_outs to **Slave**
-timing mode; delete `HDMI_1/v_tc_0`; export `vtiming_out` from HDMI_0 → HDMI_1 (same
-pattern as the pixData cross-feed pins); tie the remaining VTC's `gen_clken` high;
-tie HDMI_1 `xlconcat_IRQ/In0` to constant 0 (preserves IRQ bit positions / no DT churn);
-drop VTC1 init from hdmi2.elf. Slave-mode vid_outs re-align by dropping input until
-TUSER-SOF meets vsync (a frame or two of settling at boot/mode change); both channels
-stay pixel-locked; an underflow on one channel no longer stalls shared timing.
+Both v_tc always ran identical timing (shared PixelClk, same mode). Sharing one VTC
+saves ~1.3k LUTs + 3.2k FFs, much of it inside crowded region X1Y1. Implemented Jul 2026:
+VTC deleted from HDMI_1; the five vtiming signals (vsync/hsync/vblank/hblank/
+active_video) cross hierarchies as discrete nets (interface "monitor pin" hookup was
+abandoned; discrete nets verified correct in BD); HDMI_1 `xlconcat_IRQ/In0` tied 0;
+hdmi2.elf display 1 reuses vtc_0 (correct).
+
+**⚠️ Timing-mode gotcha (cost a debug cycle):** in v_axi4s_vid_out 4.0 (rev 15 RTL,
+`ipshared/1b6c/hdl/v_axi4s_vid_out_v4_0_vl_rfs.v`) the mode names are the OPPOSITE of
+what PG044 suggests for this use:
+- **Slave mode (C_VTG_MASTER_SLAVE=0) PAUSES the VTC via vtg_ce during alignment**
+  (`gen_fifo_vtg_en_slave_mode` gates VTG_EN in CALN/lagging states; `vtg_lag` counter
+  gives up → IDLE → retries forever). With gen_clken tied high the VTG never lags, and
+  since VDMA and VTG frame rates are identical the bad phase repeats deterministically —
+  a channel either locks by boot-time luck or never locks at all.
+- **Master mode (C_VTG_MASTER_SLAVE=1) holds VTG_EN = VID_CE constantly** and aligns by
+  dropping FIFO data (EOL/SOF slip) — works fine with a free-running/shared VTC. The
+  original two-VTC design was master mode with vtg_ce effectively always high.
+- The output formatter **zeroes hsync/vsync/DE whenever not LOCKED** — an unlocked
+  vid_out gives "no signal" on the monitor (not black), only the TMDS clock lane runs.
+
+**Correct shared-VTC config: both vid_outs in MASTER mode + VTC gen_clken tied 1**
+(or wired to either vtg_ce — equivalent, master mode never deasserts it). Behavior:
+each channel locks independently by data-slip within a frame or two; an underflow kills
+only that channel's output until re-lock. No software change beyond the single-VTC
+edits already in hdmi2.elf.
+
+**⚠️ IPI interface-vs-member-pin gotcha (Aug 2026, cost another debug cycle):** an
+interface connection (v_tc vtiming_out → vid_out vtiming_in) drawn in the BD was
+**silently generated as all-zero tie-offs** because the same interface's member pins
+(vsync_out etc.) were simultaneously connected to discrete nets for the cross-hierarchy
+fanout. IPI refuses to *branch* an interface net, allows the mixed hookup in the
+diagram, then drops the interface side at generation — no warning. Rule: **when any
+member pin of an interface is individually connected, connect ALL consumers via
+discrete member nets; never leave a parallel interface-level connection.** Verify after
+generation: both vid_out instantiations in
+`Vivado.gen/sources_1/bd/ebaz4205/synth/ebaz4205.v` must show real nets on all five
+vtg_* ports (only vtg_field_id may be 1'b0).
+Also: physical DVI connector labels vs BD names may be swapped — BD HDMI_0 = TMDS clk
+F19/F20, BD HDMI_1 = TMDS clk L16/L17 (see ebaz4205.xdc). Channel-identity kill test:
+`devmem 0x41210000 32 0` blacks out BD HDMI_0's output (restore 0x00ffffff).
+
+**Timing-report hygiene (Aug 2026):** PXL_CLK is constrained at 10 ns (100 MHz dynclk
+default) so every build "fails" with WNS ≈ −39 ns — all on DORMANT mixer mode-1 MAC
+paths (synthesis builds 10-DSP cascades ACROSS channels, e.g. dout3_reg→dout7_reg,
+19 logic levels; harmless while no channel uses mode 1 — script uses modes 0x23/4).
+⚠️ The summary only prints top paths per clock — the −39 ns mixer paths HIDE other
+real violations below the cutoff; use targeted `report_timing -to <endpoint>`.
+Fix later: constrain PXL_CLK to realistic 74.25 MHz max + false-path or pipeline the
+MAC paths; the cross-channel DSP cascading is also why the time-multiplexed mixer
+redesign must re-structure the adder trees.
+
+**HDMI_1 content-dependent dropout ROOT CAUSE (Aug 2026, MEASURED):** the entire
+effects chain is one unregistered combinational mega-cone. Worst measured path
+(routed impl_2): `HDMI_0/v_axi4s_vid_out_0/FORMATTER_INST/in_data_mux_reg` →
+colorGainMatrix xbip_multadd → HDMI_0 colorGainMain mult → cross-hierarchy pixData →
+HDMI_1 feedback mult → c_addsub_1 → HDMI_1 colorGainMain mult → c_addsub_2 →
+`HDMI_1/rgb2dvi_0/DataEncoders[*]/n1d_1_reg` (TMDS encoder popcount): **arrival
+≈35.5 ns** (slack −25.5 vs the 10 ns constraint). 4 mults + 2 adders + encoder
+front-end, zero registers (mult_gen PipeStages=0, multadd latency 0, c_addsub_1/2
+Latency 0). At 720p60 (13.5 ns) violated by ~22 ns → dropouts; at 720p30 (28.6 ns)
+violated by ~7 ns worst-case but typical-corner silicon ≈ passes → the historical
+"touchy, only below 720p30/35 MHz" ceiling WAS this cone. DDS leg additionally enters
+via HDMI_1/c_addsub_0 registered on the ASYNC 145M stream clock (HDMI_0's on 100M).
+Symptoms: solid with gains=0 (no transitions on violating paths); unstable with
+feedback gain ≥~0x08 or DDS-layer content; monitor drops sync every few seconds
+(encoder disparity corruption); MMCM lock + HDMI_0 unaffected. PCB exonerated
+(4-layer, GND zones, port 0 measures worse than port 1 on pair skew yet is stable).
+
+**Fix (all free/near-free, BD re-customize only, no address/software changes):**
+1. all mult_gen PipeStages 0→1 (DSP-internal regs), 2. all 9 xbip_multadd: GUI only
+offers latency 0 or **−1 (auto; forces both fields)** — use −1. They form 3 C-cascaded
+chains of 3, so nonzero C latency skews R/G/B matrix contributions by (Actual C
+Latency) px per cascade stage — cosmetic chromatic offset in the matrix layer only;
+compensable later with SRL delays on the G (+1×C-lat) and B (+2×C-lat) slices. Record
+the "Actual AB/C Latency" values the GUI reports. (Alternative: leave multadds at 0 —
+sync dropouts still fixed at all rates since mult_gen regs bound every encoder-facing
+segment; the residual ~20 ns comb multadd chain inside HDMI_0 then only corrupts
+matrix-layer pixel VALUES at 720p60, sparkle not sync loss; pixel-perfect at 720p30.)
+3. c_addsub_1/2 Latency →1 with CLK=PixelClk, 4. both c_addsub_0 reclocked to PixelClk
+(confines DDS CDC to one registered slow value). Adder-regs-only is NOT enough for
+720p60 (front segment still ~20 ns). Side effects: few-px shift vs sync + small
+inter-layer shifts (imperceptible). Verify pre/post on routed dcp:
+`report_timing -from [get_clocks axi_dynclk_0_PXL_CLK_O] -to [get_clocks
+axi_dynclk_0_PXL_CLK_O] -max_paths 1000 -nworst 1 -sort_by slack -file pxl.rpt`
+then grep for HDMI_1/rgb2dvi. (GUI Tcl console can wedge/queue silently — use
+`vivado -mode batch` against the checkpoint instead.) After this fix, feedback at
+720p60 becomes plausible for the first time; remaining offender = dormant mixer
+mode-1 MAC paths (−39 ns, masked by mode muxing).
+
+**Debug visibility TODO:** make both axi_gpio_hdmi dual-channel, ch2 inputs = local
+vid_out locked/underflow/overflow → readable at 0x4120_0008 / 0x4122_0008, no address
+moves. In master mode, "no signal" ⇔ not locked ⇔ usually no stream SOF (VDMA not
+running) — check MM2S DMACR/DMASR (0x4300_0000/4, 0x4301_0000/4) before suspecting
+the BD.
+
+## Driver-code direction (analysis Aug 2026 — no API designed yet)
+
+Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
+
+- hdmi2 = three things: an **invasive frozen fork** of Xilinx baremetal drivers
+  (146 mm_IP touchpoints in xvtc.c, 107 in xaxivdma.c — never extend, never update),
+  a reusable 60-line /dev/mem mmap shim (IP_Driver.c), and bring-up sequencing worth
+  keeping (vga_modes.h MMCM tables, start ordering). Hardware truth is quadruplicated
+  by hand: stale xparameters.h (Feb 2025) + xvtc_g.c/xaxivdma_g.c + hardcoded consts +
+  debazarosit.sh.
+- **Control plane ≠ bring-up**: new control code = thin dependency-free register layer;
+  discover devices at runtime via UIO (/sys/class/uio scan; dtsi generic-uio nodes
+  already exist) so BD address changes propagate with zero C edits.
+- **Address-stability contract**: bitstream-only fpga_manager swaps work because
+  addresses never move. Do the GPIO/interconnect consolidation ONCE before driver work,
+  then freeze the map except additions (third channel = pure addition).
+- Move app code from jerkspace (local git, no remote, "testing this mess" commits) into
+  this repo (`sw/`), plain Makefile, drop the Vitis managed build.
+- **Framebuffer geometry trap**: hdmi2 slot pitch = DEMO_MAX_FRAME (1920·1080·4 ≈
+  8.29 MB, disp0=slots 0-1, disp1=slots 2-3) but dtsi fb0 = 1280×2160 = 3×720p at
+  3.69 MB pitch — fb0 rows 720+ land mid-slot-0, NOT in a second frame. Unify in one
+  memory_map.h (keep 1080p pitch, 6 slots for 3 displays, fb0 = slot 0 only) and fix
+  reserved-memory (16 MB now vs ~50 MB for 6 slots).
+- Coherence between ffmpeg (fbdev WC), C code (/dev/mem uncached), VDMA (DDR direct)
+  is inherent — but uncached A9 reads are tens of MB/s: benchmark before promising
+  full-frame 30 fps CPU processing; slow generative layer + PL data plane is the fit.
+  Tear-free flip already exists (write off-screen slot → DisplayChangeFrame park).
+  VTC IRQ → UIO would give a clean wait-for-vsync primitive later.
 
 ## Known issues / future work (user's stated roadmap)
 1. **Cleanup + documentation pass** without breaking the fragile Vivado project
