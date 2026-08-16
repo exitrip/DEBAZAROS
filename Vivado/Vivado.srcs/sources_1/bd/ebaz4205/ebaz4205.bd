@@ -80,7 +80,10 @@
         "c_addsub_0": "",
         "dds_compiler_0": "",
         "v_tc_0": "",
-        "xlconstant_1": ""
+        "xlconstant_1": "",
+        "blk_mem_gen_0": "",
+        "c_counter_binary_0": "",
+        "c_addsub_1": ""
       },
       "HDMI_1": {
         "xlconstant_0": "",
@@ -3250,8 +3253,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_144",
-                    "xci_path": "ip/ebaz4205_s00_regslice_144/ebaz4205_s00_regslice_144.xci",
+                    "xci_name": "ebaz4205_s00_regslice_154",
+                    "xci_path": "ip/ebaz4205_s00_regslice_154/ebaz4205_s00_regslice_154.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -3265,8 +3268,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_144",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_144/ebaz4205_s00_data_fifo_144.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_154",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_154/ebaz4205_s00_data_fifo_154.xci",
                     "inst_hier_path": "HDMI_0/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
@@ -5010,6 +5013,81 @@
             "xci_name": "ebaz4205_xlconstant_0_4",
             "xci_path": "ip/ebaz4205_xlconstant_0_4/ebaz4205_xlconstant_0_4.xci",
             "inst_hier_path": "HDMI_0/xlconstant_1"
+          },
+          "blk_mem_gen_0": {
+            "vlnv": "xilinx.com:ip:blk_mem_gen:8.4",
+            "xci_name": "ebaz4205_blk_mem_gen_0_1",
+            "xci_path": "ip/ebaz4205_blk_mem_gen_0_1/ebaz4205_blk_mem_gen_0_1.xci",
+            "inst_hier_path": "HDMI_0/blk_mem_gen_0",
+            "parameters": {
+              "Algorithm": {
+                "value": "Minimum_Area"
+              },
+              "Assume_Synchronous_Clk": {
+                "value": "true"
+              },
+              "Enable_A": {
+                "value": "Always_Enabled"
+              },
+              "Enable_B": {
+                "value": "Always_Enabled"
+              },
+              "Fill_Remaining_Memory_Locations": {
+                "value": "true"
+              },
+              "Memory_Type": {
+                "value": "Simple_Dual_Port_RAM"
+              },
+              "Operating_Mode_A": {
+                "value": "READ_FIRST"
+              },
+              "Write_Depth_A": {
+                "value": "16384"
+              },
+              "Write_Width_A": {
+                "value": "24"
+              },
+              "use_bram_block": {
+                "value": "Stand_Alone"
+              }
+            }
+          },
+          "c_counter_binary_0": {
+            "vlnv": "xilinx.com:ip:c_counter_binary:12.0",
+            "xci_name": "ebaz4205_c_counter_binary_0_0",
+            "xci_path": "ip/ebaz4205_c_counter_binary_0_0/ebaz4205_c_counter_binary_0_0.xci",
+            "inst_hier_path": "HDMI_0/c_counter_binary_0",
+            "parameters": {
+              "Output_Width": {
+                "value": "14"
+              }
+            }
+          },
+          "c_addsub_1": {
+            "vlnv": "xilinx.com:ip:c_addsub:12.0",
+            "xci_name": "ebaz4205_c_addsub_1_3",
+            "xci_path": "ip/ebaz4205_c_addsub_1_3/ebaz4205_c_addsub_1_3.xci",
+            "inst_hier_path": "HDMI_0/c_addsub_1",
+            "parameters": {
+              "A_Width": {
+                "value": "14"
+              },
+              "B_Value": {
+                "value": "00000000000000"
+              },
+              "B_Width": {
+                "value": "14"
+              },
+              "CE": {
+                "value": "false"
+              },
+              "Latency": {
+                "value": "0"
+              },
+              "Out_Width": {
+                "value": "14"
+              }
+            }
           }
         },
         "interface_nets": {
@@ -5162,7 +5240,8 @@
             "ports": [
               "aRst_n",
               "rgb2dvi_0/aRst_n",
-              "v_axi4s_vid_out_0/aresetn"
+              "v_axi4s_vid_out_0/aresetn",
+              "blk_mem_gen_0/wea"
             ]
           },
           "axi_dynclk_0_PXL_CLK_O": {
@@ -5173,13 +5252,17 @@
               "v_axi4s_vid_out_0/vid_io_out_clk",
               "v_tc_0/clk",
               "colorGainMain/pixClk_in",
-              "c_addsub_0/CLK"
+              "c_addsub_0/CLK",
+              "blk_mem_gen_0/clkb",
+              "blk_mem_gen_0/clka",
+              "c_counter_binary_0/CLK"
             ]
           },
           "axi_gpio_hdmi1_gpio_io_o": {
             "ports": [
               "axi_gpio_dds_shift/gpio_io_o",
-              "c_addsub_0/B"
+              "c_addsub_0/B",
+              "c_addsub_1/B"
             ]
           },
           "axi_gpio_hdmi_ip2intc_irpt": {
@@ -5194,10 +5277,22 @@
               "xlconcat_IRQ/In1"
             ]
           },
+          "blk_mem_gen_0_doutb": {
+            "ports": [
+              "blk_mem_gen_0/doutb",
+              "mixerMatrix/din0"
+            ]
+          },
           "c_addsub_0_S": {
             "ports": [
               "c_addsub_0/S",
               "mixerMatrix/din1"
+            ]
+          },
+          "c_addsub_1_S": {
+            "ports": [
+              "c_addsub_1/S",
+              "blk_mem_gen_0/addrb"
             ]
           },
           "colorGain_dout": {
@@ -5205,6 +5300,13 @@
               "colorGainMain/dout",
               "pixData",
               "rgb2dvi_0/vid_pData"
+            ]
+          },
+          "counter26_0_count": {
+            "ports": [
+              "c_counter_binary_0/Q",
+              "blk_mem_gen_0/addra",
+              "c_addsub_1/A"
             ]
           },
           "dds_compiler_0_m_axis_data_tdata": {
@@ -5222,7 +5324,7 @@
           "pixIn_1": {
             "ports": [
               "pixIn",
-              "mixerMatrix/din0"
+              "blk_mem_gen_0/dina"
             ]
           },
           "rgb2dvi_0_TMDS_Clk_n": {
@@ -5613,8 +5715,8 @@
                 "components": {
                   "s00_regslice": {
                     "vlnv": "xilinx.com:ip:axi_register_slice:2.1",
-                    "xci_name": "ebaz4205_s00_regslice_145",
-                    "xci_path": "ip/ebaz4205_s00_regslice_145/ebaz4205_s00_regslice_145.xci",
+                    "xci_name": "ebaz4205_s00_regslice_155",
+                    "xci_path": "ip/ebaz4205_s00_regslice_155/ebaz4205_s00_regslice_155.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_regslice",
                     "interface_ports": {
                       "S_AXI": {
@@ -5628,8 +5730,8 @@
                   },
                   "s00_data_fifo": {
                     "vlnv": "xilinx.com:ip:axi_data_fifo:2.1",
-                    "xci_name": "ebaz4205_s00_data_fifo_145",
-                    "xci_path": "ip/ebaz4205_s00_data_fifo_145/ebaz4205_s00_data_fifo_145.xci",
+                    "xci_name": "ebaz4205_s00_data_fifo_155",
+                    "xci_path": "ip/ebaz4205_s00_data_fifo_155/ebaz4205_s00_data_fifo_155.xci",
                     "inst_hier_path": "HDMI_1/axi_interconnect_1/s00_couplers/s00_data_fifo",
                     "interface_ports": {
                       "S_AXI": {
