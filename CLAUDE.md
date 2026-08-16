@@ -175,14 +175,68 @@ and a menu mode (`-m`). CLI: `-r <res>`. Note: `TimerDelay` via scutimer SEGVs (
 out); LED GPIO hardcoded 0x41240000.
 
 **Device tree** (root `system-user.dtsi`, current): reserved-memory `removed-dma-pool`
-16 MB @0x0800_0000 (no-map); simple-framebuffer 1280×2160 (3×720 stacked frames!)
+**128 MB** @0x0800_0000 (no-map, `reg = <0x08000000 0x08000000>`; raised from 16 MB in
+commit 45a668cb, Jul 2026 — sizing is now fine: covers the 4 slots hdmi2.elf uses and the
+97 MB span it maps); simple-framebuffer 1280×2160 (3×720 stacked frames!)
 a8r8g8b8 → `/dev/fb0` (ffmpeg writes top 720 lines = disp0 frame 0). bootargs:
 `clk_ignore_unused cma=256M uio_pdrv_genirq.of_id=generic-uio`, root mmcblk0p2.
 UIO nodes for HDMI_0/1 GPIOs and all 9 mixer nodes (mixer_1..8 labels are speculative —
-only mixer_0 exists in the current BD). 16 MB reservation < 4 frames × 8.1 MB = 29.5 MB
-used by hdmi2.elf — the app maps 97 MB span; **reserved region is undersized vs what the
-code touches** (works because nothing else claims that RAM, but worth fixing in the
-kernel/dts pass).
+only mixer_0 exists in the current BD).
+
+**Two independent framebuffers — MEASURED on hardware, Aug 2026:**
+
+⚠️ **`simplefb` allows exactly ONE instance system-wide.** Confirmed on the target
+(5.15.36-xilinx-v2022.2): a second `simple-framebuffer` node probes and is rejected with
+`simple-framebuffer 8384000.framebuffer1: simplefb: a framebuffer is already registered`.
+The cause is upstream commit "fbdev: Prevent probing generic drivers if a FB is already
+registered" (Javier Martinez Canillas, 2021), present in the Xilinx 5.15 LTS rebase:
+
+```c
+	if (num_registered_fb > 0) {
+		dev_err(&pdev->dev, "simplefb: a framebuffer is already registered\n");
+		return -EINVAL;
+	}
+```
+
+Its intent was "do not probe a generic FB driver when a real one already bound"; blocking
+multiple simplefb instances is a side effect. Multiple nodes are legal in the *binding* —
+only this driver check forbids them. Do not repeat this test unpatched.
+
+Second, independent bug in that same test: the node was placed at 0x0838_4000 (the "stacked
+fb rows" address). Display 1 does NOT scan out there. Both displays park on frame index 0
+(`curFrame = 0` + `XAxiVdma_StartParking`), so disp0 = 0x0800_0000 and
+**disp1 = 0x08FD_2000** (= 2 × DEMO_MAX_FRAME). Each 1280×720, stride 1280·4
+(`display_ctrl.c:363` sets VDMA stride = width·4). Even if simplefb had allowed the second
+node, fb1 at 0x0838_4000 would have shown nothing.
+
+Ways to get two independent surfaces, cheapest first:
+
+1. **Patch out the `num_registered_fb` guard** (5-line deletion, kernel patch in
+   `meta-user/recipes-kernel/linux/`), two DT nodes at 0x0800_0000 / 0x08FD_2000. No Kconfig
+   change (`CONFIG_FB_SIMPLE=y` already). Per-frame kernel overhead: zero — simplefb has no
+   IRQ and no per-frame work. **Recommended.**
+2. **No kernel change at all**: keep one fb0, write disp1's slot through `sw/fbfeed/`
+   (mmaps `/dev/mem` at 0x08FD_2000, or `/dev/fbN` at a byte offset; fed by
+   `ffmpeg ... -pix_fmt bgra -f rawvideo pipe:1`). Same copy cost as the fbdev muxer.
+   `/dev/mem` on a no-map region maps **uncached** on ARM — run `fbfeed -v` and check the
+   MB/s before trusting it. If too slow, grow fb0 to 1280×3960 (row 3240 = 0x08FD_2000)
+   and feed both displays through `/dev/fb0` at offsets, which is write-combined.
+3. **`simpledrm`** (no singleton check; `devm_aperture_acquire_from_firmware` per range, so
+   two instances are fine): swap `CONFIG_FB_SIMPLE` → `CONFIG_DRM_SIMPLEDRM` +
+   `DRM_GEM_SHMEM_HELPER` + `DRM_FBDEV_EMULATION`. Costs one extra full-frame blit per flush
+   (`drm_fb_blit_rect_dstclip` from the shadow plane) ≈ 3.69 MB/frame/display, ~220 MB/s at
+   720p30 ×2, plus deferred-IO faults. Gives no real mode setting. Already tried and backed
+   out in 2023: `user_2023-03-13-15-42-00.cfg` enables it, `user_2023-03-13-17-53-00.cfg`
+   disables it and selects `CONFIG_FB_SIMPLE=y`.
+4. **Real DRM/KMS (`xlnx,pl-disp`)** — a project, not a config change. `DRM_XLNX_PL_DISP`
+   depends on `XILINX_FRMBUF` (the frame-buffer-read IP that once broke the Vivado build);
+   it takes a dmaengine channel named `dma0` + `xlnx,vformat`, and does NO clock work.
+   Timing needs the `xlnx,bridge-v-tc-6.1` VTC bridge (`DRM_XLNX_BRIDGE_VTC`), which demands
+   `s_axi_aclk` + `clk` as CCF clocks — axi_dynclk is not a CCF provider, so a `fixed-clock`
+   stub (or a new clk driver) is required, and DRM could not change resolution. An
+   encoder/connector must also be invented, since rgb2dvi has no I2C/EDID. hdmi2.elf would
+   have to stop touching the VDMAs and VTC. Note ffmpeg has no KMS output, so through fbdev
+   emulation this path is *slower* than option 1.
 
 ## Third HDMI/DVI port (hard constraint)
 
@@ -313,9 +367,10 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   this repo (`sw/`), plain Makefile, drop the Vitis managed build.
 - **Framebuffer geometry trap**: hdmi2 slot pitch = DEMO_MAX_FRAME (1920·1080·4 ≈
   8.29 MB, disp0=slots 0-1, disp1=slots 2-3) but dtsi fb0 = 1280×2160 = 3×720p at
-  3.69 MB pitch — fb0 rows 720+ land mid-slot-0, NOT in a second frame. Unify in one
-  memory_map.h (keep 1080p pitch, 6 slots for 3 displays, fb0 = slot 0 only) and fix
-  reserved-memory (16 MB now vs ~50 MB for 6 slots).
+  3.69 MB pitch — fb0 rows 720+ land mid-slot-0 (rows 1620+ spill into disp0 slot 1),
+  NOT in a second frame, and never reach disp1 at 0x08FD_2000 (fb0 ends at 0x08A8_C000).
+  Unify in one memory_map.h (keep 1080p pitch, 6 slots for 3 displays, fb0 = slot 0 only).
+  Reserved-memory sizing is no longer a problem (128 MB since Jul 2026).
 - Coherence between ffmpeg (fbdev WC), C code (/dev/mem uncached), VDMA (DDR direct)
   is inherent — but uncached A9 reads are tens of MB/s: benchmark before promising
   full-frame 30 fps CPU processing; slow generative layer + PL data plane is the fit.
@@ -326,8 +381,10 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
 1. **Cleanup + documentation pass** without breaking the fragile Vivado project
    (READMEs are all SDR-era; legacy folders to prune/archive)
 2. **Better driver C code** + proper PetaLinux kernel/DTS config (replace devmem pokes
-   and /dev/mem mmap with UIO or real drivers; fix reserved-memory sizing; dtsi in
-   PetaLinux/ tree is stale vs repo root)
+   and /dev/mem mmap with UIO or real drivers; reserved-memory sizing already fixed
+   (128 MB); in progress Aug 2026: per-display simple-framebuffer nodes so disp1 gets a
+   /dev/fb — building on the PetaLinux machine, not yet run on hardware. Keep the dtsi in
+   PetaLinux/ in sync with the repo root; it went stale once)
 3. **Gateware stability/usage/timing**: feedback path unstable above ~35 MHz pixel clock
    (720p30 limit) — primary suspect is the BUFR single-region pixel clock (see Clocking)
    plus unregistered multiply chains; mixer dout7 ctrl[6] copy-paste bug;
