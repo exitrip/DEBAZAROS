@@ -1,0 +1,33 @@
+{
+   "ActiveEmotionalView":"Default View",
+   "Default View_ScaleFactor":"0.966641",
+   "Default View_TopLeft":"-125,298",
+   "ExpandedHierarchyInLayout":"",
+   "guistr":"# # String gsaved with Nlview 7.0r4  2019-12-20 bk=1.5203 VDI=41 GEI=36 GUI=JA:10.0 TLS
+#  -string -flagsOSRD
+preplace port port-id_pixClk_in -pg 1 -lvl 0 -x 0 -y 360 -defaultsOSRD
+preplace portBus dout0 -pg 1 -lvl 5 -x 1030 -y 770 -defaultsOSRD
+preplace portBus Din1 -pg 1 -lvl 0 -x 0 -y 720 -defaultsOSRD
+preplace portBus Din0 -pg 1 -lvl 0 -x 0 -y 660 -defaultsOSRD
+preplace inst mult_gen_3 -pg 1 -lvl 3 -x 680 -y 650 -defaultsOSRD
+preplace inst mult_gen_4 -pg 1 -lvl 3 -x 680 -y 790 -defaultsOSRD
+preplace inst mult_gen_5 -pg 1 -lvl 3 -x 680 -y 930 -defaultsOSRD
+preplace inst xlconcat_1 -pg 1 -lvl 4 -x 900 -y 770 -defaultsOSRD
+preplace inst xlslice_7 -pg 1 -lvl 2 -x 440 -y 660 -defaultsOSRD
+preplace inst xlslice_9 -pg 1 -lvl 2 -x 440 -y 780 -defaultsOSRD
+preplace inst xlslice_11 -pg 1 -lvl 2 -x 440 -y 900 -defaultsOSRD
+preplace netloc Din1_1 1 0 3 NJ 720 NJ 720 570
+preplace netloc axi_gain_1_gpio2_io_o 1 0 2 N 660 190
+preplace netloc mult_gen_0_P1 1 3 1 780 650n
+preplace netloc mult_gen_1_P1 1 3 1 780 770n
+preplace netloc mult_gen_2_P1 1 3 1 790 790n
+preplace netloc pixClk_in_1 1 0 3 NJ 360 NJ 360 560
+preplace netloc xlconcat_0_dout1 1 4 1 NJ 770
+preplace netloc xlslice_1_Dout1 1 2 1 580J 660n
+preplace netloc xlslice_3_Dout1 1 2 1 550J 780n
+preplace netloc xlslice_5_Dout1 1 2 1 550J 900n
+levelinfo -pg 1 0 170 440 680 900 1030
+pagesize -pg 1 -db -bbox -sgen -130 -20 1170 1010
+"
+}
+0

@@ -1,113 +1,114 @@
 {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"1.01531",
-   "Default View_TopLeft":"392,359",
+   "Default View_ScaleFactor":"0.715978",
+   "Default View_TopLeft":"932,268",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.0r4  2019-12-20 bk=1.5203 VDI=41 GEI=36 GUI=JA:10.0 TLS
 #  -string -flagsOSRD
-preplace port S_AXI -pg 1 -lvl 0 -x -120 -y 220 -defaultsOSRD
-preplace port HDMI_HPD -pg 1 -lvl 6 -x 3280 -y 230 -defaultsOSRD
-preplace port ctrl -pg 1 -lvl 0 -x -120 -y 540 -defaultsOSRD
-preplace port M00_AXI1 -pg 1 -lvl 6 -x 3280 -y 1340 -defaultsOSRD
-preplace port S_AXI_LITE_VDMA -pg 1 -lvl 0 -x -120 -y 1260 -defaultsOSRD
-preplace port gain -pg 1 -lvl 0 -x -120 -y 420 -defaultsOSRD
-preplace port S_AXI_LITE_MIXER_0 -pg 1 -lvl 0 -x -120 -y 610 -defaultsOSRD
-preplace port dds_stream_s -pg 1 -lvl 0 -x -120 -y 910 -defaultsOSRD
-preplace port S_AXI_LITE_dds_shift -pg 1 -lvl 0 -x -120 -y 720 -defaultsOSRD
-preplace port port-id_s_axi_aclk -pg 1 -lvl 0 -x -120 -y 740 -defaultsOSRD
-preplace port port-id_m_axis_mm2s_aclk -pg 1 -lvl 0 -x -120 -y 1300 -defaultsOSRD
-preplace port port-id_s_axi_aresetn -pg 1 -lvl 0 -x -120 -y 930 -defaultsOSRD
-preplace port port-id_ARESETN -pg 1 -lvl 0 -x -120 -y 1200 -defaultsOSRD
-preplace port port-id_TMDS_Clk_p_0 -pg 1 -lvl 6 -x 3280 -y 330 -defaultsOSRD
-preplace port port-id_TMDS_Clk_n_0 -pg 1 -lvl 6 -x 3280 -y 350 -defaultsOSRD
-preplace port port-id_In5 -pg 1 -lvl 0 -x -120 -y 160 -defaultsOSRD
-preplace port port-id_aRst_n -pg 1 -lvl 0 -x -120 -y 1430 -defaultsOSRD
-preplace port port-id_PixelClk -pg 1 -lvl 0 -x -120 -y 1020 -defaultsOSRD
-preplace port port-id_SerialClk -pg 1 -lvl 0 -x -120 -y 360 -defaultsOSRD
-preplace port port-id_hblank_out -pg 1 -lvl 6 -x 3280 -y 600 -defaultsOSRD
-preplace port port-id_hsync_out -pg 1 -lvl 6 -x 3280 -y 620 -defaultsOSRD
-preplace port port-id_vblank_out -pg 1 -lvl 6 -x 3280 -y 640 -defaultsOSRD
-preplace port port-id_active_video_out -pg 1 -lvl 6 -x 3280 -y 580 -defaultsOSRD
-preplace port port-id_vsync_out -pg 1 -lvl 6 -x 3280 -y 660 -defaultsOSRD
-preplace portBus HDMI_OEN -pg 1 -lvl 6 -x 3280 -y 1500 -defaultsOSRD
-preplace portBus TMDS_Data_p_0 -pg 1 -lvl 6 -x 3280 -y 370 -defaultsOSRD
-preplace portBus TMDS_Data_n_0 -pg 1 -lvl 6 -x 3280 -y 390 -defaultsOSRD
-preplace portBus dout -pg 1 -lvl 6 -x 3280 -y 110 -defaultsOSRD
-preplace portBus In3 -pg 1 -lvl 0 -x -120 -y 120 -defaultsOSRD
-preplace portBus In4 -pg 1 -lvl 0 -x -120 -y 140 -defaultsOSRD
-preplace portBus pixData -pg 1 -lvl 6 -x 3280 -y 250 -defaultsOSRD
-preplace portBus pixIn -pg 1 -lvl 0 -x -120 -y 820 -defaultsOSRD
-preplace inst xlconstant_0 -pg 1 -lvl 5 -x 3040 -y 1500 -defaultsOSRD
-preplace inst xlconcat_IRQ -pg 1 -lvl 5 -x 3040 -y 110 -defaultsOSRD
-preplace inst axi_interconnect_1 -pg 1 -lvl 5 -x 3040 -y 1340 -defaultsOSRD
-preplace inst axis_subset_converter_0 -pg 1 -lvl 3 -x 1150 -y 1180 -defaultsOSRD
-preplace inst colorGainMain -pg 1 -lvl 4 -x 1660 -y 460 -defaultsOSRD
-preplace inst mixerMatrix -pg 1 -lvl 3 -x 1150 -y 680 -defaultsOSRD
-preplace inst v_axi4s_vid_out_0 -pg 1 -lvl 4 -x 1660 -y 1490 -defaultsOSRD
-preplace inst axi_gpio_hdmi -pg 1 -lvl 4 -x 1660 -y 240 -defaultsOSRD
-preplace inst axi_gpio_dds_shift -pg 1 -lvl 1 -x 120 -y 740 -defaultsOSRD
-preplace inst axi_vdma_0 -pg 1 -lvl 2 -x 610 -y 1450 -defaultsOSRD
-preplace inst c_addsub_0 -pg 1 -lvl 2 -x 610 -y 730 -defaultsOSRD
-preplace inst dds_compiler_0 -pg 1 -lvl 1 -x 120 -y 930 -defaultsOSRD
-preplace inst v_tc_0 -pg 1 -lvl 5 -x 3040 -y 630 -defaultsOSRD
-preplace inst xlconstant_1 -pg 1 -lvl 4 -x 1660 -y 1144 -defaultsOSRD
-preplace inst blk_mem_gen_0 -pg 1 -lvl 2 -x 610 -y 960 -defaultsOSRD
-preplace inst c_counter_binary_0 -pg 1 -lvl 1 -x 120 -y 1110 -defaultsOSRD
-preplace inst c_addsub_1 -pg 1 -lvl 2 -x 610 -y 1170 -defaultsOSRD
-preplace inst rgb2dvi_0 -pg 1 -lvl 5 -x 3040 -y 360 -defaultsOSRD
-preplace netloc Din_1 1 3 1 1310 440n
-preplace netloc In3_1 1 0 5 NJ 120 NJ 120 NJ 120 NJ 120 NJ
-preplace netloc In4_1 1 0 5 NJ 140 NJ 140 NJ 140 NJ 140 NJ
-preplace netloc In5_1 1 0 5 NJ 160 NJ 160 NJ 160 NJ 160 NJ
-preplace netloc Net 1 0 5 NJ 1300 330 1300 870 1300 1320 1300 1870
-preplace netloc PS_ARESETN 1 0 5 -100 660 340 620 850 520 1390 580 1830J
-preplace netloc PS_FCLK_CLK0 1 0 5 -90 830 360 630 870 550 1350 600 NJ
-preplace netloc SerialClk_1 1 0 5 -100J 350 NJ 350 NJ 350 NJ 350 1880J
-preplace netloc aRst_n_1 1 0 5 -80J 840 380J 810 NJ 810 1330 360 1870J
-preplace netloc axi_dynclk_0_PXL_CLK_O 1 0 5 -90J 1020 330J 600 860 530 1370 560 1910
-preplace netloc axi_gpio_hdmi1_gpio_io_o 1 1 1 310 730n
-preplace netloc axi_gpio_hdmi_ip2intc_irpt 1 4 1 1840 100n
-preplace netloc axi_vdma_0_mm2s_introut 1 2 3 820J 110 NJ 110 1830
-preplace netloc c_addsub_0_S 1 2 1 810 730n
-preplace netloc colorGain_dout 1 4 2 1850 240 3260J
-preplace netloc dds_compiler_0_m_axis_data_tdata 1 1 1 320 710n
-preplace netloc dds_compiler_0_m_axis_phase_tdata 1 1 2 350 650 840J
-preplace netloc pixIn_1 1 0 2 NJ 820 370J
-preplace netloc rgb2dvi_0_TMDS_Clk_n 1 5 1 3260J 350n
-preplace netloc rgb2dvi_0_TMDS_Clk_p 1 5 1 3260J 330n
-preplace netloc rgb2dvi_0_TMDS_Data_n 1 5 1 3260J 390n
-preplace netloc rgb2dvi_0_TMDS_Data_p 1 5 1 3260J 370n
-preplace netloc rst_ps7_0_140M_peripheral_aresetn 1 0 5 NJ 1200 320J 1240 880 1260 1340 1260 1840
-preplace netloc v_axi4s_vid_out_0_vid_data 1 2 3 880 820 NJ 820 1830
-preplace netloc v_axi4s_vid_out_0_vid_hsync 1 4 1 1890 340n
-preplace netloc v_axi4s_vid_out_0_vid_vsync 1 4 1 1900 360n
-preplace netloc v_tc_0_active_video_out 1 3 3 1420 810 N 810 3260
-preplace netloc v_tc_0_hblank_out 1 3 3 1390 590 1870 480 3250
-preplace netloc v_tc_0_hsync_out 1 3 3 1400 830 N 830 3250
-preplace netloc v_tc_0_irq 1 4 2 1830 0 3220
-preplace netloc v_tc_0_vblank_out 1 3 3 1410 840 N 840 3240
-preplace netloc v_tc_0_vsync_out 1 3 3 1380 800 N 800 3230
-preplace netloc xlconcat_IRQ_dout 1 5 1 NJ 110
-preplace netloc xlconstant_0_dout 1 5 1 NJ 1500
-preplace netloc xlconstant_1_dout 1 4 1 1910J 640n
-preplace netloc counter26_0_count 1 1 1 390 900n
-preplace netloc blk_mem_gen_0_doutb 1 1 2 400 640 830J
-preplace netloc c_addsub_1_S 1 1 2 410 820 810
-preplace netloc Conn2 1 5 1 NJ 1340
-preplace netloc PS_M02_AXI 1 0 2 NJ 1260 310J
-preplace netloc PS_M06_AXI 1 0 5 NJ 540 NJ 540 NJ 540 1360J 550 1880J
-preplace netloc PS_M10_AXI 1 0 4 NJ 220 NJ 220 NJ 220 NJ
-preplace netloc S_AXI_LITE_MIXER_0_1 1 0 3 NJ 610 NJ 610 NJ
-preplace netloc S_AXI_LITE_dds_shift_1 1 0 1 NJ 720
-preplace netloc axi_gpio_hdmi_GPIO 1 4 2 NJ 230 NJ
-preplace netloc axi_vdma_0_M_AXIS_MM2S 1 2 1 830 1160n
-preplace netloc axi_vdma_0_M_AXI_MM2S 1 2 3 850J 1290 NJ 1290 1910
-preplace netloc axis_subset_converter_0_M_AXIS 1 3 1 1310 1180n
-preplace netloc dds_stream_s_1 1 0 1 NJ 910
-preplace netloc gain_1 1 0 4 NJ 420 NJ 420 NJ 420 NJ
-preplace netloc v_axi4s_vid_out_0_vid_io_out 1 4 1 1860 300n
-levelinfo -pg 1 -120 120 610 1150 1660 3040 3280
-pagesize -pg 1 -db -bbox -sgen -320 -50 3480 2070
+preplace port ctrl -pg 1 -lvl 0 -x -40 -y 360 -defaultsOSRD
+preplace port M00_AXI1 -pg 1 -lvl 7 -x 2480 -y 1100 -defaultsOSRD
+preplace port S_AXI_LITE_VDMA -pg 1 -lvl 0 -x -40 -y 1020 -defaultsOSRD
+preplace port mainG_shift_memdelay -pg 1 -lvl 0 -x -40 -y 1630 -defaultsOSRD
+preplace port S_AXI_LITE_MIXER_0 -pg 1 -lvl 0 -x -40 -y 1310 -defaultsOSRD
+preplace port dds_stream_s -pg 1 -lvl 0 -x -40 -y 1390 -defaultsOSRD
+preplace port port-id_s_axi_aclk -pg 1 -lvl 0 -x -40 -y 1650 -defaultsOSRD
+preplace port port-id_m_axis_mm2s_aclk -pg 1 -lvl 0 -x -40 -y 1060 -defaultsOSRD
+preplace port port-id_s_axi_aresetn -pg 1 -lvl 0 -x -40 -y 1410 -defaultsOSRD
+preplace port port-id_ARESETN -pg 1 -lvl 0 -x -40 -y 1670 -defaultsOSRD
+preplace port port-id_TMDS_Clk_p_0 -pg 1 -lvl 7 -x 2480 -y 760 -defaultsOSRD
+preplace port port-id_TMDS_Clk_n_0 -pg 1 -lvl 7 -x 2480 -y 780 -defaultsOSRD
+preplace port port-id_In5 -pg 1 -lvl 0 -x -40 -y 160 -defaultsOSRD
+preplace port port-id_aRst_n -pg 1 -lvl 0 -x -40 -y 1220 -defaultsOSRD
+preplace port port-id_PixelClk -pg 1 -lvl 0 -x -40 -y 1760 -defaultsOSRD
+preplace port port-id_SerialClk -pg 1 -lvl 0 -x -40 -y 630 -defaultsOSRD
+preplace port port-id_hblank_out -pg 1 -lvl 7 -x 2480 -y 420 -defaultsOSRD
+preplace port port-id_hsync_out -pg 1 -lvl 7 -x 2480 -y 440 -defaultsOSRD
+preplace port port-id_vblank_out -pg 1 -lvl 7 -x 2480 -y 1220 -defaultsOSRD
+preplace port port-id_active_video_out -pg 1 -lvl 7 -x 2480 -y 400 -defaultsOSRD
+preplace port port-id_vsync_out -pg 1 -lvl 7 -x 2480 -y 1240 -defaultsOSRD
+preplace portBus HDMI_OEN -pg 1 -lvl 7 -x 2480 -y 1320 -defaultsOSRD
+preplace portBus TMDS_Data_p_0 -pg 1 -lvl 7 -x 2480 -y 800 -defaultsOSRD
+preplace portBus TMDS_Data_n_0 -pg 1 -lvl 7 -x 2480 -y 820 -defaultsOSRD
+preplace portBus dout -pg 1 -lvl 7 -x 2480 -y 110 -defaultsOSRD
+preplace portBus In3 -pg 1 -lvl 0 -x -40 -y 120 -defaultsOSRD
+preplace portBus In4 -pg 1 -lvl 0 -x -40 -y 140 -defaultsOSRD
+preplace portBus pixData -pg 1 -lvl 7 -x 2480 -y 1260 -defaultsOSRD
+preplace portBus pixIn -pg 1 -lvl 0 -x -40 -y 1780 -defaultsOSRD
+preplace portBus In2 -pg 1 -lvl 0 -x -40 -y 100 -defaultsOSRD
+preplace inst xlconstant_0 -pg 1 -lvl 6 -x 2240 -y 1340 -defaultsOSRD
+preplace inst xlconcat_IRQ -pg 1 -lvl 6 -x 2240 -y 110 -defaultsOSRD
+preplace inst axi_interconnect_1 -pg 1 -lvl 6 -x 2240 -y 1120 -defaultsOSRD
+preplace inst axis_subset_converter_0 -pg 1 -lvl 4 -x 1360 -y 1120 -defaultsOSRD
+preplace inst colorGainMain -pg 1 -lvl 5 -x 1780 -y 1580 -defaultsOSRD
+preplace inst mixerMatrix -pg 1 -lvl 4 -x 1360 -y 1380 -defaultsOSRD
+preplace inst v_axi4s_vid_out_0 -pg 1 -lvl 5 -x 1780 -y 830 -defaultsOSRD
+preplace inst axi_vdma_0 -pg 1 -lvl 3 -x 930 -y 1070 -defaultsOSRD
+preplace inst c_addsub_0 -pg 1 -lvl 3 -x 930 -y 1510 -defaultsOSRD
+preplace inst dds_compiler_0 -pg 1 -lvl 2 -x 520 -y 1430 -defaultsOSRD
+preplace inst v_tc_0 -pg 1 -lvl 5 -x 1780 -y 450 -defaultsOSRD
+preplace inst xlconstant_1 -pg 1 -lvl 4 -x 1360 -y 460 -defaultsOSRD
+preplace inst blk_mem_gen_0 -pg 1 -lvl 5 -x 1780 -y 1780 -defaultsOSRD
+preplace inst c_counter_binary_0 -pg 1 -lvl 3 -x 930 -y 1840 -defaultsOSRD
+preplace inst c_addsub_1 -pg 1 -lvl 4 -x 1360 -y 1690 -defaultsOSRD
+preplace inst rgb2dvi_0 -pg 1 -lvl 6 -x 2240 -y 790 -defaultsOSRD
+preplace inst axi_gpio_mainG_shift_memdelay -pg 1 -lvl 1 -x 160 -y 1650 -defaultsOSRD
+preplace inst xlslice_0 -pg 1 -lvl 4 -x 1360 -y 1580 -defaultsOSRD
+preplace inst xlslice_2 -pg 1 -lvl 2 -x 520 -y 1570 -defaultsOSRD
+preplace inst xlslice_3 -pg 1 -lvl 2 -x 520 -y 1740 -defaultsOSRD
+preplace netloc Din_1 1 4 1 1520 1380n
+preplace netloc In2_1 1 0 6 NJ 100 NJ 100 NJ 100 NJ 100 NJ 100 NJ
+preplace netloc In3_1 1 0 6 NJ 120 NJ 120 NJ 120 NJ 120 NJ 120 NJ
+preplace netloc In4_1 1 0 6 NJ 140 NJ 140 NJ 140 NJ 140 NJ 140 NJ
+preplace netloc In5_1 1 0 6 NJ 160 NJ 160 NJ 160 NJ 160 NJ 160 NJ
+preplace netloc Net 1 0 6 NJ 1060 NJ 1060 730 1180 1140 1010 1600 1050 1960
+preplace netloc PS_ARESETN 1 0 5 NJ 1410 320 1200 710 1200 1180 520 N
+preplace netloc PS_FCLK_CLK0 1 0 5 0 1430 310 1040 730 960 1170 400 1540
+preplace netloc SerialClk_1 1 0 6 NJ 630 NJ 630 NJ 630 NJ 630 NJ 630 1960J
+preplace netloc aRst_n_1 1 0 6 NJ 1220 NJ 1220 NJ 1220 NJ 1220 1560 620 1980
+preplace netloc axi_dynclk_0_PXL_CLK_O 1 0 6 NJ 1760 320J 1800 730 1400 1190 1240 1530 610 1990
+preplace netloc axi_gpio_0_gpio_io_o 1 1 3 NJ 1640 NJ 1640 1130
+preplace netloc axi_gpio_mainG_shift_memdelay_gpio2_io_o 1 1 1 310 1570n
+preplace netloc axi_vdma_0_mm2s_introut 1 3 3 1130J 90 NJ 90 2020
+preplace netloc c_addsub_0_S 1 3 1 1140 1440n
+preplace netloc c_addsub_1_S 1 4 1 1520 1690n
+preplace netloc colorGain_dout 1 5 2 2010 1260 NJ
+preplace netloc counter26_0_count 1 3 2 1180 1770 1600
+preplace netloc dds_compiler_0_m_axis_data_tdata 1 2 1 720 1410n
+preplace netloc pixIn_1 1 0 5 NJ 1780 330J 1680 NJ 1680 1160 1760 NJ
+preplace netloc rgb2dvi_0_TMDS_Clk_n 1 6 1 2420J 780n
+preplace netloc rgb2dvi_0_TMDS_Clk_p 1 6 1 2420J 760n
+preplace netloc rgb2dvi_0_TMDS_Data_n 1 6 1 2460J 820n
+preplace netloc rgb2dvi_0_TMDS_Data_p 1 6 1 2440J 800n
+preplace netloc rst_ps7_0_140M_peripheral_aresetn 1 0 6 -10 1190 NJ 1190 NJ 1190 1150 1030 1570J 1040 1990
+preplace netloc v_axi4s_vid_out_0_vid_data 1 3 3 1200 1020 1580J 1030 1950
+preplace netloc v_axi4s_vid_out_0_vid_hsync 1 5 1 2000 760n
+preplace netloc v_axi4s_vid_out_0_vid_vsync 1 5 1 2020 780n
+preplace netloc v_tc_0_active_video_out 1 4 3 1590 280 2010 400 NJ
+preplace netloc v_tc_0_hblank_out 1 4 3 1600 290 1990 420 NJ
+preplace netloc v_tc_0_hsync_out 1 4 3 1610 300 1980 440 NJ
+preplace netloc v_tc_0_irq 1 5 1 1960 60n
+preplace netloc v_tc_0_vblank_out 1 4 3 1570 270 2020 650 2450J
+preplace netloc v_tc_0_vsync_out 1 4 3 1580 600 2010 660 2430J
+preplace netloc xlconcat_IRQ_dout 1 6 1 NJ 110
+preplace netloc xlconstant_0_dout 1 6 1 2440J 1320n
+preplace netloc xlconstant_1_dout 1 4 1 NJ 460
+preplace netloc xlslice_0_Dout 1 4 1 1520J 1580n
+preplace netloc xlslice_2_Dout 1 2 1 710J 1510n
+preplace netloc xlslice_3_Dout 1 2 2 NJ 1740 1190
+preplace netloc dds_compiler_0_m_axis_phase_tdata 1 2 2 710 1360 NJ
+preplace netloc blk_mem_gen_0_doutb 1 3 2 1200 1860 N
+preplace netloc Conn2 1 6 1 2460J 1100n
+preplace netloc PS_M02_AXI 1 0 3 NJ 1020 NJ 1020 NJ
+preplace netloc PS_M06_AXI 1 0 5 NJ 360 NJ 360 NJ 360 NJ 360 NJ
+preplace netloc S_AXI_LITE_MIXER_0_1 1 0 4 -20J 1300 NJ 1300 NJ 1300 NJ
+preplace netloc axi_vdma_0_M_AXIS_MM2S 1 3 1 1160 1060n
+preplace netloc axi_vdma_0_M_AXI_MM2S 1 3 3 NJ 1040 1550J 1060 N
+preplace netloc axis_subset_converter_0_M_AXIS 1 4 1 1540 700n
+preplace netloc dds_stream_s_1 1 0 2 NJ 1390 330J
+preplace netloc gain_1 1 0 1 NJ 1630
+preplace netloc v_axi4s_vid_out_0_vid_io_out 1 5 1 1970 690n
+levelinfo -pg 1 -40 160 520 930 1360 1780 2240 2480
+pagesize -pg 1 -db -bbox -sgen -260 0 2680 1920
 "
 }
 0

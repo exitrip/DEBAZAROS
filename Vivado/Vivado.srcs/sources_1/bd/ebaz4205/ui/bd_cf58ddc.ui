@@ -1,76 +1,78 @@
 {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"0.54",
-   "Default View_TopLeft":"-380,4",
+   "Default View_ScaleFactor":"0.877233",
+   "Default View_TopLeft":"-141,173",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.0r4  2019-12-20 bk=1.5203 VDI=41 GEI=36 GUI=JA:10.0 TLS
 #  -string -flagsOSRD
-preplace port MDIO_ETHERNET_0_0 -pg 1 -lvl 3 -x 1010 -y 240 -defaultsOSRD
-preplace port DDR -pg 1 -lvl 3 -x 1010 -y 280 -defaultsOSRD
-preplace port FIXED_IO -pg 1 -lvl 3 -x 1010 -y 300 -defaultsOSRD
-preplace port S_AXI_HP0 -pg 1 -lvl 0 -x -30 -y 220 -defaultsOSRD
-preplace port M_AXI_GP0 -pg 1 -lvl 3 -x 1010 -y 320 -defaultsOSRD
-preplace port S_AXI_HP2 -pg 1 -lvl 0 -x -30 -y 240 -defaultsOSRD
-preplace port port-id_ENET0_GMII_RX_CLK_0 -pg 1 -lvl 0 -x -30 -y 480 -defaultsOSRD
-preplace port port-id_ENET0_GMII_RX_DV_0 -pg 1 -lvl 0 -x -30 -y 20 -defaultsOSRD
-preplace port port-id_ENET0_GMII_TX_CLK_0 -pg 1 -lvl 0 -x -30 -y 40 -defaultsOSRD
-preplace port port-id_FCLK_CLK0_100M -pg 1 -lvl 3 -x 1010 -y 1210 -defaultsOSRD
-preplace port port-id_CLK_25M -pg 1 -lvl 3 -x 1010 -y 1280 -defaultsOSRD
-preplace port port-id_FCLK_CLK1_128M -pg 1 -lvl 3 -x 1010 -y 570 -defaultsOSRD
-preplace port port-id_FCLK_CLK2_140M -pg 1 -lvl 3 -x 1010 -y 360 -defaultsOSRD
-preplace port port-id_ADC_clk_64M -pg 1 -lvl 3 -x 1010 -y 340 -defaultsOSRD
-preplace port port-id_clk_out -pg 1 -lvl 3 -x 1010 -y 1140 -defaultsOSRD
-preplace portBus ENET0_GMII_TX_EN_0 -pg 1 -lvl 3 -x 1010 -y 40 -defaultsOSRD
-preplace portBus enet0_gmii_txd -pg 1 -lvl 3 -x 1010 -y 810 -defaultsOSRD
-preplace portBus ARESETN -pg 1 -lvl 3 -x 1010 -y 1070 -defaultsOSRD
-preplace portBus enet0_gmii_rxd -pg 1 -lvl 0 -x -30 -y 760 -defaultsOSRD
-preplace portBus peripheral_reset -pg 1 -lvl 3 -x 1010 -y 1050 -defaultsOSRD
-preplace portBus peripheral_aresetn_128M -pg 1 -lvl 3 -x 1010 -y 710 -defaultsOSRD
-preplace portBus peripheral_aresetn1 -pg 1 -lvl 3 -x 1010 -y 180 -defaultsOSRD
-preplace portBus IRQ_F2P -pg 1 -lvl 0 -x -30 -y 340 -defaultsOSRD
-preplace portBus peripheral_aresetn -pg 1 -lvl 3 -x 1010 -y 500 -defaultsOSRD
-preplace inst xlslice_0 -pg 1 -lvl 2 -x 800 -y 810 -defaultsOSRD
-preplace inst xlconcat_0 -pg 1 -lvl 1 -x 280 -y 770 -defaultsOSRD
+preplace port MDIO_ETHERNET_0_0 -pg 1 -lvl 3 -x 1020 -y 240 -defaultsOSRD
+preplace port DDR -pg 1 -lvl 3 -x 1020 -y 280 -defaultsOSRD
+preplace port FIXED_IO -pg 1 -lvl 3 -x 1020 -y 300 -defaultsOSRD
+preplace port S_AXI_HP0 -pg 1 -lvl 0 -x -50 -y 220 -defaultsOSRD
+preplace port M_AXI_GP0 -pg 1 -lvl 3 -x 1020 -y 320 -defaultsOSRD
+preplace port S_AXI_HP2 -pg 1 -lvl 0 -x -50 -y 240 -defaultsOSRD
+preplace port port-id_ENET0_GMII_RX_CLK_0 -pg 1 -lvl 0 -x -50 -y 480 -defaultsOSRD
+preplace port port-id_ENET0_GMII_RX_DV_0 -pg 1 -lvl 0 -x -50 -y 20 -defaultsOSRD
+preplace port port-id_ENET0_GMII_TX_CLK_0 -pg 1 -lvl 0 -x -50 -y 40 -defaultsOSRD
+preplace port port-id_FCLK_CLK0_100M -pg 1 -lvl 3 -x 1020 -y 1210 -defaultsOSRD
+preplace port port-id_CLK_25M -pg 1 -lvl 3 -x 1020 -y 1280 -defaultsOSRD
+preplace port port-id_FCLK_CLK1_128M -pg 1 -lvl 3 -x 1020 -y 570 -defaultsOSRD
+preplace port port-id_FCLK_CLK2_140M -pg 1 -lvl 3 -x 1020 -y 360 -defaultsOSRD
+preplace port port-id_ADC_clk_64M -pg 1 -lvl 3 -x 1020 -y 340 -defaultsOSRD
+preplace port port-id_clk_out -pg 1 -lvl 3 -x 1020 -y 1140 -defaultsOSRD
+preplace port port-id_FCLK_CLK0_200M -pg 1 -lvl 3 -x 1020 -y 0 -defaultsOSRD
+preplace portBus ENET0_GMII_TX_EN_0 -pg 1 -lvl 3 -x 1020 -y 40 -defaultsOSRD
+preplace portBus enet0_gmii_txd -pg 1 -lvl 3 -x 1020 -y 810 -defaultsOSRD
+preplace portBus ARESETN -pg 1 -lvl 3 -x 1020 -y 1070 -defaultsOSRD
+preplace portBus enet0_gmii_rxd -pg 1 -lvl 0 -x -50 -y 760 -defaultsOSRD
+preplace portBus peripheral_reset -pg 1 -lvl 3 -x 1020 -y 1050 -defaultsOSRD
+preplace portBus peripheral_aresetn_128M -pg 1 -lvl 3 -x 1020 -y 710 -defaultsOSRD
+preplace portBus peripheral_aresetn1 -pg 1 -lvl 3 -x 1020 -y 180 -defaultsOSRD
+preplace portBus IRQ_F2P -pg 1 -lvl 0 -x -50 -y 340 -defaultsOSRD
+preplace portBus peripheral_aresetn -pg 1 -lvl 3 -x 1020 -y 500 -defaultsOSRD
+preplace inst xlslice_0 -pg 1 -lvl 2 -x 810 -y 810 -defaultsOSRD
+preplace inst xlconcat_0 -pg 1 -lvl 1 -x 280 -y 730 -defaultsOSRD
 preplace inst xlconstant_0 -pg 1 -lvl 1 -x 280 -y 1290 -defaultsOSRD
-preplace inst DivideBy2_50MHz -pg 1 -lvl 2 -x 800 -y 1140 -defaultsOSRD
-preplace inst proc_sys_reset_128M -pg 1 -lvl 2 -x 800 -y 670 -defaultsOSRD
-preplace inst rst_ENET0_GMII_RX_CLK_0_100M -pg 1 -lvl 2 -x 800 -y 950 -defaultsOSRD
-preplace inst clk_wiz_128M -pg 1 -lvl 1 -x 280 -y 630 -defaultsOSRD
-preplace inst DivideBy4_25MHz -pg 1 -lvl 2 -x 800 -y 1280 -defaultsOSRD
+preplace inst DivideBy2_50MHz -pg 1 -lvl 2 -x 810 -y 1140 -defaultsOSRD
+preplace inst proc_sys_reset_128M -pg 1 -lvl 2 -x 810 -y 670 -defaultsOSRD
+preplace inst rst_ENET0_GMII_RX_CLK_0_100M -pg 1 -lvl 2 -x 810 -y 950 -defaultsOSRD
+preplace inst clk_wiz_128M -pg 1 -lvl 1 -x 280 -y 610 -defaultsOSRD
+preplace inst DivideBy4_25MHz -pg 1 -lvl 2 -x 810 -y 1280 -defaultsOSRD
 preplace inst proc_sys_reset_0_100M -pg 1 -lvl 1 -x 280 -y 1050 -defaultsOSRD
-preplace inst rst_ps7_0_140M -pg 1 -lvl 2 -x 800 -y 140 -defaultsOSRD
-preplace inst rst_ps7_0_64M -pg 1 -lvl 2 -x 800 -y 460 -defaultsOSRD
+preplace inst rst_ps7_0_140M -pg 1 -lvl 2 -x 810 -y 140 -defaultsOSRD
+preplace inst rst_ps7_0_64M -pg 1 -lvl 2 -x 810 -y 460 -defaultsOSRD
 preplace inst processing_system7_0 -pg 1 -lvl 1 -x 280 -y 260 -defaultsOSRD
 preplace netloc DivideBy2_50MHz_clk_out 1 2 1 NJ 1140
 preplace netloc DivideBy4_25MHz_clk_out 1 2 1 NJ 1280
-preplace netloc ENET0_GMII_RX_CLK_0_1 1 0 2 NJ 480 570
-preplace netloc ENET0_GMII_RX_DV_0_1 1 0 2 NJ 20 550
-preplace netloc ENET0_GMII_TX_CLK_0_1 1 0 2 -10J 30 540
+preplace netloc ENET0_GMII_RX_CLK_0_1 1 0 2 NJ 480 600
+preplace netloc ENET0_GMII_RX_DV_0_1 1 0 2 NJ 20 580
+preplace netloc ENET0_GMII_TX_CLK_0_1 1 0 2 -30J 30 540
 preplace netloc IRQ_F2P_1 1 0 1 NJ 340
-preplace netloc In0_0_1 1 0 1 NJ 760
-preplace netloc clk_wiz_128M_clk_out1 1 1 2 610 570 NJ
-preplace netloc proc_sys_reset_0_peripheral_aresetn 1 1 2 600 1070 NJ
+preplace netloc In0_0_1 1 0 1 -30J 720n
+preplace netloc clk_wiz_128M_clk_out1 1 1 2 630 570 NJ
+preplace netloc proc_sys_reset_0_peripheral_aresetn 1 1 2 610 1070 NJ
 preplace netloc proc_sys_reset_0_peripheral_reset 1 1 2 NJ 1050 NJ
-preplace netloc processing_system7_0_ENET0_GMII_TXD 1 1 1 600J 140n
-preplace netloc processing_system7_0_ENET0_GMII_TX_EN 1 1 2 570J 40 NJ
-preplace netloc processing_system7_0_FCLK_CLK0 1 0 3 -10 510 550 1210 NJ
-preplace netloc processing_system7_0_FCLK_CLK1 1 0 3 0 490 590 340 NJ
-preplace netloc processing_system7_0_FCLK_CLK2_140M 1 0 3 20 40 560 350 990J
-preplace netloc processing_system7_0_FCLK_RESET0_N 1 0 2 10 560 580
+preplace netloc processing_system7_0_ENET0_GMII_TXD 1 1 1 620J 140n
+preplace netloc processing_system7_0_ENET0_GMII_TX_EN 1 1 2 560J 40 NJ
+preplace netloc processing_system7_0_FCLK_CLK0 1 0 3 -20 40 550 1210 NJ
+preplace netloc processing_system7_0_FCLK_CLK1 1 0 3 0 490 580 340 NJ
+preplace netloc processing_system7_0_FCLK_CLK2_140M 1 0 3 10 10 590 360 NJ
+preplace netloc processing_system7_0_FCLK_RESET0_N 1 0 2 -10 530 570
 preplace netloc rst_ps7_0_140M_peripheral_aresetn 1 2 1 NJ 180
 preplace netloc rst_ps7_0_64M_peripheral_aresetn 1 2 1 NJ 710
-preplace netloc rst_ps7_0_64M_peripheral_aresetn1 1 0 3 20 500 610J 360 980
+preplace netloc rst_ps7_0_64M_peripheral_aresetn1 1 0 3 10 540 630J 560 990
 preplace netloc xlconcat_0_dout 1 1 1 540 220n
 preplace netloc xlconstant_0_dout 1 1 1 N 1290
 preplace netloc xlslice_0_Dout 1 2 1 NJ 810
+preplace netloc processing_system7_0_FCLK_CLK3 1 1 2 610 0 NJ
 preplace netloc Conn1 1 1 2 NJ 320 NJ
 preplace netloc S_AXI_HP0_1 1 0 1 NJ 220
 preplace netloc S_AXI_HP2_2 1 0 1 NJ 240
 preplace netloc processing_system7_0_DDR 1 1 2 NJ 280 NJ
 preplace netloc processing_system7_0_FIXED_IO 1 1 2 NJ 300 NJ
 preplace netloc processing_system7_0_MDIO_ETHERNET_0 1 1 2 NJ 240 NJ
-levelinfo -pg 1 -30 280 800 1010
-pagesize -pg 1 -db -bbox -sgen -250 0 1280 1350
+levelinfo -pg 1 -50 280 810 1020
+pagesize -pg 1 -db -bbox -sgen -270 -20 1290 1470
 "
 }
 0

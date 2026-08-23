@@ -133,16 +133,21 @@ VDMA masters: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2 (both 256M window at 0)
 (chan*10+n)*4):
 - n=0..4: GAIN_chan_0..4 (weights for din0..din4)
 - n=8: CTRL_chan_0 — [7:0] mode, [31:16] constant value K
-- n=9: CTRL_chan_1 — [23:16] threshold lo, [31:24] threshold hi
+- n=9: CTRL_chan_1 — [0] stream select (0 = stream A din0/1/2, 1 = stream B
+  din5/6/7; per-channel, added Aug 2026), [23:16] threshold lo, [31:24] threshold hi
 
 Modes: 0=zero; 1=Σ gains[n]·din[n]; 3={din,8'hff} passthrough; 4=constant K;
 0x10/0x11/0x12/0x13 = clip din (≥lo / ≤hi / ==lo / band) → {din,0xff} else 0;
 0x20/0x21/0x22/0x23 = same comparisons but output K else 0.
-Comparison source din: chans 0-2 use din0, 3-5 use din1, 6-8 use din2.
+Comparison/passthrough source: chans 0-2 use R, 3-5 G, 6-8 B of the selected
+stream (A: R/G/B = din0/1/2; B: R/G/B = din5/6/7). Mode 1 multiplies the selected
+stream's R/G/B in the gains[0..2] slots; din3/din4 (DDS) are never muxed.
+The 9 always blocks were collapsed into one generate loop (Aug 2026);
+select bit 0 = old behavior, bit-for-bit.
 Output→matrix wiring: dout0→g_rr, dout1→g_br, dout2→g_gr, dout3→g_rg, dout4→g_gg,
 dout5→g_bg, dout6→g_rb, dout7→g_gb, dout8→g_bb.
-Known wart: dout7 modes 0x20-0x23 read `ctrl[6]` instead of `ctrl[7]` (copy-paste bug
-in the Verilog). Multiply path is unregistered single-pixel-clock — a likely timing
+(dout7 ctrl[6]-vs-ctrl[7] copy-paste bug: FIXED and verified Aug 2026.)
+Multiply path is unregistered single-pixel-clock — a likely timing
 limiter at higher pixel clocks.
 
 **dds_axi_interface** (`Vivado/Vivado.srcs/sources_1/new/dds_axi_inteface.vhd` — note
@@ -387,7 +392,7 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
    PetaLinux/ in sync with the repo root; it went stale once)
 3. **Gateware stability/usage/timing**: feedback path unstable above ~35 MHz pixel clock
    (720p30 limit) — primary suspect is the BUFR single-region pixel clock (see Clocking)
-   plus unregistered multiply chains; mixer dout7 ctrl[6] copy-paste bug;
+   plus unregistered multiply chains;
    only HDMI_0 has the mixerMatrix (HDMI_1 uses simpler gain blocks — DSP budget:
    69/80 used, mixer alone = 45); frame-buffer-read IP experiment previously broke the
    build (be careful re-attempting)
