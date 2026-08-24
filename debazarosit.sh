@@ -2,6 +2,13 @@
 
 echo debaz4205_wrapper_20250916.bit.bin >  /sys/class/fpga_manager/fpga0/firmware
 
+# FCLK3 -> 200 MHz (dvi2rgb IDELAYCTRL RefClk). The FSBL in the deployed
+# BOOT.BIN predates the HDMI_2 input port and still programs 25 MHz; the
+# bitstream-only fpga_manager flow never updates FCLK dividers. Remove once
+# BOOT.BIN is rebuilt from an XSA with PCW_FPGA3=200. IOPLL=1600 MHz: 8x1=200.
+devmem 0xF8000008 32 0x0000DF0D   # SLCR unlock
+devmem 0xF80001A0 32 0x00100800   # FPGA3_CLK_CTRL: DIV0=8, DIV1=1
+
 for i in 1 2 3 4 6 8; 
 do 
   sudo devmem $((0x43c50000 + (($i*10) + 8) * 4)) 32 0xffff0023;

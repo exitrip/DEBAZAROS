@@ -44,7 +44,26 @@ Three hierarchies: `PS`, `HDMI_0`, `HDMI_1`. Both HDMI channels share one pixel 
 - FCLK0 = 100 MHz: all AXI-Lite, DDS compilers, axi_dynclk REF_CLK
 - FCLK1 = 64 MHz → `clk_wiz_128M` (PLL ×14/7 = 128 MHz) → DivideBy2N chains (50/25 MHz legacy)
 - FCLK2 ≈ 145.45 MHz (named "140M"): VDMA memory-side + AXIS stream clock for both channels
-- FCLK3 = 25 MHz
+- FCLK3 = 200 MHz (changed from 25 MHz, Aug 2026): dvi2rgb IDELAYCTRL RefClk (HDMI_2 input)
+
+**⚠️ FSBL-vs-bitstream clock trap (cost a full debug day, Aug 2026):** FCLK
+frequencies are programmed by the FSBL at boot from the PS7 init of the XSA it
+was built from — a bitstream-only fpga_manager reload NEVER updates them. After
+changing any PCW_FPGAx frequency in the BD, either rebuild BOOT.BIN from the new
+XSA or poke the SLCR at runtime (unlock 0xF8000008=0xDF0D, then FPGAx_CLK_CTRL
+at 0xF8000170/180/190/1A0; IOPLL=1600 MHz, value fields DIV0[13:8] DIV1[25:20]).
+debazarosit.sh now sets FPGA3=0x00100800 (1600/8=200 MHz) as a boot workaround;
+remove once BOOT.BIN is rebuilt. Symptom of the trap: dvi2rgb aLocked stuck low
+(IDELAYCTRL never ready on a 25 MHz "200 MHz" RefClk) with everything else
+checking out perfectly.
+
+**Boot/flash workflow (deliberate):** BOOT.BIN carries the OLD stable
+bitstream so every boot brings up ethernet (the PHY 25 MHz clock comes from
+the PL); the dev bitstream is then JTAG-flashed on top. Consequences: a reboot
+loses the dev PL (reflash needed, and the ethernet often needs a cable replug
+to renegotiate); do NOT run debazarosit.sh after a JTAG flash — its first line
+would reload the old bitstream from /lib/firmware over the dev design. The
+FCLK3 SLCR poke must be redone after every reboot.
 - `axi_dynclk_0` (0x43C4_0000) generates **shared** `PXL_CLK_O` (PixelClk) + `PXL_CLK_5X_O`
   (SerialClk) for both rgb2dvi instances; its `LOCKED_O` is the aRst_n for both output stages.
   Both displays therefore always run the same resolution; last `DisplayStart()` wins.
@@ -100,31 +119,92 @@ The two channels cross-feed each other's final pixel output → the video-feedba
 architecture. **Known limitation (git log 2025-09-11): feedback loop only stable below
 720p@30 Hz / ~35 MHz pixel clock.** This is the main gateware stability issue to fix.
 
+### HDMI_2 capture path (third port as INPUT — **WORKING end-to-end Aug 2026**)
+
+Live 720p60 video from an external HDMI source captures to DDR and routes to
+either display, toggled live via hdmi2.elf -m key 'a' (off → disp1 → disp0 →
+off). Verified stable with live video. Getting here required three stacked
+fixes: the FSBL clock trap (above), the VDMA driver channel-base fix, and the
+VDMA address-latch recommit (both below).
+
+```
+TMDS in (N20/P20 clk; N17/P18, M19/M20, M17/M18 data — pins split across
+banks 34+35, so dvi2rgb is patched for BUFG+BUFG clocking)
+  → dvi2rgb 2.0 (local IP_dvi2rgb fork: MMCM CLKOUT1 1x + BUFG replaces BUFR;
+    kClkRange=2, kAddBUFG=false; EDID ROM "DGL 720P CEA" served over DDC_2)
+  → v_vid_in_axi4s (async FIFO CDC, depth 8192 ≈ 6 lines of 720p;
+    vid_io_in_ce = pLocked)
+  → axis_subset_converter 24→32 (TDATA_REMAP 8'b11111111,tdata[23:16],
+    tdata[7:0],tdata[15:8] — inverse of display-side swap, alpha 0xff)
+  → axi_vdma S2MM (0x4302_0000, 3 fstores all pointed at slot 4 for now)
+  → HP1 → DDR slot 4 (0x09FA_4000)
+```
+
+**⚠️ VDMA frame-address latch gotcha (cost most of a debug day, Aug 2026):**
+writing a VDMA START_ADDRESS register reads back correctly but the scanout
+KEEPS FETCHING the previously committed address until VSIZE is rewritten
+(VSIZE write = the arm/commit point). Applies to every VDMA channel in the
+design. Symptom: "parked the display on the capture slot, still shows stale
+memory noise" while devmem readback of the address register looks perfect.
+Correct sequence after changing FrameStoreStartAddr on a RUNNING channel:
+XAxiVdma_DmaSetBufferAddr then XAxiVdma_DmaStart (on a running channel this
+skips the RS write and just rewrites VSIZE = recommit). By devmem: write the
+address reg, then write VSIZE (MM2S 0x50 / S2MM 0xA0). Park-pointer-only
+changes between already-committed frames need no recommit.
+
+**⚠️ NEVER halt an S2MM channel mid-frame (DMACR.RS=0 while streaming):** the
+datamover abandons an in-flight burst inside the HP-port AFI write FIFO (in
+the PS). After that: DMASR.Halted never asserts, soft reset (DMACR bit2)
+sticks forever, and NO PL-side reset recovers it (FPGA_RST_CTRL, dynclk
+relock pulse, full driver re-init — all tried, all useless). Only a PS reset
+(reboot/power cycle) clears the AFI. This is the probable anatomy of the
+mysterious full-board hangs. To stop capture safely, use soft reset while the
+stream is healthy (reset completes when beats can flush), or gate at a frame
+boundary. Symptom chain if it happens anyway: armed channel + locked input +
+zero DMASR activity + stuck reset bit.
+
+Display of the capture = repoint a display VDMA frame index at slot 4 and park
+(hdmi2.elf menu key 'a' cycles off / disp1 / disp0). HPD_2 driven constant-high
+through Q9 on the adapter PCB; 49.9Ω pull-up terminations on all TMDS lines.
+Debug bits readable at 0x4120_0008 (see address map). Requires FCLK3 = 200 MHz
+(see the FSBL clock trap above). hdmi2.elf CaptureInitialize prints per-step
+diagnostics; stdout is unbuffered so prints survive crashes.
+
+**VDMA driver fork fix (Aug 2026):** the hacked XAxiVdma_ReadReg/WriteReg in
+jerkspace hdmi2 used to DISCARD the channel base address, collapsing every
+access onto MM2S offsets — invisible for the MM2S-only display VDMAs, fatal for
+S2MM. Now they apply (BaseAddress − mm_IP base); the 0x50/0x54/0x58/0x5c
+hardcoded offsets were reverted to stock relative macros. Do not reintroduce
+absolute offsets in that driver.
+
 ### IRQ chain
 `HDMI_0` v_tc irq + vdma mm2s_introut (+ In3/In4/In5 spares) → concat → `HDMI_1` →
 concat → PS IRQ_F2P.
 
 ### Address map (PS view)
+(verified against live BD, Aug 2026 — several old entries are GONE; poking a
+removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
+
 | Base | Block |
 |---|---|
-| 0x4120_0000 | HDMI_0 axi_gpio_hdmi (HPD) |
-| 0x4121_0000 | HDMI_0 colorGainMain GPIO (RGB gains, 1 byte each in [23:0]) |
-| 0x4122_0000 | HDMI_1 axi_gpio_hdmi (HPD) |
-| 0x4123_0000 | HDMI_1 colorGainMain GPIO (ch1 @+0 video, ch2 @+8 DDS layer) |
-| 0x4124_0000 | axi_gpio_led (green LED, W13) |
-| 0x4126_0000 | HDMI_1 colorGainFeedback1 GPIO (ch1 @+0, ch2 @+8) |
-| 0x4300_0000 | HDMI_0 VDMA (AXI-Lite) |
-| 0x4301_0000 | HDMI_1 VDMA (AXI-Lite) |
-| 0x43C2_0000 | HDMI_0 v_tc |
-| 0x43C3_0000 | HDMI_1 v_tc |
+| 0x4120_0000 | axi_gpio_hdmi (single, dual-channel): ch1 @+0 = HPD[1:0]; ch2 @+8 = HDMI_2 debug {b0 pLocked, b1 aLocked, b2 vid_in fid, b3 overflow, b4 underflow} |
+| 0x4121_0000 | HDMI_0 axi_gpio_mainG_shift_memdelay |
+| 0x4123_0000 | HDMI_1 axi_gpio_gosc_shift |
+| 0x4126_0000 | HDMI_1 axi_gpio_gmain_gfeedback (ch1 @+0, ch2 @+8) |
+| 0x4300_0000 | HDMI_0 VDMA (MM2S) |
+| 0x4301_0000 | HDMI_1 VDMA (MM2S) |
+| 0x4302_0000 | HDMI_2 capture VDMA (S2MM only, 3 fstores; S2MM regs at +0x30/+0xA0..AC) |
+| 0x43C2_0000 | v_tc (shared, lives in HDMI_0) |
 | 0x43C4_0000 | axi_dynclk |
 | 0x43C5_0000 | HDMI_0 mixer_0 (the "nuMixer") |
 | 0x43D0_0000 | dds_axi_interface_0 → HDMI_0 DDS phase increment |
-| 0x43D1_0000 | HDMI_0 axi_gpio_dds_shift (DDS DC offset, c_addsub B) |
 | 0x44D0_0000 | dds_axi_interface_1 → HDMI_1 DDS phase increment |
-| 0x44D1_0000 | HDMI_1 axi_gpio_dds_shift |
 
-VDMA masters: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2 (both 256M window at 0).
+REMOVED (do not touch): 0x4122_0000, 0x4124_0000 (old LED GPIO — LED is
+xlconstant-driven now), 0x43C3_0000 (HDMI_1 VTC), 0x43D1_0000, 0x44D1_0000.
+
+VDMA masters: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture → S_AXI_HP1
+(all 256M window at 0). Capture writes slot 4 = 0x09FA_4000.
 
 ### Custom IP register maps
 
@@ -370,6 +450,30 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   then freeze the map except additions (third channel = pure addition).
 - Move app code from jerkspace (local git, no remote, "testing this mess" commits) into
   this repo (`sw/`), plain Makefile, drop the Vitis managed build.
+- **`sw/oscreg/` (Aug 2026): OSC control surface, first piece of the new control plane.**
+  One `oscreg_field` table maps each OSC address to base+offset+bit range; UIO is tried
+  first (matching `/sys/class/uio/*/maps/map0/addr` against the base) and `/dev/mem` is the
+  fallback, so the dtsi generic-uio nodes are used when present. 121 endpoints:
+  `/hdmi/{0,1}/gain/{r,g,b,rgb}`, `/hdmi/1/{dds,fb/a,fb/b}/*`, `/dds/{0,1}/{hz,pinc,enable,offset}`,
+  `/mixer/0..8/{gain/0..4,mode,k,stream,lo,hi}`, `/led`, plus `/get`, `/list`, `/ping`.
+  Arg rule: int = raw register value, float = 0..1 across the field (Hz for `/dds/*/hz`).
+  Writes are read-modify-write against a shadow word, because mode+K, stream+lo+hi and
+  R+G+B share one register. ⚠️ Do not run it at the same time as the devmem loop in
+  debazarosit.sh — both write the same words and the shadow will fight the shell script.
+- **`sw/oscreg/oscdraw.{c,h}` (Aug 2026): drawing/playback layer on the same OSC port.**
+  A "surface" = one VDMA frame slot (0x0800_0000 + n × DEMO_MAX_FRAME, n = 0..3).
+  **Surface 0 = display 0, surface 2 = display 1** (both park on frame index 0);
+  surfaces 1 and 3 are the back slots and are not scanned out until someone calls
+  DisplayChangeFrame. Each surface keeps a cached shadow buffer; draws hit the shadow and
+  `present()` copies only the dirty rectangle to the slot, because the slot is uncached
+  (/dev/mem) or write-combined (/dev/fb0) and terrible for read-modify-write. It probes
+  /dev/fb0 via FBIOGET_FSCREENINFO and uses it when smem covers the slot, else /dev/mem.
+  Ops: solid (rect optional = whole screen), gradients (h/v/angle/4-corner), rect, square,
+  circle, ellipse (filled or outline), per-surface alpha, image load and movie play
+  (both shell out to ffmpeg; movie pipes into `sw/fbfeed`, runs in its own session, and any
+  later draw stops it). File args are a bare name inside `/home/ebaz/{img,movies}` —
+  no slashes, since the port is on the network. `/surface/<n>/save` dumps a PPM for
+  debugging. Every op is also a plain C entry point, for scripting or a future GPIO poller.
 - **Framebuffer geometry trap**: hdmi2 slot pitch = DEMO_MAX_FRAME (1920·1080·4 ≈
   8.29 MB, disp0=slots 0-1, disp1=slots 2-3) but dtsi fb0 = 1280×2160 = 3×720p at
   3.69 MB pitch — fb0 rows 720+ land mid-slot-0 (rows 1620+ spill into disp0 slot 1),

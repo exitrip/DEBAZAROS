@@ -94,18 +94,18 @@ set_property -dict {PACKAGE_PIN J19 IOSTANDARD LVCMOS33} [get_ports {HDMI_CEC_1[
 
 #DATA3
 #HDMI2
-set_property -dict { PACKAGE_PIN N20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_p_2 }];
-set_property -dict { PACKAGE_PIN P20   IOSTANDARD TMDS_33 } [get_ports { TMDS_Clk_n_2 }];
-set_property -dict { PACKAGE_PIN M17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[2]}];
-#set_property -dict { PACKAGE_PIN M18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[2]}];
-set_property -dict { PACKAGE_PIN M19   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[1]}];
-#set_property -dict { PACKAGE_PIN M20   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[1]}];
-set_property -dict { PACKAGE_PIN N17   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_p_2[0]}];
-set_property -dict { PACKAGE_PIN P18   IOSTANDARD TMDS_33 } [get_ports {TMDS_Data_n_2[0]}];
-set_property -dict { PACKAGE_PIN R18   IOSTANDARD LVCMOS33 } [get_ports { HDMI_HPD_2    }];
+set_property -dict {PACKAGE_PIN N20 IOSTANDARD TMDS_33} [get_ports TMDS_Clk_p_2]
+set_property -dict {PACKAGE_PIN P20 IOSTANDARD TMDS_33} [get_ports TMDS_Clk_n_2]
+set_property -dict {PACKAGE_PIN M17 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_p_2[2]}]
+set_property -dict {PACKAGE_PIN M18 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_n_2[2]}];
+set_property -dict {PACKAGE_PIN M19 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_p_2[1]}]
+set_property -dict {PACKAGE_PIN M20 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_n_2[1]}];
+set_property -dict {PACKAGE_PIN N17 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_p_2[0]}]
+set_property -dict {PACKAGE_PIN P18 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_n_2[0]}]
+set_property -dict {PACKAGE_PIN R18 IOSTANDARD LVCMOS33} [get_ports HDMI_HPD_2]
 #set_property -dict { PACKAGE_PIN R19   IOSTANDARD LVCMOS33 } [get_ports { HDMI_CEC_2[0] }];
-set_property -dict { PACKAGE_PIN T20   IOSTANDARD LVCMOS33 } [get_ports { DDC_2_scl_io }];
-set_property -dict { PACKAGE_PIN P19   IOSTANDARD LVCMOS33 } [get_ports { DDC_2_sda_io }];
+set_property -dict {PACKAGE_PIN T20 IOSTANDARD LVCMOS33} [get_ports DDC_2_scl_io]
+set_property -dict {PACKAGE_PIN P19 IOSTANDARD LVCMOS33} [get_ports DDC_2_sda_io]
 ##buttons
 #set_property -dict { PACKAGE_PIN U19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[0] }];
 #set_property -dict { PACKAGE_PIN V20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[1] }];
@@ -113,7 +113,7 @@ set_property -dict { PACKAGE_PIN P19   IOSTANDARD LVCMOS33 } [get_ports { DDC_2_
 #set_property -dict { PACKAGE_PIN U20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[3] }];
 
 #720p60Hz max input
-create_clock -period 13.468 -waveform {0.000 5.000} [get_ports TMDS_Clk_p_2]
+create_clock -period 13.468 -waveform {0.000 6.734} [get_ports TMDS_Clk_p_2]
 
 
 #create_pblock pblock_AD9851
@@ -123,3 +123,4 @@ create_clock -period 13.468 -waveform {0.000 5.000} [get_ports TMDS_Clk_p_2]
 create_pblock pblock_ebaz4205_i
 add_cells_to_pblock [get_pblocks pblock_ebaz4205_i] [get_cells -quiet [list ebaz4205_i]]
 resize_pblock [get_pblocks pblock_ebaz4205_i] -add {SLR0}
+
