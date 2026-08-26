@@ -115,6 +115,15 @@ DDR (HP0 for HDMI_0 / HP2 for HDMI_1)
   c_addsub_0); its dual GPIO is 0x4123_0000 (ch1 @+0 video gains, ch2 @+8 DDS-layer gains)
 - outputs summed (c_addsub_2) → rgb2dvi
 
+**DDS divider layer (Aug 2026):** every DDS output (sine and phase, both
+channels) now passes through a `div16_8_recip` module-ref before its adder/
+gain stage — unsigned 16÷8 via a ceil(2^24/den) ROM-reciprocal multiply
+(1 DSP + 1 BRAM, bit-exact, 3-cycle latency, den=0 → 0xFFFF). Denominators
+come from GPIO fields (see address map; all default to 1 = passthrough), so
+integer attenuation composes with the multiplication-based gains.
+HDMI_1 also gained a second osc gain stage (colorGainOscSin + colorGainOscPhase,
+c_addsub_3/4). HDMI_0's DDS legs run on FCLK0; HDMI_1's on PixelClk.
+
 The two channels cross-feed each other's final pixel output → the video-feedback
 architecture. **Known limitation (git log 2025-09-11): feedback loop only stable below
 720p@30 Hz / ~35 MHz pixel clock.** This is the main gateware stability issue to fix.
@@ -131,7 +140,11 @@ VDMA address-latch recommit (both below).
 TMDS in (N20/P20 clk; N17/P18, M19/M20, M17/M18 data — pins split across
 banks 34+35, so dvi2rgb is patched for BUFG+BUFG clocking)
   → dvi2rgb 2.0 (local IP_dvi2rgb fork: MMCM CLKOUT1 1x + BUFG replaces BUFR;
-    kClkRange=2, kAddBUFG=false; EDID ROM "DGL 720P CEA" served over DDC_2)
+    kClkRange=2, kAddBUFG=false; EDID ROM "DGL 720P CEA" served over DDC_2 —
+    edited Aug 2026: advertises 720p60 native + 1080p30 [VIC 34 + DTDs at
+    74.25 MHz], 1080p60 REMOVED [silicon can't deserialize 1.485 Gbps];
+    verified live on the wire. 1080p30 capture also needs CAPTURE_W/H
+    1920x1080 in hdmi2.elf)
   → v_vid_in_axi4s (async FIFO CDC, depth 8192 ≈ 6 lines of 720p;
     vid_io_in_ce = pLocked)
   → axis_subset_converter 24→32 (TDATA_REMAP 8'b11111111,tdata[23:16],
@@ -152,7 +165,11 @@ skips the RS write and just rewrites VSIZE = recommit). By devmem: write the
 address reg, then write VSIZE (MM2S 0x50 / S2MM 0xA0). Park-pointer-only
 changes between already-committed frames need no recommit.
 
-**⚠️ NEVER halt an S2MM channel mid-frame (DMACR.RS=0 while streaming):** the
+**⚠️ NEVER halt an S2MM channel mid-frame (DMACR.RS=0 while streaming) — and
+NEVER JTAG-reflash the PL while capture is running (same wedge, confirmed by
+a second incident Aug 2026: reflash over live capture → stuck soft reset →
+capture dead until power cycle; stop capture with a soft reset BEFORE
+flashing):** the
 datamover abandons an in-flight burst inside the HP-port AFI write FIFO (in
 the PS). After that: DMASR.Halted never asserts, soft reset (DMACR bit2)
 sticks forever, and NO PL-side reset recovers it (FPGA_RST_CTRL, dynclk
@@ -187,10 +204,10 @@ removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
 
 | Base | Block |
 |---|---|
-| 0x4120_0000 | axi_gpio_hdmi (single, dual-channel): ch1 @+0 = HPD[1:0]; ch2 @+8 = HDMI_2 debug {b0 pLocked, b1 aLocked, b2 vid_in fid, b3 overflow, b4 underflow} |
-| 0x4121_0000 | HDMI_0 axi_gpio_mainG_shift_memdelay |
-| 0x4123_0000 | HDMI_1 axi_gpio_gosc_shift |
-| 0x4126_0000 | HDMI_1 axi_gpio_gmain_gfeedback (ch1 @+0, ch2 @+8) |
+| 0x4120_0000 | axi_gpio_hdmi_in_phase0_div_gPhase1 (renamed Aug 2026): ch1 @+0 INPUT = {[9:8] HPD[1:0], [10] pLocked, [11] aLocked, [12] vid_in overflow, [13] underflow, [14] fid; [7:0] dangling}; ch2 @+8 OUTPUT (default 0x0100_0000) = {[31:24] HDMI_0 DDS-phase divider den, [23:0] HDMI_1 gPhase} |
+| 0x4121_0000 | HDMI_0 axi_gpio_mainG_shift_memdelay (ch1 also feeds HDMI_0 DDS-sine divider den via slice) |
+| 0x4123_0000 | HDMI_1 axi_gpio_divOsc_gosc_shiftPhaseOsc (dual all-out, ch1 default 0x0101_0101; osc dividers + gains + shifts) |
+| 0x4126_0000 | HDMI_1 axi_gpio_divPhase_gmain_shiftPhase_gfeedback (ch1 default 0x01FF_FFFF, ch2 default 0x0080_8080) |
 | 0x4300_0000 | HDMI_0 VDMA (MM2S) |
 | 0x4301_0000 | HDMI_1 VDMA (MM2S) |
 | 0x4302_0000 | HDMI_2 capture VDMA (S2MM only, 3 fstores; S2MM regs at +0x30/+0xA0..AC) |

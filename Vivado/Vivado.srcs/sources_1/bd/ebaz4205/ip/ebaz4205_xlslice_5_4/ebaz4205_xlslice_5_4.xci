@@ -2,7 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_xlslice_5_4",
-    "cell_name": "HDMI_1/colorGainOsc/xlslice_11",
+    "cell_name": "HDMI_1/colorGainOscSin/xlslice_11",
     "component_reference": "xilinx.com:ip:xlslice:1.0",
     "ip_revision": "2",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_xlslice_5_4",

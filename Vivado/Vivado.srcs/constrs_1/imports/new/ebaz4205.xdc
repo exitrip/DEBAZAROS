@@ -70,8 +70,8 @@ set_property -dict {PACKAGE_PIN H18 IOSTANDARD LVCMOS33} [get_ports HDMI_CEC_0]
 set_property -dict {PACKAGE_PIN D19 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_p_0[0]}]
 #set_property -dict { PACKAGE_PIN H16   IOSTANDARD LVCMOS33 } [get_ports { HDMI_SCL_0 }];
 #set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { HDMI_SDA_0 }];
-#set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { AUDIO_L }];
-#set_property -dict { PACKAGE_PIN E19   IOSTANDARD LVCMOS33 } [get_ports { AUDIO_R }];
+set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { AUDIO_L }];
+set_property -dict { PACKAGE_PIN E19   IOSTANDARD LVCMOS33 } [get_ports { AUDIO_R }];
 
 ##DATA2
 #HDMI1
@@ -107,10 +107,10 @@ set_property -dict {PACKAGE_PIN R18 IOSTANDARD LVCMOS33} [get_ports HDMI_HPD_2]
 set_property -dict {PACKAGE_PIN T20 IOSTANDARD LVCMOS33} [get_ports DDC_2_scl_io]
 set_property -dict {PACKAGE_PIN P19 IOSTANDARD LVCMOS33} [get_ports DDC_2_sda_io]
 ##buttons
-#set_property -dict { PACKAGE_PIN U19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[0] }];
-#set_property -dict { PACKAGE_PIN V20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[1] }];
-#set_property -dict { PACKAGE_PIN T19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[2] }];
-#set_property -dict { PACKAGE_PIN U20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[3] }];
+set_property -dict { PACKAGE_PIN U19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[0] }];
+set_property -dict { PACKAGE_PIN V20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[1] }];
+set_property -dict { PACKAGE_PIN T19   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[2] }];
+set_property -dict { PACKAGE_PIN U20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY[3] }];
 
 #720p60Hz max input
 create_clock -period 13.468 -waveform {0.000 6.734} [get_ports TMDS_Clk_p_2]

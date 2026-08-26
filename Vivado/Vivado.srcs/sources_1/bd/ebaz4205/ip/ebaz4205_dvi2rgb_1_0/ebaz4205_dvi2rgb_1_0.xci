@@ -2,9 +2,9 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "ebaz4205_dvi2rgb_1_0",
-    "cell_name": "dvi2rgb_0",
+    "cell_name": "HDMI_2/dvi2rgb_0",
     "component_reference": "digilentinc.com:ip:dvi2rgb:2.0",
-    "ip_revision": "10",
+    "ip_revision": "11",
     "gen_directory": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_dvi2rgb_1_0",
     "parameters": {
       "component_parameters": {
@@ -46,7 +46,7 @@
       },
       "runtime_parameters": {
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
-        "IPREVISION": [ { "value": "10" } ],
+        "IPREVISION": [ { "value": "11" } ],
         "MANAGED": [ { "value": "TRUE" } ],
         "OUTPUTDIR": [ { "value": "../../../../../../Vivado.gen/sources_1/bd/ebaz4205/ip/ebaz4205_dvi2rgb_1_0" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
