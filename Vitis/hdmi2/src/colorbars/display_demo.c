@@ -337,9 +337,65 @@ int CaptureInitialize(void)
 		xil_printf("Capture VDMA StartParking failed %d\r\n", Status);
 		return Status;
 	}
-	xil_printf("Capture VDMA running: %dx%d -> 0x%08x\r\n",
+	xil_printf("Capture VDMA armed: %dx%d -> 0x%08x\r\n",
 	           CAPTURE_W, CAPTURE_H,
 	           fb_mm_IP.base_address + CAPTURE_FRAME_SLOT * DEMO_MAX_FRAME);
+
+	/* ---- post-arm verification, retry, and wedge detection ----------
+	 * Arming can race a frame already in flight; the resulting partial
+	 * frame latches VDMAIntErr, which is FATAL: the channel ignores
+	 * re-arms until a soft reset.  A soft reset that never completes
+	 * means the HP1 AFI write FIFO (in the PS) holds an abandoned burst
+	 * - that happens when the PL is JTAG-reflashed or the channel is
+	 * halted while capture is writing DDR.  Only a PS reset (reboot /
+	 * power cycle) recovers from that; report it instead of spinning. */
+	{
+		const u32 chanBase = CAPTURE_VDMA_BASE + XAXIVDMA_RX_OFFSET;
+		const u32 errMask  = 0x00000870;  /* IntErr|SlvErr|DecErr|SOFEarly */
+		int try;
+		u32 sr;
+		for (try = 0; try < 3; try++) {
+			usleep(100000);
+			sr = XAxiVdma_ReadReg(&vdma_cap_mm_IP, chanBase,
+			                      XAXIVDMA_SR_OFFSET);
+			if (!(sr & errMask))
+				break;
+			xil_printf("Capture arm race (DMASR=0x%08x), reset+retry %d\r\n",
+			           sr, try + 1);
+			XAxiVdma_WriteReg(&vdma_cap_mm_IP, chanBase,
+			                  XAXIVDMA_CR_OFFSET, XAXIVDMA_CR_RESET_MASK);
+			{	/* reset must self-clear; if it sticks the AFI is wedged */
+				int t = 100;
+				while (t-- && (XAxiVdma_ReadReg(&vdma_cap_mm_IP, chanBase,
+				        XAXIVDMA_CR_OFFSET) & XAXIVDMA_CR_RESET_MASK))
+					usleep(1000);
+				if (t <= 0) {
+					xil_printf("Capture DEAD: soft reset stuck -> HP1 AFI "
+					  "wedged (PL reflashed or capture halted mid-write). "
+					  "Only a PS reset/power cycle recovers.\r\n");
+					return XST_FAILURE;
+				}
+			}
+			XAxiVdma_DmaConfig(&vdma_cap_mm_IP, &captureVdma,
+			                   XAXIVDMA_WRITE, &captureSetup);
+			XAxiVdma_DmaSetBufferAddr(&vdma_cap_mm_IP, &captureVdma,
+			                XAXIVDMA_WRITE, captureSetup.FrameStoreStartAddr);
+			XAxiVdma_DmaStart(&vdma_cap_mm_IP, &captureVdma, XAXIVDMA_WRITE);
+			XAxiVdma_StartParking(&vdma_cap_mm_IP, &captureVdma, 0,
+			                      XAXIVDMA_WRITE);
+		}
+		/* liveness: frame-count IRQ (bit12) relatches per completed frame.
+		 * No source connected is a normal outcome, not an init failure. */
+		XAxiVdma_WriteReg(&vdma_cap_mm_IP, chanBase, XAXIVDMA_SR_OFFSET,
+		                  0x00001000);
+		usleep(150000);
+		sr = XAxiVdma_ReadReg(&vdma_cap_mm_IP, chanBase, XAXIVDMA_SR_OFFSET);
+		if (sr & 0x00001000)
+			xil_printf("Capture LIVE: frames arriving (DMASR=0x%08x)\r\n", sr);
+		else
+			xil_printf("Capture idle: armed, no frames yet (no source? "
+			           "DMASR=0x%08x)\r\n", sr);
+	}
 	return XST_SUCCESS;
 }
 
