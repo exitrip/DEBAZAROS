@@ -136,19 +136,19 @@
           ""
         ],
         [
-          "unconnected_items|202655000|104730000|F.Cu|4|825c0ead-fd4e-420c-84ca-03553c834314|30a02941-efbe-4e76-8549-41fb74ddba42",
+          "unconnected_items|190751000|106479000|F.Cu|4|895e87dd-f112-4558-b34d-5c01119127cd|53f0341a-03c2-421e-8545-ac752939c7d9",
           ""
         ],
         [
-          "unconnected_items|202655000|106155000|F.Cu|4|53f0341a-03c2-421e-8545-ac752939c7d9|895e87dd-f112-4558-b34d-5c01119127cd",
+          "unconnected_items|205249000|100480000|F.Cu|4|30a02941-efbe-4e76-8549-41fb74ddba42|825c0ead-fd4e-420c-84ca-03553c834314",
+          ""
+        ],
+        [
+          "unconnected_items|221000000|105247000|F.Cu|4|9c7d29bc-b7c3-4a1c-9935-fe7827c52674|0b5ad33f-a12c-4e5e-b4ae-8db396b3a057",
           ""
         ],
         [
           "unconnected_items|230249000|106479000|F.Cu|4|0b5ad33f-a12c-4e5e-b4ae-8db396b3a057|117edbdf-24e2-4bf6-819a-1bb4d693a6cd",
-          ""
-        ],
-        [
-          "unconnected_items|230249000|106479000|F.Cu|4|0b5ad33f-a12c-4e5e-b4ae-8db396b3a057|819b97d6-0e5d-451c-8cff-afef59e31c48",
           ""
         ]
       ],
@@ -661,7 +661,7 @@
     },
     "bom_presets": [],
     "bom_settings": {
-      "exclude_dnp": true,
+      "exclude_dnp": false,
       "fields_ordered": [
         {
           "group_by": false,
@@ -673,12 +673,6 @@
           "group_by": true,
           "label": "Value",
           "name": "Value",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "SuppliersPartNumber",
-          "name": "SuppliersPartNumber",
           "show": true
         },
         {
@@ -700,16 +694,22 @@
           "show": true
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "DNP",
           "name": "${DNP}",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "SuppliersPartNumber",
+          "name": "SuppliersPartNumber",
           "show": true
         },
         {
           "group_by": false,
           "label": "#",
           "name": "${ITEM_NUMBER}",
-          "show": false
+          "show": true
         },
         {
           "group_by": false,

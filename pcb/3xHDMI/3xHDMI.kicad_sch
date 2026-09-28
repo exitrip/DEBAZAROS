@@ -14747,7 +14747,7 @@
 		(in_bom yes)
 		(on_board yes)
 		(in_pos_files yes)
-		(dnp no)
+		(dnp yes)
 		(fields_autoplaced yes)
 		(uuid "0de71196-8acd-40d0-8e4c-0db12b8c8541")
 		(property "Reference" "J10"
@@ -15047,7 +15047,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "104"
+		(property "Value" "104n"
 			(at 351.556 214.484 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -16488,7 +16488,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "22P"
+		(property "Value" "22p"
 			(at 238.506 130.81 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18523,7 +18523,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "103"
+		(property "Value" "103n"
 			(at 49.022 53.086 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19305,7 +19305,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "22P"
+		(property "Value" "22p"
 			(at 224.536 130.81 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19721,7 +19721,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "106"
+		(property "Value" "106n"
 			(at 278.384 215.3919 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21388,7 +21388,7 @@
 		(in_bom yes)
 		(on_board yes)
 		(in_pos_files yes)
-		(dnp no)
+		(dnp yes)
 		(fields_autoplaced yes)
 		(uuid "870e9d45-9eec-4923-ae2d-f59bfc23ff8f")
 		(property "Reference" "J6"
@@ -22517,7 +22517,7 @@
 				)
 			)
 		)
-		(property "Value" "HDMI1-OUT"
+		(property "Value" "HDMI1-INOUT"
 			(at 73.66 105.918 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -22683,7 +22683,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "103"
+		(property "Value" "103n"
 			(at 50.038 129.54 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -24108,7 +24108,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "104"
+		(property "Value" "104n"
 			(at 211.582 122.936 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -25634,7 +25634,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "103"
+		(property "Value" "103n"
 			(at 49.276 205.994 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -25908,7 +25908,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "104"
+		(property "Value" "104n"
 			(at 291.084 214.122 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -29432,7 +29432,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "106"
+		(property "Value" "106n"
 			(at 337.312 215.3919 0)
 			(show_name no)
 			(do_not_autoplace no)
