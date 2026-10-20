@@ -142,7 +142,7 @@ pagesize -pg 1 -db -bbox -sgen -230 0 2300 2400
    "linktotype_comment_0":"bd_design"
 }
 {
-   """"da_axi4_cnt"""":"2"
+   """""da_axi4_cnt""""":"2"
 }
 {
    "/comment_0":"comment_0"

@@ -10,6 +10,7 @@ mixers/oscillators via `devmem` for generative feedback effects.
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
 Working branch: `clanker` (remote `debaz`). `nuMix` and the other branches are old.
+Current work plan and status: `ROADMAP.md` (Oct 2026).
 
 ⚠️ **The Vivado project is fragile.** Recent history includes a broken/recovered build
 ("recovered a decent build... after breaking trying out frame buffer read IP").
@@ -181,11 +182,26 @@ boundary. Symptom chain if it happens anyway: armed channel + locked input +
 zero DMASR activity + stuck reset bit.
 
 Display of the capture = repoint a display VDMA frame index at slot 4 and park
-(hdmi2.elf menu key 'a' cycles off / disp1 / disp0). HPD_2 driven constant-high
-through Q9 on the adapter PCB; 49.9Ω pull-up terminations on all TMDS lines.
-Debug bits readable at 0x4120_0008 (see address map). Requires FCLK3 = 200 MHz
+(hdmi2.elf menu key 'a' cycles off / disp1 / disp0). HPD_2 = PL pin R18 driven
+by an xlconstant (high) into Q9 on the adapter PCB — software HPD control is a
+gateware-only change; 49.9Ω pull-up terminations on all TMDS lines.
+Debug bits readable at 0x4120_0000 GPIO ch1 (see address map; verified in BD
+Oct 2026). `sw/tools/capstat.sh [-w ms]` decodes them + capture DMASR + a
+frame-content checksum. Requires FCLK3 = 200 MHz
 (see the FSBL clock trap above). hdmi2.elf CaptureInitialize prints per-step
 diagnostics; stdout is unbuffered so prints survive crashes.
+
+**Hot-plug delay/freeze — FIXED Oct 2026 (ROADMAP.md §1):** replug used to
+take 17-45 s (looked frozen). Cause: dvi2rgb alignment sweep waits
+`kBlankTimeoutMs` per IDELAY tap per bitslip (10×32×50 ms = 16 s per sweep;
+a marginal source fails several sweeps). Fix: `IP_dvi2rgb/src/DVI_Constants.vhd`
+kBlankTimeoutMs 50→2 (sweep ≈0.64 s), IP coreRevision 12. Verified: frames
+resume within 250 ms of pLocked. Remaining (robustness only): capture resets
+still hang off the OUTPUT dynclk LOCKED; `vid_io_in_reset` tied 0; pLocked =
+MMCM lock only. Latched S2MM SOF/EOL errors are non-fatal (c_flush_on_fsync=1);
+the ELMO presenter source latches them every frame (not exactly 1280×720).
+Edit packaged-IP RTL in `IP_dvi2rgb/` (NOT IP_rgb2dvi, NOT ipshared copies),
+then repackage + upgrade_ip (`tools/vivado/dvi2rgb_rebuild.tcl`).
 
 **VDMA driver fork fix (Aug 2026):** the hacked XAxiVdma_ReadReg/WriteReg in
 jerkspace hdmi2 used to DISCARD the channel base address, collapsing every

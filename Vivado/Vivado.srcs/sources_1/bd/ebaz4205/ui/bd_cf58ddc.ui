@@ -51,11 +51,11 @@ preplace netloc xlconstant_0_dout 1 1 1 NJ 740
 preplace netloc xlslice_0_Dout 1 2 1 NJ 600
 preplace netloc Conn1 1 1 2 NJ 320 NJ
 preplace netloc S_AXI_HP0_1 1 0 1 NJ 210
+preplace netloc S_AXI_HP1_1 1 0 1 NJ 230
 preplace netloc S_AXI_HP2_2 1 0 1 NJ 250
 preplace netloc processing_system7_0_DDR 1 1 2 NJ 280 NJ
 preplace netloc processing_system7_0_FIXED_IO 1 1 2 NJ 300 NJ
 preplace netloc processing_system7_0_MDIO_ETHERNET_0 1 1 2 NJ 240 NJ
-preplace netloc S_AXI_HP1_1 1 0 1 NJ 230
 levelinfo -pg 1 -30 290 810 1020
 pagesize -pg 1 -db -bbox -sgen -250 0 1260 860
 "

@@ -62,7 +62,7 @@ package DVI_Constants is
    constant kCtlTkn3 : std_logic_vector(9 downto 0) := "1010101011";
    
    constant kMinTknCntForBlank : natural := 128; --tB
-   constant kBlankTimeoutMs : natural := 50;
+   constant kBlankTimeoutMs : natural := 2;
 end DVI_Constants;
 
 package body DVI_Constants is 

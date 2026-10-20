@@ -2,7 +2,7 @@
    "ActiveEmotionalView":"Default View",
    "Default View_Layers":"/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_0_P:true|/HDMI_0/axi_vdma_0_mm2s_introut:true|/HDMI_0/axi_dynclk_0_PXL_CLK_O:true|/HDMI_0/rgb2dvi_0_TMDS_Clk_n:true|/HDMI_0/rst_ps7_0_140M_peripheral_aresetn:true|/HDMI_0/PS_FCLK_CLK0:true|/HDMI_0/In2_1:true|/HDMI_0/colorGainMain/mult_gen_2_P:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_0_P2:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_1_P:true|/HDMI_0/counter26_0_count:true|/HDMI_0/v_tc_0_irq:true|/HDMI_0/In4_1:true|/HDMI_0/In3_1:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_0_P1:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_2_P:true|/HDMI_0/In5_1:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_1_P2:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_5_P:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_1_P1:true|/HDMI_0/colorGainMain/mult_gen_1_P:true|/HDMI_0/c_addsub_0_S:true|/HDMI_0/PS_ARESETN:true|/HDMI_0/Net:true|/HDMI_0/SerialClk_1:true|/HDMI_0/mixerMatrix/colorGainMatrix/xbip_multadd_8_P:true|/HDMI_0/c_addsub_1_S:true|/HDMI_0/rgb2dvi_0_TMDS_Clk_p:true|/HDMI_0/colorGainMain/mult_gen_0_P:true|",
    "Default View_ScaleFactor":"0.9823",
-   "Default View_TopLeft":"1563,625",
+   "Default View_TopLeft":"1563,250",
    "Display-PortTypeClock":"true",
    "Display-PortTypeData":"true",
    "Display-PortTypeInterrupt":"true",
