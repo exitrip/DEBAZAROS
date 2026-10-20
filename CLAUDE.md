@@ -16,6 +16,25 @@ Current work plan and status: `ROADMAP.md` (Oct 2026).
 ("recovered a decent build... after breaking trying out frame buffer read IP").
 Never hand-edit `.bd`/`.xci` files; treat `Vivado/` as regenerate-only via Vivado 2022.2.
 
+**Tcl flow (Oct 2026) — `hw/README.md`:** `hw/bd/<variant>.tcl` is now the BD
+source of truth (`ebaz4205_2out1in` = the live 2-out/1-in design).
+`hw/build.tcl <variant> project|build` regenerates `build/<variant>/` (git-ignored,
+deleted every run; normal GUI-openable .xpr) and writes .bit/.bit.bin/.xsa +
+`hw_map.h` (address map named by full hierarchy path). After any GUI BD edit:
+`hw/export_bd.tcl <variant>` (or `write_bd_tcl -force -include_layout`) → commit
+the Tcl diff, else the next build erases it. Only 4 RTL files feed the BD
+(DivideBy2N, div16_8_recip, dds_axi_inteface + _logic); all other RTL in
+`Vivado.srcs/sources_1/new/` is unused legacy. Digilent TMDS interface def is
+vendored in `ip_repo/if/` (was silently resolved from an external
+`~/Documents/github/vivado-library` clone). Rebuild vs live netlist: identical
+except the K17/E19 GPIO lines (ports `AUDIO_L/R`) moved 0x4120_0000 bits
+[7:6]→[5:4] (write_bd_tcl dropped a stale xlconcat_2 IN0_WIDTH=6). `-read_only` project open fails on
+this BD, legacy AND rebuilt (empty axi_dynclk s_axi_lite_aclk CLK_DOMAIN) —
+batch scripts open a copy or the generated project read-write. Full Tcl build vs
+live impl_2: same util (LUT +1, FF −12, BRAM/DSP equal), same timing character
+(all fails in PXL_CLK_O @10 ns over-constraint + FCLK0→PXL GPIO crossings).
+Export round-trip is clean except assign_bd_address line ORDER (nondeterministic).
+
 ## Folder map: live vs legacy
 
 | Path | Status | Notes |
@@ -185,6 +204,14 @@ Display of the capture = repoint a display VDMA frame index at slot 4 and park
 (hdmi2.elf menu key 'a' cycles off / disp1 / disp0). HPD_2 = PL pin R18 driven
 by an xlconstant (high) into Q9 on the adapter PCB — software HPD control is a
 gateware-only change; 49.9Ω pull-up terminations on all TMDS lines.
+**User I/O (PCB v2):** 6 GPIO lines with active-low buttons (PCB labels
+PL_KEY0-5), also on header P1 (pins 1-6, +3V3, GND). PL_KEY[3:0] =
+U19/V20/T19/U20 (J7/DATA3). The other two GPIO lines = J9/DATA1 pins 19/17 =
+FPGA K17/E19. They are GPIO, not audio: the BD/XDC ports are still named
+`AUDIO_L/R` from an old PCB label (which-is-which unverified). Plan: one port
+`PL_GPIO[5:0]`. Keep all 6 live in every variant —
+see ROADMAP.md "User I/O". Fleet use (2-12+ units, network control first)
+is in ROADMAP.md "Fleet".
 Debug bits readable at 0x4120_0000 GPIO ch1 (see address map; verified in BD
 Oct 2026). `sw/tools/capstat.sh [-w ms]` decodes them + capture DMASR + a
 frame-content checksum. Requires FCLK3 = 200 MHz
@@ -236,7 +263,7 @@ removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
 REMOVED (do not touch): 0x4122_0000, 0x4124_0000 (old LED GPIO — LED is
 xlconstant-driven now), 0x43C3_0000 (HDMI_1 VTC), 0x43D1_0000, 0x44D1_0000.
 
-VDMA masters: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture → S_AXI_HP1
+VDMA memory ports: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture → S_AXI_HP1
 (all 256M window at 0). Capture writes slot 4 = 0x09FA_4000.
 
 ### Custom IP register maps
@@ -360,7 +387,7 @@ Ways to get two independent surfaces, cheapest first:
 
 The adapter PCB (`pcb/3xHDMI/`) has a **third TMDS pinout laid out** — future input or
 output. Therefore: **never remove memory or bus capacity that accommodates a third
-frame/channel**: keep VDMA `c_num_fstores = 3`; keep spare ps7_axi_periph master ports
+frame/channel**: keep VDMA `c_num_fstores = 3`; keep spare ps7_axi_periph `M**_AXI` ports
 and address-map gaps; HP1/HP3 stay free for a third VDMA; DDR framebuffer budgeting
 assumes up to 6 frames (3 disp × 2). The dtsi fb is already 3 frames tall (1280×2160).
 Clocking note: a third TMDS bank outside region X1Y1 cannot be served by the current
@@ -378,20 +405,22 @@ hdmi2.elf display 1 reuses vtc_0 (correct).
 
 **⚠️ Timing-mode gotcha (cost a debug cycle):** in v_axi4s_vid_out 4.0 (rev 15 RTL,
 `ipshared/1b6c/hdl/v_axi4s_vid_out_v4_0_vl_rfs.v`) the mode names are the OPPOSITE of
-what PG044 suggests for this use:
-- **Slave mode (C_VTG_MASTER_SLAVE=0) PAUSES the VTC via vtg_ce during alignment**
+what PG044 suggests for this use. Below, modes are named by behavior;
+`C_VTG_MASTER_SLAVE` is the Xilinx parameter that selects them:
+- **VTC-pausing mode (`C_VTG_MASTER_SLAVE=0`) PAUSES the VTC via vtg_ce during alignment**
   (`gen_fifo_vtg_en_slave_mode` gates VTG_EN in CALN/lagging states; `vtg_lag` counter
   gives up → IDLE → retries forever). With gen_clken tied high the VTG never lags, and
   since VDMA and VTG frame rates are identical the bad phase repeats deterministically —
   a channel either locks by boot-time luck or never locks at all.
-- **Master mode (C_VTG_MASTER_SLAVE=1) holds VTG_EN = VID_CE constantly** and aligns by
+- **Free-running-VTC mode (`C_VTG_MASTER_SLAVE=1`) holds VTG_EN = VID_CE constantly** and aligns by
   dropping FIFO data (EOL/SOF slip) — works fine with a free-running/shared VTC. The
-  original two-VTC design was master mode with vtg_ce effectively always high.
+  original two-VTC design used this mode with vtg_ce effectively always high.
 - The output formatter **zeroes hsync/vsync/DE whenever not LOCKED** — an unlocked
   vid_out gives "no signal" on the monitor (not black), only the TMDS clock lane runs.
 
-**Correct shared-VTC config: both vid_outs in MASTER mode + VTC gen_clken tied 1**
-(or wired to either vtg_ce — equivalent, master mode never deasserts it). Behavior:
+**Correct shared-VTC config: both vid_outs in free-running-VTC mode (`C_VTG_MASTER_SLAVE=1`)
++ VTC gen_clken tied 1** (or wired to either vtg_ce — equivalent, this mode never
+deasserts it). Behavior:
 each channel locks independently by data-slip within a frame or two; an underflow kills
 only that channel's output until re-lock. No software change beyond the single-VTC
 edits already in hdmi2.elf.
@@ -461,7 +490,7 @@ mode-1 MAC paths (−39 ns, masked by mode muxing).
 
 **Debug visibility TODO:** make both axi_gpio_hdmi dual-channel, ch2 inputs = local
 vid_out locked/underflow/overflow → readable at 0x4120_0008 / 0x4122_0008, no address
-moves. In master mode, "no signal" ⇔ not locked ⇔ usually no stream SOF (VDMA not
+moves. In free-running-VTC mode, "no signal" ⇔ not locked ⇔ usually no stream SOF (VDMA not
 running) — check MM2S DMACR/DMASR (0x4300_0000/4, 0x4301_0000/4) before suspecting
 the BD.
 

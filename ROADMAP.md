@@ -11,7 +11,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | # | Task | Depends on | Status |
 | --- | --- | --- | --- |
 | 1 | HDMI input hot-plug: find the cause | hardware | DONE (2026-10-19) |
-| 2 | Export the Vivado project to Tcl, rebuild it, compare | — | TODO |
+| 2 | Export the Vivado project to Tcl, rebuild it, compare | — | DOING (netlist, util, timing OK; HW test open) |
 | 3 | Capture robustness BD changes (resets, HPD, status bits) | 1, 2 | TODO |
 | 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO |
 | 5 | C code: no Vitis, plain Makefiles in `sw/` | — (can start now) | TODO |
@@ -22,6 +22,64 @@ Status words: TODO, DOING, DONE, BLOCKED.
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
 before any BD edit, so that every edit starts from a known Tcl source.
+
+## User I/O: buttons and the P1 GPIO header
+
+Facts (PCB v2 `pcb/3xHDMI`, 2026-09-22, and the XDC):
+
+- 6 buttons SW1-SW6 = `PL_KEY0`-`PL_KEY5`, active low (pull-up to 3V3
+  on each line). The same 6 lines go to header **P1** (pins 1-6, pin 7 =
+  3V3, pin 8 = GND). P1 is the external hardware I/O connector.
+- `PL_KEY0`-`PL_KEY3`: J7 (DATA3) -> FPGA U19, V20, T19, U20 = BD port
+  `PL_KEY[3:0]`.
+- `PL_KEY4` (J9 pin 19) and `PL_KEY5` (J9 pin 17): J9 = DATA1. These
+  are two GPIO lines, FPGA K17 and E19 (the only non-HDMI0 pins in that
+  XDC group). An old PCB label called them audio L/R; the v2 layout makes
+  them GPIO. The BD/XDC ports still have the old names `AUDIO_L`/`AUDIO_R`.
+  Which pin is SW5 and which is SW6: TO VERIFY on a v2 board (press
+  SW5/SW6, read 0x4120_0000).
+- Readback today: GPIO 0x4120_0000 ch1. `PL_KEY[3:0]` = bits [3:0].
+  K17/E19 = bits [7:6] in the live bitstream, bits [5:4] in the
+  Tcl-built bitstream.
+
+Rules:
+
+- Keep all 6 lines live and readable in EVERY variant (with the ethernet
+  PHY clock, this is part of the shared base of all bitstreams).
+- Make all 6 lines one GPIO port: BD/XDC port `PL_GPIO[5:0]` (bits 3:0 =
+  today's `PL_KEY[3:0]`, bits 5:4 = K17/E19). Buttons are one use of these
+  GPIO lines; P1 is the other. Do it with the task 3 BD changes, then
+  freeze the bit positions.
+- Make the 6 lines bidirectional, so P1 can also drive external
+  hardware. Same address: change GPIO 0x4120_0000 ch1 from all-input to
+  tri-state with `C_TRI_DEFAULT = 0xFFFFFFFF` (all inputs at reset).
+  Bits [5:0] get `gpio_io_o`/`gpio_io_t` to IOBUFs on the six pins; the
+  status bits [14:8] keep only their input path. Data register +0x00,
+  tri-state register +0x04. Ch2 (+0x08) does not change.
+- Register layout of ch1 after the change: [5:0] `PL_GPIO`, [7:6] spare,
+  [9:8] HPD, [14:10] capture status, [31:15] spare (decoder status, task 3).
+  No address-map change.
+- Bandwidth: the GPIO interrupt is already wired to IRQ_F2P. Use it
+  through UIO for events (latency approx. tens of us). Polling by mmap
+  costs approx. 0.3-1 us per read. If a sampled stream (kHz-MHz) is
+  necessary later: a small PL sampler that writes to DDR. Do not use
+  HP1/HP3 for it (third-port rule); use the ACP or GP port.
+
+## Fleet (2-12+ units on a LAN; 50 boards + 20 expanders bought 2026-10)
+
+Network control comes first; local GPIO/buttons come second. Six buttons
+are enough for menu + mode on one unit, but not to manage 12 units.
+
+- One image for all units. Unit identity from the ethernet MAC (hostname,
+  OSC address). Per-unit config in a small file, not in the image.
+- Discovery: mDNS (avahi) or an OSC broadcast "hello".
+- OSC namespace per unit plus group addresses (all units, groups).
+- Time/frame sync between units: later (PTP or NTP + frame-count
+  alignment). No genlock between boards today.
+- Bitstream variant per unit through the fpga_manager overlays (task 4).
+- Incoming hardware test (50 boards): one script that does a boot check,
+  a PL load, ethernet, DDR, both outputs, capture with `capstat.sh`,
+  all 6 buttons, and the P1 lines. Record the MAC and the result.
 
 ## 1. HDMI input hot-plug
 
@@ -62,7 +120,7 @@ Second run (2026-10-19, source = ELMO presenter, DVI, hardware switch
   in each frame: the ELMO frame is not exactly 1280x720 (line lengths
   vary, more than 720 lines). The VDMA flushes and resyncs in each frame,
   so the picture is correct. The daemon must measure the real frame.
-- FIX VERIFIED (2026-10-19, bitstream = `Vivado/Vivado.runs/impl_2/ebaz4205_wrapper.bit` of 2026-10-19, built from the GUI; copy it out before the next build):
+- FIX VERIFIED (2026-10-19, bitstream `debaz4205_wrapper_20261019_dvi2ms.bit` + `.bit.bin` in the repo root):
   10 replugs with the ELMO, including fast replugs and contact bounces.
   In all of them, frames start in the same 250 ms sample as `pL=1`.
   The BD changes below are no longer necessary for hot-plug. They are
@@ -119,14 +177,22 @@ Second run (2026-10-19, source = ELMO presenter, DVI, hardware switch
 - Connect `vid_io_in_reset` to NOT `pLocked`.
 - Disconnect the capture-path resets from the dynclk lock. Use a
   `proc_sys_reset` and the new GPIO bit.
-- Send the decoder status to the spare GPIO ch1 bits [7:0] at
-  0x4120_0000: `pRdy[2:0]`, `pVld[2:0]`, alignment error. This needs new
+- Send the decoder status to the spare GPIO ch1 bits [31:15] at
+  0x4120_0000 (bits [5:0] are the user GPIO, see "User I/O"):
+  `pRdy[2:0]`, `pVld[2:0]`, alignment error. This needs new
   ports in the local `IP_dvi2rgb` fork.
 - Later, in the daemon: when `pL=1` and there are no frames for more than
   200 ms, pulse `pRst`. If that does not help, pulse HPD, so that the
   source reads the EDID again and restarts its output.
 
 ## 2. Vivado project as Tcl
+
+Status 2026-10-19: scripts done (`hw/export_bd.tcl`, `hw/build.tcl`,
+`hw/README.md`). The BD netlist from the Tcl is identical to the live one,
+except the K17/E19 GPIO lines moved from bits [7:6] to [5:4]. Full build:
+same utilization and same timing character as the live impl_2. Export
+round trip is clean. Open: hardware test of
+`build/ebaz4205_2out1in/ebaz4205_2out1in_20261019.bit`. Notes below are the original plan.
 
 - Use `write_bd_tcl` for the BD. Write `build.tcl` to create the project,
   set the IP repo paths, add the module-ref RTL (`div16_8_recip`,

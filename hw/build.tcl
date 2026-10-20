@@ -1,0 +1,88 @@
+# build.tcl - recreate a DEBAZAROS Vivado project from Tcl and build it.
+#
+#   vivado -mode batch -source hw/build.tcl -tclargs <variant> <phase>
+#
+#   variant  name of hw/bd/<variant>.tcl (e.g. ebaz4205_2out1in)
+#   phase    project  create project + generate BD output products, then stop
+#            build    project + synth + impl + .bit/.bit.bin/.xsa + hw_map.h
+#
+# Output goes to build/<variant>/ (git-ignored). The live Vivado/ project is
+# never opened. Vivado 2022.2 only (write_bd_tcl scripts are version-locked).
+
+set repo    [file normalize [file join [file dirname [info script]] ..]]
+set variant [lindex $argv 0]
+set phase   [lindex $argv 1]
+set part    xc7z010clg400-1
+set out     $repo/build/$variant
+set bdtcl   $repo/hw/bd/$variant.tcl
+
+if {$variant eq "" || [lsearch {project build} $phase] < 0} {
+    error "usage: -tclargs <variant> project|build"
+}
+if {![file exists $bdtcl]} { error "missing $bdtcl (run hw/export_bd.tcl)" }
+
+# --- sources shared by all variants ------------------------------------------
+# Custom IP repos (same set as Vivado/Vivado.xpr IPRepoPath).
+set ip_repos [list \
+    $repo/ip_repo/if \
+    $repo/ip_repo/mixer_1_0 \
+    $repo/IP_axi_dynclk \
+    $repo/IP_dvi2rgb \
+    $repo/IP_rgb2dvi]
+# RTL used by BD module references (DivideBy2N, div16_8_recip,
+# dds_axi_interface). Still in the live project tree; move to hw/rtl later.
+set rtl_dir $repo/Vivado/Vivado.srcs/sources_1/new
+set rtl [list \
+    $rtl_dir/DivideBy2N.v \
+    $rtl_dir/div16_8_recip.v \
+    $rtl_dir/dds_axi_interface_logic.vhd \
+    $rtl_dir/dds_axi_inteface.vhd]
+set xdc [list $repo/Vivado/Vivado.srcs/constrs_1/imports/new/ebaz4205.xdc]
+
+# --- project -------------------------------------------------------------------
+create_project -force $variant $out -part $part
+set_property target_language Verilog [current_project]
+set_property ip_repo_paths $ip_repos [current_project]
+update_ip_catalog
+add_files -norecurse $rtl
+add_files -fileset constrs_1 -norecurse $xdc
+update_compile_order -fileset sources_1
+
+source $bdtcl
+set bd [get_files [current_bd_design].bd]
+validate_bd_design
+save_bd_design
+set wrapper [make_wrapper -files $bd -top]
+add_files -norecurse $wrapper
+set_property top [file rootname [file tail $wrapper]] [current_fileset]
+update_compile_order -fileset sources_1
+generate_target all $bd
+
+# --- hw_map.h: PS-visible address map, one source of truth for C/scripts --------
+source $repo/hw/hw_map.tcl
+write_hw_map $out/hw_map.h $variant
+
+if {$phase eq "project"} {
+    close_project
+    puts "INFO: project ready in $out (phase=project, no synthesis)"
+    return
+}
+
+# --- build ---------------------------------------------------------------------
+launch_runs impl_1 -to_step write_bitstream -jobs 8
+wait_on_run impl_1
+if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
+    error "impl_1 failed - see $out/$variant.runs/impl_1/runme.log"
+}
+set stamp [clock format [clock seconds] -format %Y%m%d]
+set base  $out/${variant}_$stamp
+file copy -force [glob $out/$variant.runs/impl_1/*.bit] $base.bit
+# fpga_manager format: raw bin, no bit swap (absolute paths: Vivado cwd varies)
+write_cfgmem -force -format bin -interface SMAPx32 -disablebitswap \
+    -loadbit "up 0 $base.bit" $base.bit.bin
+open_run impl_1
+write_hw_platform -fixed -include_bit -force $base.xsa
+report_timing_summary -file $base.timing.rpt
+report_utilization    -file $base.util.rpt
+close_project
+puts "INFO: wrote $base.{bit,bit.bin,xsa}"
