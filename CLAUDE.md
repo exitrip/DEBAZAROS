@@ -9,7 +9,7 @@ mixers/oscillators via `devmem` for generative feedback effects.
 **What it is NOT:** the top-level `README.md`, `docs/`, and most folders describe the
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
-Working branch: `nuMix`.
+Working branch: `clanker` (remote `debaz`). `nuMix` and the other branches are old.
 
 ⚠️ **The Vivado project is fragile.** Recent history includes a broken/recovered build
 ("recovered a decent build... after breaking trying out frame buffer read IP").
