@@ -132,6 +132,89 @@ u8 *  pFramesVirtual1[DISPLAY_NUM_FRAMES]; //array of pointers to the frame buff
 // These are the structs containing physical <-> virtual memory mapping ...
 // ... for the DMA framebuffer ...
 mm_IP fb_mm_IP;
+
+/* ---- reserved-memory guard (Oct 2026) -------------------------------------
+ * /dev/mem maps normal Linux RAM too. On the bench board only 16 MB at
+ * 0x0800_0000 was reserved (the 128 MB dtsi was never deployed), so frames at
+ * slot 2+ (DEMO_MAX_FRAME pitch) and the capture slot 4 overwrote running
+ * programs: heap corruption, crashes, probably the "mysterious hangs".
+ * Every frame write and the capture address are checked against the
+ * reserved-memory nodes of the running kernel. */
+#include <dirent.h>
+
+
+/*
+ * 1 if [phys, phys+len) overlaps "System RAM" in /proc/iomem, 0 if not,
+ * -1 if unknown (file missing, or not root: addresses read as zeros).
+ * The reserved-memory node alone is not proof: on 2026-10-24 a node of
+ * 128 MB was REJECTED by the kernel (the region reached the top of RAM,
+ * where U-Boot put the DTB blob), the node stayed in /proc/device-tree,
+ * and all of it was System RAM.
+ */
+static int ram_overlap(unsigned long phys, unsigned long len)
+{
+	FILE *fp = fopen("/proc/iomem", "r");
+	char line[256];
+	int known = 0, hit = 0;
+
+	if (!fp)
+		return -1;
+	while (fgets(line, sizeof(line), fp)) {
+		unsigned long a, b;
+
+		if (line[0] == ' ' || !strstr(line, "System RAM"))
+			continue;
+		if (sscanf(line, "%lx-%lx", &a, &b) != 2)
+			continue;
+		if (a || b)
+			known = 1;
+		if (phys <= b && phys + len - 1 >= a)
+			hit = 1;
+	}
+	fclose(fp);
+	return known ? hit : -1;
+}
+
+static int phys_reserved(u32 phys, u32 len)
+{
+	const char *root = "/proc/device-tree/reserved-memory";
+	DIR *d = opendir(root);
+	struct dirent *e;
+	int ok = 0;
+
+	if (ram_overlap(phys, len) == 1) {
+		if (d)
+			closedir(d);
+		return 0;
+	}
+	if (!d)
+		return 0;
+	while (!ok && (e = readdir(d)) != NULL) {
+		char p[512];
+		unsigned char b[64];
+		FILE *fp;
+		size_t n, k;
+
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(p, sizeof(p), "%s/%s/reg", root, e->d_name);
+		fp = fopen(p, "rb");
+		if (!fp)
+			continue;
+		n = fread(b, 1, sizeof(b), fp);
+		fclose(fp);
+		for (k = 0; k + 8 <= n; k += 8) {
+			u32 base = ((u32)b[k] << 24) | ((u32)b[k+1] << 16) | ((u32)b[k+2] << 8) | b[k+3];
+			u32 size = ((u32)b[k+4] << 24) | ((u32)b[k+5] << 16) | ((u32)b[k+6] << 8) | b[k+7];
+
+			if (phys >= base && (unsigned long long)phys + len <=
+			    (unsigned long long)base + size)
+				ok = 1;
+		}
+	}
+	closedir(d);
+	return ok;
+}
 // ... and for all the Vivado IP's needing to be configured
 mm_IP scu_timer_mm_IP;
 mm_IP vdma_0_mm_IP, vdma_1_mm_IP;
@@ -259,6 +342,31 @@ int writeBuffer(CircularBuffer *cb, const unsigned char *data, size_t length) {
 #define CAPTURE_W           1280
 #define CAPTURE_H           720
 
+/* Capture frame address: slot CAPTURE_FRAME_SLOT if it is reserved memory,
+ * else slot 1 (display 0's back frame, inside the 16 MB that old images
+ * reserve). Never Linux RAM. */
+static u32 capture_phys(void)
+{
+	static u32 phys;
+	const u32 len = CAPTURE_W * CAPTURE_H * 4;
+	u32 want = fb_mm_IP.base_address + CAPTURE_FRAME_SLOT * DEMO_MAX_FRAME;
+	u32 alt  = fb_mm_IP.base_address + 1 * DEMO_MAX_FRAME;
+
+	if (phys)
+		return phys;
+	if (phys_reserved(want, len)) {
+		phys = want;
+	} else if (phys_reserved(alt, len)) {
+		phys = alt;
+		printf("Capture: slot %d (0x%08x) is outside reserved memory, "
+		       "using slot 1 (0x%08x) instead\n", CAPTURE_FRAME_SLOT, want, alt);
+	} else {
+		phys = 0;
+		printf("Capture: no reserved slot for the capture frame - capture OFF\n");
+	}
+	return phys;
+}
+
 XAxiVdma captureVdma;
 XAxiVdma_DmaSetup captureSetup;
 mm_IP vdma_cap_mm_IP;
@@ -286,7 +394,10 @@ static XAxiVdma_Config captureCfg = {
 int CaptureInitialize(void)
 {
 	int Status, i;
-	u32 capPhys = fb_mm_IP.base_address + CAPTURE_FRAME_SLOT * DEMO_MAX_FRAME;
+	u32 capPhys = capture_phys();
+
+	if (!capPhys)
+		return XST_FAILURE;
 
 	vdma_cap_mm_IP.base_address = CAPTURE_VDMA_BASE;
 	vdma_cap_mm_IP.size_in_k = 64;
@@ -339,7 +450,7 @@ int CaptureInitialize(void)
 	}
 	xil_printf("Capture VDMA armed: %dx%d -> 0x%08x\r\n",
 	           CAPTURE_W, CAPTURE_H,
-	           fb_mm_IP.base_address + CAPTURE_FRAME_SLOT * DEMO_MAX_FRAME);
+	           capPhys);
 
 	/* ---- post-arm verification, retry, and wedge detection ----------
 	 * Arming can race a frame already in flight; the resulting partial
@@ -975,8 +1086,7 @@ void DemoRun()
 			 * the recommit. Without it this toggle displays stale memory
 			 * (looks like RAM noise) instead of the capture. */
 			static int liveInputState = 0;
-			u32 capAddr = fb_mm_IP.base_address
-					+ CAPTURE_FRAME_SLOT * DEMO_MAX_FRAME;
+			u32 capAddr = capture_phys();
 			switch (liveInputState) {
 			case 0:	/* off -> input on display 1 */
 				dispCtrl1.vdmaConfig.FrameStoreStartAddr[1] = capAddr;
@@ -1286,6 +1396,20 @@ void DemoInvertFrame(u8 *srcFrame, u8 *destFrame, u32 width, u32 height, u32 str
 
 void DemoPrintTest(u8 *frame, u32 width, u32 height, u32 stride, int pattern)
 {
+	/* refuse frames outside reserved memory (Linux RAM), see phys_reserved */
+	{
+		u32 phys = fb_mm_IP.base_address +
+			   (u32)(frame - (u8 *)fb_mm_IP.ptr);
+		static u32 warned;
+
+		if (!phys_reserved(phys, height * stride)) {
+			if (warned != phys)
+				printf("DemoPrintTest: frame 0x%08x is outside reserved "
+				       "memory - not drawn\n", phys);
+			warned = phys;
+			return;
+		}
+	}
 	u32 xcoi, ycoi;
 	u32 iPixelAddr;
 	u8 wRed = 255, wBlue = 128, wGreen= 0, wAlpha = 255;

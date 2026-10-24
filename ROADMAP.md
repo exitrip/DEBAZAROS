@@ -13,10 +13,11 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 1 | HDMI input hot-plug: find the cause | hardware | DONE (2026-10-19) |
 | 2 | Export the Vivado project to Tcl, rebuild it, compare | — | DOING (netlist, util, timing OK; HW test open) |
 | 3 | Capture robustness BD changes (resets, HPD, status bits) | 1, 2 | TODO |
+| 0 | **URGENT: reserved memory** (`PetaLinux/dtb/README.md`): 16 MB was too small; 128 MB is rejected by the kernel; 96 MB DTB installed | reboot | DONE, verified 2026-10-24: iomem hole, /dev/fb0, 6 usable slots, capture in slot 4, movie into slot 3 without corruption |
 | 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO |
-| 5 | C code: no Vitis, plain Makefiles in `sw/` | — (can start now) | TODO |
-| 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | TODO |
-| 7 | Test the OSC drawing layer against the daemon | 6 | TODO |
+| 5 | C code: no Vitis, plain Makefiles in `sw/` | — | DONE (2026-10-19, `sw/README.md`) |
+| 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | DOING: debazd runs on the board (fields, routing, capture status, events, drawing) |
+| 7 | Test the OSC drawing layer against the daemon | 6 | DONE for draw + movie into reserved slots; visual check by eye open |
 | 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
@@ -72,6 +73,11 @@ are enough for menu + mode on one unit, but not to manage 12 units.
 
 - One image for all units. Unit identity from the ethernet MAC (hostname,
   OSC address). Per-unit config in a small file, not in the image.
+- **MAC problem:** the bench board uses `00:0A:35:00:1E:53`, the Xilinx
+  default MAC. All boards from the same image will have the same MAC and
+  cannot share a LAN. Give each board its own MAC: U-Boot `ethaddr` from
+  the Zynq DNA or the SD card serial (locally administered, `02:xx:...`),
+  or a per-card `uEnv.txt` (boot.scr already imports it).
 - Discovery: mDNS (avahi) or an OSC broadcast "hello".
 - OSC namespace per unit plus group addresses (all units, groups).
 - Time/frame sync between units: later (PTP or NTP + frame-count
@@ -233,6 +239,13 @@ round trip is clean. Open: hardware test of
 
 ## 5. C code without Vitis
 
+DONE 2026-10-19 (see `sw/README.md`): `sw/Makefile` builds debazd, dzctl,
+libdz, fbfeed and hdmi2 with the Vitis gcc (no project, no BSP). hdmi2 has
+the same symbols as the Vitis build. Host self test: `make -C sw test`.
+VS Code remote gdb: `sw/tools/vscode/`. Open: replace `xparameters.h` in
+hdmi2 with `hw_map.h`; split hdmi2 bring-up into a library for debazd.
+Original plan below.
+
 - Build all Linux applications with plain Makefiles in `sw/`, as
   `sw/oscreg` does. Compiler:
   `/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/arm-linux-gnueabihf-gcc`.
@@ -254,6 +267,16 @@ round trip is clean. Open: hardware test of
   builds the FSBL.
 
 ## 6. Hardware daemon
+
+Status 2026-10-19: `debazd` runs on the board. Done: 138 named fields
+(traced from the BD), display routing (`/disp/<d>/show|home|capture`),
+capture status, `/subscribe` events (`/event/io`, `/event/hpd`,
+`/event/capture`, with a snapshot on subscribe), drawing and movies, memory
+safety (only blocks in hw_map.h, only slots in reserved memory). Open:
+capture recovery actions (needs the task 3 reset bits), input mode
+measurement, GPIO interrupt via UIO (now polled every 100 ms), unit
+identity for the fleet, a systemd unit (not installed: boot still runs
+debazarosit.sh). Original plan below.
 
 - One root daemon is the only owner of the hardware. It has modules for
   the mixer, the DDS, the video output and the capture input. External

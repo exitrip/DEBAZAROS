@@ -1,3 +1,4 @@
 oscreg/oscreg
 fbfeed/fbfeed
 *.o
+out/

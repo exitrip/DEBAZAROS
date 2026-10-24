@@ -45,8 +45,11 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "dz_yuv.h"
 
 #define DEF_DEV	   "/dev/mem"
 #define DEF_ADDR   0x08FD2000UL	/* HDMI_1 slot = 2 * DEMO_MAX_FRAME */
@@ -94,6 +97,158 @@ static int read_full(int fd, void *buf, size_t len)
 	return 1;
 }
 
+/*
+ * 1 if [phys, phys+len) lies inside a reserved-memory region of the running
+ * kernel. /dev/mem also maps normal Linux RAM; writing a frame there corrupts
+ * running programs (seen on the bench, Oct 2026: only 16 MB was reserved).
+ */
+
+/*
+ * 1 if [phys, phys+len) overlaps "System RAM" in /proc/iomem, 0 if not,
+ * -1 if unknown (file missing, or not root: addresses read as zeros).
+ * The reserved-memory node alone is not proof: on 2026-10-24 a node of
+ * 128 MB was REJECTED by the kernel (the region reached the top of RAM,
+ * where U-Boot put the DTB blob), the node stayed in /proc/device-tree,
+ * and all of it was System RAM.
+ */
+static int ram_overlap(unsigned long phys, unsigned long len)
+{
+	FILE *fp = fopen("/proc/iomem", "r");
+	char line[256];
+	int known = 0, hit = 0;
+
+	if (!fp)
+		return -1;
+	while (fgets(line, sizeof(line), fp)) {
+		unsigned long a, b;
+
+		if (line[0] == ' ' || !strstr(line, "System RAM"))
+			continue;
+		if (sscanf(line, "%lx-%lx", &a, &b) != 2)
+			continue;
+		if (a || b)
+			known = 1;
+		if (phys <= b && phys + len - 1 >= a)
+			hit = 1;
+	}
+	fclose(fp);
+	return known ? hit : -1;
+}
+
+static int reserved(unsigned long phys, size_t len)
+{
+	const char *root = "/proc/device-tree/reserved-memory";
+	DIR *d = opendir(root);
+	struct dirent *e;
+	int ok = 0;
+
+	if (ram_overlap(phys, len) == 1) {
+		if (d)
+			closedir(d);
+		return 0;
+	}
+	if (!d)
+		return 0;
+	while (!ok && (e = readdir(d)) != NULL) {
+		char p[512];
+		uint8_t b[64];
+		FILE *fp;
+		size_t n;
+
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(p, sizeof(p), "%s/%s/reg", root, e->d_name);
+		fp = fopen(p, "rb");
+		if (!fp)
+			continue;
+		n = fread(b, 1, sizeof(b), fp);
+		fclose(fp);
+		for (size_t k = 0; k + 8 <= n; k += 8) {
+			unsigned long base = ((unsigned long)b[k] << 24) | (b[k + 1] << 16) |
+					     (b[k + 2] << 8) | b[k + 3];
+			unsigned long size = ((unsigned long)b[k + 4] << 24) | (b[k + 5] << 16) |
+					     (b[k + 6] << 8) | b[k + 7];
+
+			if (phys >= base && (unsigned long long)phys + len <=
+			    (unsigned long long)base + size)
+				ok = 1;
+		}
+	}
+	closedir(d);
+	return ok;
+}
+
+/* NEON vs C on random rows, plus known colours. 0 = pass. */
+static int yuv_selftest(void)
+{
+	enum { W = 1280 };
+	static uint8_t y[W], u[W / 2], v[W / 2], a[W * 4], b[W * 4];
+	unsigned seed = 12345;
+	int bad = 0;
+
+	for (int m = 0; m < 2; m++) {
+		for (int t = 0; t < 200; t++) {
+			int w = (t % 7 == 0) ? W - 2 * (t % 13) : W;	/* odd tails too */
+
+			for (int i = 0; i < W; i++) {
+				seed = seed * 1103515245u + 12345u;
+				y[i] = (uint8_t)(seed >> 16);
+				if (i < W / 2) {
+					u[i] = (uint8_t)(seed >> 8);
+					v[i] = (uint8_t)(seed >> 24);
+				}
+			}
+			dz_i420_row(y, u, v, a, w, (dz_yuv_matrix)m);
+			dz_i420_row_c(y, u, v, b, w, (dz_yuv_matrix)m);
+			if (memcmp(a, b, (size_t)w * 4)) {
+				fprintf(stderr, "selftest: NEON != C (matrix %d, row %d)\n", m, t);
+				bad = 1;
+				break;
+			}
+		}
+	}
+	/* white, black, red (BT.709 limited range: Y 63, U 102, V 240) */
+	{
+		static const struct { uint8_t y, u, v, r, g, b; int tol; } k[] = {
+			{ 235, 128, 128, 255, 255, 255, 1 },
+			{  16, 128, 128,   0,   0,   0, 0 },
+			{  63, 102, 240, 255,   0,   0, 3 },
+		};
+
+		for (unsigned i = 0; i < sizeof(k) / sizeof(k[0]); i++) {
+			memset(y, k[i].y, 16); memset(u, k[i].u, 8); memset(v, k[i].v, 8);
+			dz_i420_row(y, u, v, a, 16, DZ_YUV_BT709);
+			if (abs(a[2] - k[i].r) > k[i].tol || abs(a[1] - k[i].g) > k[i].tol ||
+			    abs(a[0] - k[i].b) > k[i].tol || a[3] != 0xFF) {
+				fprintf(stderr, "selftest: colour %u -> %d %d %d, want %d %d %d\n",
+					i, a[2], a[1], a[0], k[i].r, k[i].g, k[i].b);
+				bad = 1;
+			}
+		}
+	}
+	/* speed: one 720p frame */
+	{
+		static uint8_t fy[W * 720], fu[W * 180], fv[W * 180];
+		static uint8_t out[W * 720 * 4];
+		uint8_t *f = malloc((size_t)W * 720 * 3 / 2);
+		double t0;
+
+		if (f) {
+			memcpy(f, fy, sizeof(fy));
+			memcpy(f + sizeof(fy), fu, sizeof(fu));
+			memcpy(f + sizeof(fy) + sizeof(fu), fv, sizeof(fv));
+			t0 = now_s();
+			for (int i = 0; i < 20; i++)
+				dz_i420_frame(f, W, 720, out, W * 4, DZ_YUV_BT709);
+			fprintf(stderr, "selftest: 720p frame in %.2f ms (%s)\n",
+				(now_s() - t0) / 20 * 1000.0, dz_yuv_neon() ? "NEON" : "C");
+			free(f);
+		}
+	}
+	fprintf(stderr, "selftest: %s\n", bad ? "FAIL" : "pass");
+	return bad;
+}
+
 static void usage(const char *me)
 {
 	fprintf(stderr,
@@ -106,6 +261,11 @@ static void usage(const char *me)
 "  -s, --stride BYTES  destination line length  (default width*4)\n"
 "  -c, --color RRGGBB  fill once with this color and exit (no stdin)\n"
 "  -v, --verbose       print throughput every 30 frames\n"
+"  -f, --force         /dev/mem: allow an address outside reserved memory\n"
+"  -y, --yuv           input is yuv420p (I420, 1.5 bytes/px): converted here\n"
+"                      (NEON), much cheaper than ffmpeg -pix_fmt bgra\n"
+"  -m, --matrix 709|601  YUV matrix for -y (default 709)\n"
+"      --selftest      check the YUV converter (NEON vs C) and exit\n"
 "      --help          this text\n",
 		me, DEF_DEV, DEF_ADDR, DEF_WIDTH, DEF_HEIGHT);
 }
@@ -120,6 +280,9 @@ int main(int argc, char **argv)
 	size_t stride = 0;
 	long color = -1;
 	int verbose = 0;
+	int force = 0;
+	int yuv = 0;
+	dz_yuv_matrix matrix = DZ_YUV_BT709;
 
 	static const struct option lopts[] = {
 		{ "dev",     required_argument, NULL, 'd' },
@@ -130,12 +293,16 @@ int main(int argc, char **argv)
 		{ "stride",  required_argument, NULL, 's' },
 		{ "color",   required_argument, NULL, 'c' },
 		{ "verbose", no_argument,       NULL, 'v' },
+		{ "force",   no_argument,       NULL, 'f' },
+		{ "yuv",     no_argument,       NULL, 'y' },
+		{ "matrix",  required_argument, NULL, 'm' },
+		{ "selftest", no_argument,      NULL, 2   },
 		{ "help",    no_argument,       NULL, 1   },
 		{ 0, 0, 0, 0 }
 	};
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "d:a:o:w:h:s:c:v", lopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "d:a:o:w:h:s:c:vfym:", lopts, NULL)) != -1) {
 		switch (opt) {
 		case 'd': dev = optarg; break;
 		case 'a': addr = strtoul(optarg, NULL, 0); break;
@@ -145,11 +312,19 @@ int main(int argc, char **argv)
 		case 's': stride = strtoul(optarg, NULL, 0); break;
 		case 'c': color = strtol(optarg, NULL, 16); break;
 		case 'v': verbose = 1; break;
+		case 'f': force = 1; break;
+		case 'y': yuv = 1; break;
+		case 'm': matrix = atoi(optarg) == 601 ? DZ_YUV_BT601 : DZ_YUV_BT709; break;
+		case 2:   return yuv_selftest();
 		case 1:   usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
 		}
 	}
 
+	if (yuv && ((width | height) & 1)) {
+		fprintf(stderr, "fbfeed: -y needs an even width and height\n");
+		return 2;
+	}
 	if (width <= 0 || height <= 0) {
 		fprintf(stderr, "fbfeed: bad geometry %dx%d\n", width, height);
 		return 2;
@@ -173,6 +348,14 @@ int main(int argc, char **argv)
 	const unsigned long map_off = start & ~((unsigned long)page - 1);
 	const size_t shift = (size_t)(start - map_off);
 	const size_t map_len = shift + span;
+
+	if (!have_offset && strcmp(dev, "/dev/mem") == 0 && !force &&
+	    !reserved(start, span)) {
+		fprintf(stderr, "fbfeed: 0x%08lX + %zu is outside reserved memory: it is "
+			"Linux RAM, writing it corrupts running programs. Refused "
+			"(-f to override).\n", start, span);
+		return 1;
+	}
 
 	int fd = open(dev, O_RDWR | O_SYNC);
 
@@ -211,7 +394,9 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	uint8_t *frame = malloc(row_bytes * (size_t)height);
+	const size_t in_bytes = yuv ? (size_t)width * height * 3 / 2
+				    : row_bytes * (size_t)height;
+	uint8_t *frame = malloc(in_bytes);
 
 	if (!frame) {
 		fprintf(stderr, "fbfeed: out of memory\n");
@@ -232,7 +417,7 @@ int main(int argc, char **argv)
 	int rc = 0;
 
 	while (!stop) {
-		int r = read_full(STDIN_FILENO, frame, row_bytes * (size_t)height);
+		int r = read_full(STDIN_FILENO, frame, in_bytes);
 
 		if (r == 0)
 			break;			/* clean EOF */
@@ -248,7 +433,9 @@ int main(int argc, char **argv)
 		}
 
 		/* Sequential writes: best case for write-combining. */
-		if (stride == row_bytes) {
+		if (yuv) {
+			dz_i420_frame(frame, width, height, dst, stride, matrix);
+		} else if (stride == row_bytes) {
 			memcpy(dst, frame, row_bytes * (size_t)height);
 		} else {
 			for (int y = 0; y < height; y++)
@@ -265,6 +452,7 @@ int main(int argc, char **argv)
 		__sync_synchronize();
 
 		if (verbose && ++frames % 30 == 0) {
+			/* MB/s below = bytes written to the slot */
 			double t = now_s(), dt = t - t0;
 
 			if (dt > 0)

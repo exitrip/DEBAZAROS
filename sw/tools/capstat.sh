@@ -15,12 +15,12 @@
 #   DMASR      S2MM status   (0x43020034)  decoded in "err"
 #   fc         IRQFrameCntSts DMASR[23:16]
 #   frm        1 = a frame completed since last sample (FrmCnt_Irq relatch)
-#   pix        checksum of 8 words spread over capture slot 4; changes = live
+#   pix        checksum of 8 words spread over the capture frame; changes = live
 
 DEVMEM=/sbin/devmem
 GPIO=0x41200000
 VDMA=0x43020000
-SLOT=0x09FA4000            # capture slot 4
+SLOT=                      # capture frame address: read from S2MM frame store 0
 FRAME_BYTES=$((1280*720*4))
 
 rd() { $DEVMEM $1 32; }
@@ -41,6 +41,7 @@ decode_sr() {
 }
 
 pixsum() {
+	[ -n "$SLOT" ] || SLOT=$(rd $((VDMA + 0xAC)))
 	sum=0
 	i=0
 	while [ $i -lt 8 ]; do

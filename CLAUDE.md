@@ -44,16 +44,19 @@ Export round-trip is clean except assign_bd_address line ORDER (nondeterministic
 | `IP_rgb2dvi/`, `Vivado/IP_rgb2dvi/` | **LIVE** | Digilent rgb2dvi 1.3 (copy outside Vivado added Jan 2026) |
 | `IP_axi_dynclk/`, `Vivado/IP_axi_dynclk/` | **LIVE** | Digilent axi_dynclk (dynamic pixel clock) |
 | `PetaLinux/` | **LIVE** (config only) | Actual PetaLinux build lives on another machine; this tracks project-spec / dtsi / rootfs config. PetaLinux 2022.2/2023.1 era |
-| `Vitis/colorbars/` | semi-live | Old Vitis workspace copy; **real application code is in `/home/aescape/workspace/jerkspace/`** (see below) |
+| `sw/` | **LIVE** | All userspace code (Oct 2026): debazd, dzctl, libdz, hdmi2, fbfeed. Plain make, no Vitis. See `sw/README.md` |
+| `hw/` | **LIVE** | Gateware as Tcl (`hw/bd/<variant>.tcl` = BD source of truth), `hw/README.md` |
+| `Vitis/colorbars/`, `Vitis/hdmi2/` (metadata only) | legacy | Old Vitis workspace copies. hdmi2 source moved to `sw/hdmi2/` |
 | `debazarosit.sh`, `debazit.service` | **LIVE** | Top-level runtime: systemd oneshot → shell script (deployed to `/home/ebaz/` on target) |
 | `system-user.dtsi` (repo root) | **LIVE** | The *current* dtsi ("save dtsi" commit, Dec 2025). Newer than the copy inside `PetaLinux/project-spec/.../device-tree/files/system-user.dtsi`, which still references SDR-era nodes |
-| `debaz*.img/.bit/.bin/.xsa/.bsp`, `ebaz4205_wrapper*.xsa/.bit` | artifacts | Build/deploy snapshots; deployed bitstream is `debaz4205_wrapper_20250916.bit.bin` |
+| `debaz*.img/.bit/.bin/.xsa/.bsp`, `ebaz4205_wrapper*.xsa/.bit` | artifacts | Build/deploy snapshots. BOOT/fpga_manager bitstream: `debaz4205_wrapper_20250916.bit.bin`; current dev (JTAG) bitstream: `debaz4205_wrapper_20261019_dvi2ms.bit(.bin)` |
 | `ad9851*`, `CIC_FIR*`, `axi_gen_test`, `jt9-flask`, `matlab/`, `qt5/`, `xapp888/`, `fritzing/`, `docs/`, `Vitis/Capture_RF/` | **LEGACY** | SDR-era remnants, safe to ignore (candidates for cleanup/archive) |
 
 External (not in repo):
-- **Vitis workspace:** `/home/aescape/workspace/jerkspace/` — many projects in various states;
-  **`hdmi2` is the current application** (`hdmi2/src/colorbars/display_demo.c` is main).
-  Others (`nuMixer*`, `hdmi22`, `debazaros`, `*_bare`) are experiments.
+- **Vitis workspace:** `/home/aescape/workspace/jerkspace/` — where hdmi2 was edited and
+  built until Oct 2026. Its `hdmi2/src` was copied into the repo and is now `sw/hdmi2/src`
+  (the board's boot `/home/ebaz/hdmi2.elf` is still the jerkspace build). Others
+  (`nuMixer*`, `hdmi22`, `debazaros`, `*_bare`) are experiments.
 - **PetaLinux build machine:** elsewhere; only config is tracked here.
 
 ## Hardware / gateware architecture (BD `ebaz4205`)
@@ -120,19 +123,26 @@ DDR (HP0 for HDMI_0 / HP2 for HDMI_1)
 - `mixer_0` (custom IP, IN_WIDTH=16, OUT_WIDTH=24) computes **nine per-pixel gain
   signals** g_rr…g_bb that drive a 3×3 color matrix (`colorGainMatrix`, 9× xbip_multadd)
   applied to the channel's own video.
-- Mixer inputs: din0/1/2 = R/G/B slices ([23:16]/[15:8]/[7:0]) of **HDMI_1's output pixel**
-  (cross-feed `HDMI_1/pixData → HDMI_0/pixIn`); din3 = DDS sine + offset
-  (`dds_compiler_0` 16-bit sine → c_addsub + B from `axi_gpio_dds_shift`, AINIT=0x8000);
-  din4 = DDS phase[31:16] (sawtooth).
-- Then `colorGainMain`: static per-channel 8×8-bit gain multiply; gains packed
-  RGB-per-byte in one AXI GPIO word.
+- **Pixel bus lane order is RBG** (verified in BD, Oct 2026): `[23:16]` = R,
+  `[15:8]` = B, `[7:0]` = G (TDATA_REMAP {R,B,G} + Digilent rgb2dvi "RBG packing").
+  Every per-colour gain byte multiplies the pixel byte in the same lane, so gain
+  words are R[23:16], B[15:8], G[7:0] — NOT RGB. (sw/lib/dz_fields hides this.)
+- Mixer inputs: din0/1/2 = slices [23:16]/[15:8]/[7:0] = **R / B / G** of **HDMI_1's
+  output pixel** (stream A); din5/6/7 = same slices of the BRAM-delayed copy (stream B,
+  `blk_mem_gen_0` line delay, read offset = 0x4121_0000 ch2 [29:16], delay = 16384 −
+  value px); din3 = HDMI_0 DDS sine ÷ den (0x4121_0000 ch1 [31:24]) + offset (ch2
+  [15:0]); din4 = DDS phase ÷ den (0x4120_0008 [31:24]) (sawtooth).
+- Then `colorGainMain`: static per-channel 8×8-bit gain multiply; gains packed one
+  byte per lane (R/B/G as above) in 0x4121_0000 ch1 [23:0].
 
 **HDMI_1 effects** (video feedback):
-- `colorGainFeedback1`: two gain sets over Din0 = **HDMI_0's output pixel**
-  (`HDMI_0/pixData → HDMI_1/pixIn1`) and Din1 = own VDMA video (dual-channel GPIO
-  0x4126_0000: ch1 @+0, ch2 @+8) → dout0 + dout1 summed (c_addsub_1)
-- `colorGainMain` (dual): Din = feedback sum, Din1 = DDS layer (dds_compiler + shift,
-  c_addsub_0); its dual GPIO is 0x4123_0000 (ch1 @+0 video gains, ch2 @+8 DDS-layer gains)
+- `colorGainFeedback1` (traced Oct 2026): gains 0x4126_0000 ch1 [23:0] × HDMI_1's own
+  VDMA video, gains 0x4126_0000 ch2 [23:0] × **HDMI_0's output pixel** (feedback) →
+  summed (c_addsub_1). There is no separate HDMI_1 colorGainMain any more.
+- Two oscillator layers: `colorGainOscSin` (gains 0x4123_0000 ch1 [23:0]; sine ÷ den
+  ch1 [31:24] + offset ch2 [15:0]) and `colorGainOscPhase` (gains 0x4120_0008 [23:0];
+  saw ÷ den 0x4126_0000 ch1 [31:24] + offset 0x4123_0000 ch2 [31:16]). Full field
+  table with OSC names: `sw/lib/dz_fields.c` (`debazd -l`).
 - outputs summed (c_addsub_2) → rgb2dvi
 
 **DDS divider layer (Aug 2026):** every DDS output (sine and phase, both
@@ -279,8 +289,9 @@ VDMA memory ports: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture �
 Modes: 0=zero; 1=Σ gains[n]·din[n]; 3={din,8'hff} passthrough; 4=constant K;
 0x10/0x11/0x12/0x13 = clip din (≥lo / ≤hi / ==lo / band) → {din,0xff} else 0;
 0x20/0x21/0x22/0x23 = same comparisons but output K else 0.
-Comparison/passthrough source: chans 0-2 use R, 3-5 G, 6-8 B of the selected
-stream (A: R/G/B = din0/1/2; B: R/G/B = din5/6/7). Mode 1 multiplies the selected
+Comparison/passthrough source: chans 0-2 use din0 (R), 3-5 din1 (**B**, lane
+[15:8]), 6-8 din2 (**G**, lane [7:0]) of the selected stream (A: din0/1/2; B:
+din5/6/7). The RTL calls din1 "G" — the bus is RBG, see HDMI_0 effects. Mode 1 multiplies the selected
 stream's R/G/B in the gains[0..2] slots; din3/din4 (DDS) are never muxed.
 The 9 always blocks were collapsed into one generate loop (Aug 2026);
 select bit 0 = old behavior, bit-for-bit.
@@ -293,7 +304,9 @@ limiter at higher pixel clocks.
 **dds_axi_interface** (`Vivado/Vivado.srcs/sources_1/new/dds_axi_inteface.vhd` — note
 filename typo): single 32-bit reg at +0. Bit31 = TVALID enable, bits[30:0] = phase
 increment to dds_compiler (100 MHz, 32-bit phase acc → f = PINC × 100e6/2³² ≈
-0.0233 Hz/LSB; PINC 0xa11 ≈ 60 Hz). Reg +0x10 (slv_reg_4 bit0) reads back TVALID status.
+0.0233 Hz/LSB; PINC 0xa11 ≈ 60 Hz). Reg +0x4 (slv_reg_4 bit0; ADDR_LSB=2, index 1)
+reads back TVALID status (+0x10 was wrong). Reg +0 reads back. **A PINC written without
+bit 31 is ignored** — always write 0x8000_0000 | PINC (dz_fields does).
 
 ## Software stack
 
@@ -309,7 +322,8 @@ Boot: SD card PetaLinux → `debazit.service` (systemd oneshot) → `/home/ebaz/
    (0x4126_0000/+8) up/down at 10 Hz, ping-pongs DDS0 freq and HDMI_1 main/DDS-layer
    gains (0x4123_0008)
 
-**hdmi2.elf** (`/home/aescape/workspace/jerkspace/hdmi2/`, main =
+**hdmi2.elf** (source now `sw/hdmi2/` in this repo, plain Makefile, Oct 2026 —
+moved from Vitis/hdmi2, identical to jerkspace/hdmi2 at the move; main =
 `src/colorbars/display_demo.c`): Linux userspace app that runs once at startup to set
 display timing and init PL. Reuses Xilinx baremetal drivers (xaxivdma v6_10, vtc v8_4,
 Digilent dynclk/display_ctrl) on Linux by mmapping /dev/mem (`src/IP_Driver.c`,
@@ -317,16 +331,35 @@ Digilent dynclk/display_ctrl) on Linux by mmapping /dev/mem (`src/IP_Driver.c`,
 0x0800_0000, 2 frames per display, frame size `DEMO_MAX_FRAME = 1920*1080*4`;
 disp0 frames 0-1, disp1 frames 2-3. Has vestigial commented-out UDP server (port 8888)
 and a menu mode (`-m`). CLI: `-r <res>`. Note: `TimerDelay` via scutimer SEGVs (commented
-out); LED GPIO hardcoded 0x41240000.
+out); LED GPIO hardcoded 0x41240000 (removed block; the code is commented out).
+⚠️ Boot mode (no `-m`, as debazarosit.sh starts it) runs "Loop furever": it redraws
+display 1's frame (slot 2) EVERY 10 s — with only 16 MB reserved that is 3.4 MB of
+Linux RAM (see Device tree). sw/hdmi2 now refuses frames outside reserved memory
+and moves the capture to slot 1 when slot 4 is not reserved.
 
-**Device tree** (root `system-user.dtsi`, current): reserved-memory `removed-dma-pool`
-**128 MB** @0x0800_0000 (no-map, `reg = <0x08000000 0x08000000>`; raised from 16 MB in
-commit 45a668cb, Jul 2026 — sizing is now fine: covers the 4 slots hdmi2.elf uses and the
-97 MB span it maps); simple-framebuffer 1280×2160 (3×720 stacked frames!)
+**Device tree** (root `system-user.dtsi`): reserved-memory `removed-dma-pool`
+**128 MB** @0x0800_0000 in the REPO (no-map, `reg = <0x08000000 0x08000000>`, commit
+45a668cb, Jul 2026) — that value FAILS on this U-Boot (see below); use 96 MB. Until 2026-10-24 **the bench board ran 16 MB** (verified Oct 2026:
+/proc/device-tree reg = 0x08000000 0x01000000, /proc/iomem System RAM 0x0900_0000+):
+the 128 MB dtsi was never built into its image. So slots 2-5 (0x08FD_2000+) are Linux
+RAM, and capture slot 4 + hdmi2's display-1 redraw + any slot 2-5 writer corrupted
+running programs (seen: malloc heap corruption; probable cause of the "mysterious
+full-board hangs"). FIXED + VERIFIED 2026-10-24: `PetaLinux/dtb/system-96M.dtb` = /boot/system.dtb
+(iomem hole 0x0800_0000-0x0DFF_FFFF, /dev/fb0 ok, 6/6 slots, capture back in slot 4). ⚠️ 128 MB (`<0x08000000 0x08000000>`, as in the repo dtsi) is
+REJECTED by the kernel on this board — region reaches top of RAM where U-Boot puts the
+DTB blob (-EBUSY for no-map) → NO reservation at all, simplefb fails -12, no /dev/fb0,
+while /proc/device-tree still shows the node. Use 96 MB; check the HOLE in /proc/iomem,
+not the DT node. Guards (dz_map, fbfeed, hdmi2) now also check /proc/iomem.
+Was: `PetaLinux/dtb/system-128M.dtb` (running
+DTB, one line changed) → copy to `/boot/system.dtb` (boot.scr prefers it over BOOT.BIN's
+DTB), reboot. Until then the running capture was moved to slot 1, and debazd / fbfeed /
+sw hdmi2 refuse slots outside the running reservation. simple-framebuffer 1280×2160 (3×720 stacked frames!)
 a8r8g8b8 → `/dev/fb0` (ffmpeg writes top 720 lines = disp0 frame 0). bootargs:
 `clk_ignore_unused cma=256M uio_pdrv_genirq.of_id=generic-uio`, root mmcblk0p2.
-UIO nodes for HDMI_0/1 GPIOs and all 9 mixer nodes (mixer_1..8 labels are speculative —
-only mixer_0 exists in the current BD).
+UIO nodes (running board): 0x4120_0000 (with IRQ, GIC 66), 0x4121_0000, 0x4123_0000,
+0x43C5_0000, plus STALE nodes for removed blocks 0x4122_0000 and mixers 1-8
+(0x43C6_0000-0x43CD_0000) — any access = bus error. 0x4126_0000 has no UIO node.
+sw/lib/dz_map maps only blocks listed in hw_map.h.
 
 **Two independent framebuffers — MEASURED on hardware, Aug 2026:**
 
@@ -438,7 +471,9 @@ generation: both vid_out instantiations in
 vtg_* ports (only vtg_field_id may be 1'b0).
 Also: physical DVI connector labels vs BD names may be swapped — BD HDMI_0 = TMDS clk
 F19/F20, BD HDMI_1 = TMDS clk L16/L17 (see ebaz4205.xdc). Channel-identity kill test:
-`devmem 0x41210000 32 0` blacks out BD HDMI_0's output (restore 0x00ffffff).
+`devmem 0x41210000 32 0` blacks out BD HDMI_0's output (restore **0x01ffffff**: bits
+[31:24] are the HDMI_0 sine divider den, and den=0 sticks the oscillator at 0xFFFF —
+the board was found in that state, Oct 2026).
 
 **Timing-report hygiene (Aug 2026):** PXL_CLK is constrained at 10 ns (100 MHz dynclk
 default) so every build "fails" with WNS ≈ −39 ns — all on DORMANT mixer mode-1 MAC
@@ -510,9 +545,14 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
 - **Address-stability contract**: bitstream-only fpga_manager swaps work because
   addresses never move. Do the GPIO/interconnect consolidation ONCE before driver work,
   then freeze the map except additions (third channel = pure addition).
-- Move app code from jerkspace (local git, no remote, "testing this mess" commits) into
-  this repo (`sw/`), plain Makefile, drop the Vitis managed build.
-- **`sw/oscreg/` (Aug 2026): OSC control surface, first piece of the new control plane.**
+- DONE Oct 2026: app code is in `sw/` with plain Makefiles (`sw/README.md`): `debazd`
+  (hardware daemon, OSC/UDP 9000: fields, display routing `/disp/<d>/show|home|capture`,
+  capture status, `/subscribe` events, drawing), `dzctl` (OSC client, board + laptop),
+  `libdz` (`sw/lib`), `hdmi2` (bring-up), `fbfeed`. Remote gdb via VS Code
+  (`sw/tools/vscode/`). Tested on the board.
+- **`sw/oscreg/` (Aug 2026) — DEPRECATED Oct 2026, replaced by debazd/libdz. Never deploy:
+  its table uses removed blocks (0x4122_0000, 0x4124_0000, 0x43D1_0000, 0x44D1_0000 → SIGBUS)
+  and swaps the G/B lanes. Its local build was x86 (CC ?= bug). History only:**
   One `oscreg_field` table maps each OSC address to base+offset+bit range; UIO is tried
   first (matching `/sys/class/uio/*/maps/map0/addr` against the base) and `/dev/mem` is the
   fallback, so the dtsi generic-uio nodes are used when present. 121 endpoints:
@@ -540,10 +580,23 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   8.29 MB, disp0=slots 0-1, disp1=slots 2-3) but dtsi fb0 = 1280×2160 = 3×720p at
   3.69 MB pitch — fb0 rows 720+ land mid-slot-0 (rows 1620+ spill into disp0 slot 1),
   NOT in a second frame, and never reach disp1 at 0x08FD_2000 (fb0 ends at 0x08A8_C000).
-  Unify in one memory_map.h (keep 1080p pitch, 6 slots for 3 displays, fb0 = slot 0 only).
-  Reserved-memory sizing is no longer a problem (128 MB since Jul 2026).
+  Unify in one memory_map.h (keep 1080p pitch, 6 slots for 3 displays, fb0 = slot 0 only)
+  — done for sw/ in `sw/lib/dz_hw.h`. Needs the 128 MB reservation on the board (see
+  Device tree: the bench board still runs 16 MB).
+- MEASURED Oct 2026: slot WRITES via /dev/fb0 ≈ 630 MB/s and via /dev/mem ≈ 660 MB/s (not
+  slow); fbfeed through a pipe ≈ 25 fps @720p (pipe-limited); ffmpeg mpeg4 720p: decode
+  36 fps, +bgra 20 fps, +uyvy422 6 fps. ffmpeg's yuv→rgb has no ARM fast path: debazd
+  /movie now pipes yuv420p into `fbfeed -y` (NEON, sw/lib/dz_yuv.c, BT.709 default):
+  two 720p movies at once 12.5 fps each (was 7). Decode is now the limit. A PL YUV→RGB
+  converter was considered: needs packed 4:2:2 (ffmpeg's packing is too slow), BRAM 96%
+  and DSP 91% used — only a LUT version in the AXIS (FCLK2) domain would fit.
+- After a reboot WITHOUT debazarosit.sh the mixer is all mode 0 → HDMI_0 output BLACK
+  (the colour matrix multiplies by 0). Apply the mixer setup (debaz-start.sh / onlySetup.sh).
+- "ffmpeg -f fbdev /dev/fb0 doesn't work after running the C code" = ROUTING: hdmi2 'a'
+  (or /disp/0/capture) parks display 0 on the capture slot, so ffmpeg's slot 0 is not
+  shown. `dzctl /disp/0/home` fixes it.
 - Coherence between ffmpeg (fbdev WC), C code (/dev/mem uncached), VDMA (DDR direct)
-  is inherent — but uncached A9 reads are tens of MB/s: benchmark before promising
+  is inherent — but uncached A9 reads are slow: benchmark before promising
   full-frame 30 fps CPU processing; slow generative layer + PL data plane is the fit.
   Tear-free flip already exists (write off-screen slot → DisplayChangeFrame park).
   VTC IRQ → UIO would give a clean wait-for-vsync primitive later.
@@ -552,8 +605,8 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
 1. **Cleanup + documentation pass** without breaking the fragile Vivado project
    (READMEs are all SDR-era; legacy folders to prune/archive)
 2. **Better driver C code** + proper PetaLinux kernel/DTS config (replace devmem pokes
-   and /dev/mem mmap with UIO or real drivers; reserved-memory sizing already fixed
-   (128 MB); in progress Aug 2026: per-display simple-framebuffer nodes so disp1 gets a
+   and /dev/mem mmap with UIO or real drivers; reserved-memory: 128 MB in the repo but
+   the board still runs 16 MB — install PetaLinux/dtb/system-128M.dtb; in progress Aug 2026: per-display simple-framebuffer nodes so disp1 gets a
    /dev/fb — building on the PetaLinux machine, not yet run on hardware. Keep the dtsi in
    PetaLinux/ in sync with the repo root; it went stale once)
 3. **Gateware stability/usage/timing**: feedback path unstable above ~35 MHz pixel clock

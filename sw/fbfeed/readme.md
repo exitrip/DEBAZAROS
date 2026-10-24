@@ -1,3 +1,13 @@
+> **Measured on the board, Oct 2026 — this corrects the speed claims below.**
+> Raw fill of a 720p slot: `/dev/fb0` (write-combined) ≈ 630 MB/s,
+> `/dev/mem` (O_SYNC) ≈ 660 MB/s. Uncached `/dev/mem` WRITES are not slow on this
+> board; READS are. A 720p stream through fbfeed tops out at ≈ 25 fps / 92 MB/s,
+> and the limit is the stdin pipe (two copies per frame), not the mapping.
+> New (Oct 2026): `-y` takes yuv420p and converts with NEON (`lib/dz_yuv.c`);
+> use `ffmpeg ... -pix_fmt yuv420p -f rawvideo pipe:1 | fbfeed -y ...`.
+> fbfeed is now built by `sw/Makefile` (`out/arm/fbfeed`) and installed to
+> `/home/ebaz/bin/`. The daemon (`debazd`, `/movie/<slot>/play`) starts it for you.
+
 
 Source is in sw/fbfeed/fbfeed.c with a Makefile. It builds clean with -Wall -Wextra and I verified the write path on the host against a file:
 
