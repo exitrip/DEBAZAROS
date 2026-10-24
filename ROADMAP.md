@@ -17,7 +17,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO |
 | 5 | C code: no Vitis, plain Makefiles in `sw/` | — | DONE (2026-10-19, `sw/README.md`) |
 | 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | DOING: debazd runs on the board (fields, routing, capture status, events, drawing) |
-| 7 | Test the OSC drawing layer against the daemon | 6 | DONE for draw + movie into reserved slots; visual check by eye open |
+| 7 | Test the OSC drawing layer against the daemon | 6 | DONE: painter, sprites, text, transforms, LFOs, 60 fps flipbook/strobe (2026-10-24, `sw/README.md`) |
 | 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
@@ -267,6 +267,12 @@ Original plan below.
   builds the FSBL.
 
 ## 6. Hardware daemon
+
+Update 2026-10-24: vsync thread (frame-exact show/blank/sequences, 12 slots,
+black slot 11), 16 LFOs with field and message-template targets, sprites,
+pixel + TrueType text, full-frame transforms, NEON YUV movies. Open: mirror
+on the fast transform path, sprite filtering (now nearest), buttons → LFO
+triggers / sequences, a systemd unit, unit identity (MAC) for the fleet.
 
 Status 2026-10-19: `debazd` runs on the board. Done: 138 named fields
 (traced from the BD), display routing (`/disp/<d>/show|home|capture`),

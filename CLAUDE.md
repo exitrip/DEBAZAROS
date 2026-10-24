@@ -590,6 +590,19 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   two 720p movies at once 12.5 fps each (was 7). Decode is now the limit. A PL YUV→RGB
   converter was considered: needs packed 4:2:2 (ffmpeg's packing is too slow), BRAM 96%
   and DSP 91% used — only a LUT version in the AXIS (FCLK2) domain would fit.
+- Video painter (Oct 2026, sw/lib/dz_draw.c, ex-oscdraw): + brush (soft stamp), stroke,
+  line, fade (NEON, fused with present), blend normal/add/lighten/multiply, grab (copy a
+  slot, e.g. capture 4, into the paint buffer), peek. Light painting with trails: 35 fps
+  idle, 16 fps with a movie on the other display (fade is DDR-bandwidth bound). Demo +
+  OSC example: sw/tools/osc_paint_demo.py. Host tests via peek in sw/tools/selftest.sh.
+- debazd Oct 24 additions (sw/README.md): 12 slots (11 = black), vsync = VTC ISR bit 13
+  (W1C; 60.03 Hz; the display VDMA SR bit 12 is equally exact — vsync_probe uses that one
+  so it does not steal debazd's bit), real-time vsync thread applies /disp show/blank/seq
+  right after vsync (frame-exact: 30 Hz strobe, 60 fps 5-slot flipbook verified by
+  per-frame sampling), lfo.c (16 LFOs, field or "/msg $0 $f1" template targets, every k),
+  sprites (dz_sprite.c), text (dz_text.c: Terminus-derived pixel font OFL + stb_truetype),
+  transforms (dz_xform.c: double buffer + row-wise present, 22-29 ms full frame idle).
+  dzctl: getopt "+" so negative values after the /address work.
 - After a reboot WITHOUT debazarosit.sh the mixer is all mode 0 → HDMI_0 output BLACK
   (the colour matrix multiplies by 0). Apply the mixer setup (debaz-start.sh / onlySetup.sh).
 - "ffmpeg -f fbdev /dev/fb0 doesn't work after running the C code" = ROUTING: hdmi2 'a'

@@ -1,0 +1,48 @@
+{
+    // Remote debugging on the EBAZ board without Vitis/Eclipse.
+    // Copy this file to <repo>/.vscode/launch.json (and tasks.json next to it).
+    //
+    // 1. Build with debug info:      make -C sw DEBUG=1 install
+    // 2. Start the "gdbserver: ..." task (Terminal > Run Task), or on the board:
+    //      sudo gdbserver :2345 /home/ebaz/bin/debazd -v
+    // 3. Start the matching launch configuration (F5).
+    //
+    // Needs the C/C++ extension (ms-vscode.cpptools). The gdb is the ARM gdb
+    // from the Vitis toolchain; the local binary must be the one on the board.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "debazd on board (gdbserver :2345)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/sw/out/arm/debazd",
+            "cwd": "${workspaceFolder}/sw",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/arm-linux-gnueabihf-gdb",
+            // the aarch32 gdb package lacks its python scripts; the aarch64 one (same gdb 10.2) has them
+            "miDebuggerArgs": "--data-directory=/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch64/lin/aarch64-linux/x86_64-petalinux-linux/usr/share/gdb",
+            "miDebuggerServerAddress": "10.42.0.128:2345",
+            "stopAtEntry": true,
+            "setupCommands": [
+                { "text": "set sysroot /home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/cortexa9t2hf-neon-xilinx-linux-gnueabi" },
+                { "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ]
+        },
+        {
+            "name": "hdmi2.elf on board (gdbserver :2345)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/sw/out/arm/hdmi2.elf",
+            "cwd": "${workspaceFolder}/sw/hdmi2",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/arm-linux-gnueabihf-gdb",
+            // the aarch32 gdb package lacks its python scripts; the aarch64 one (same gdb 10.2) has them
+            "miDebuggerArgs": "--data-directory=/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch64/lin/aarch64-linux/x86_64-petalinux-linux/usr/share/gdb",
+            "miDebuggerServerAddress": "10.42.0.128:2345",
+            "stopAtEntry": true,
+            "setupCommands": [
+                { "text": "set sysroot /home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/cortexa9t2hf-neon-xilinx-linux-gnueabi" }
+            ]
+        }
+    ]
+}

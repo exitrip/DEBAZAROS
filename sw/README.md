@@ -1,0 +1,245 @@
+# sw/ - DEBAZAROS userspace software
+
+Built with plain make and the gcc from Vitis 2022.2. No Vitis project, no BSP.
+
+| Path | What it is |
+| --- | --- |
+| `debazd/` | The hardware daemon: the one owner of the PL registers and frame slots, controlled over OSC/UDP (port 9000). |
+| `dzctl/` | Command-line OSC client for debazd. Runs on the board and on the laptop. |
+| `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing (`dz_draw`). |
+| `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk, capture). Moved from `Vitis/hdmi2` (and jerkspace). |
+| `fbfeed/` | Copies raw frames from stdin into a frame slot (second video stream). |
+| `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). |
+| `tools/` | `capstat.sh` (capture status), `selftest.sh`, `vscode/` (debug setup). |
+| `oscreg/` | DEPRECATED. Replaced by debazd. Do not deploy: it uses removed addresses (bus error). |
+
+## Build and install
+
+```sh
+make              # ARM binaries -> out/arm/   (hdmi2: out/arm/hdmi2.elf)
+make NATIVE=1     # x86 binaries -> out/native/ (dzctl for the laptop)
+make test         # host self test, simulated hardware
+make install      # copy to the board: /home/ebaz/bin/
+make DEBUG=1      # -O0 -g for gdb
+```
+
+`make install` copies to `/home/ebaz/bin/`. The boot script `debazarosit.sh`
+still starts `/home/ebaz/hdmi2.elf` (the old build). Change that only when you
+decide to.
+
+## Start order on the board
+
+1. Load the bitstream (JTAG, or fpga_manager).
+2. Run hdmi2 one time: it sets the video mode and starts the VDMAs.
+   debazd does not do this.
+3. Start the daemon: `sudo /home/ebaz/bin/debazd &` (`-v` logs every write).
+4. Control it: `dzctl ...` on the board, `dzctl -h <board-ip> ...` from the LAN.
+
+Only one debazd runs at a time (`/tmp/debazd.lock`). Do not run the devmem
+loop of `debazarosit.sh` at the same time: both write the same registers.
+
+## OSC interface (summary)
+
+Full list: `dzctl /list`, or `debazd -l` (prints address, register, bits).
+
+| Address | Arguments | Effect |
+| --- | --- | --- |
+| `/ping`, `/info` | | `/pong`; variant, field count, slots, usable slots |
+| any field, e.g. `/hdmi/0/gain/rgb` | value(s) | set it (int = raw, float = 0..1) |
+| any field | none | reply `/value path raw normalized` |
+| `/disp/<d>/show` | slot | display d shows DDR slot (0..5) |
+| `/disp/<d>/home` | | display 0 -> slot 0 (fb0), display 1 -> slot 2 |
+| `/disp/<d>/capture` | | display d shows the live capture frame |
+| `/disp/<d>` | | reply: slot that display d shows (-1 = not a slot) |
+| `/capture/status` | | plocked, alocked, frames flowing, overflow, DMA status |
+| `/subscribe` | [port] | send events to me: `/event/io`, `/event/hpd`, `/event/capture` |
+| `/draw/<slot>/...`, `/img/...`, `/movie/...`, `/surface/...` | | drawing and playback, see `lib/dz_draw.h` |
+
+Field groups: `/hdmi/0/...` (gain, osc sin/phase divider and offset, mixer
+pixel delay), `/hdmi/1/...` (own-video gain, feedback gain from HDMI_0, sine
+and saw layer gains, dividers, offsets), `/dds/0|1/{hz,pinc,enable,valid}`,
+`/mixer/0..8/{gain/0..4,mode,k,stream,lo,hi}`, `/io/...` and `/capture/...`
+(read only). Wildcards work: `dzctl "/mixer/*/mode" 35`.
+
+Colour order: every `r`/`g`/`b` field writes the correct pixel lane. The
+display bus is RBG ([23:16] R, [15:8] B, [7:0] G), and the fields hide that.
+
+DDS: a write to `/dds/<n>/hz` or `/pinc` also sets bit 31 (TVALID enable).
+Without that bit the DDS ignores the new value.
+
+## Video painter
+
+`/draw/<slot>/...` paints into a DDR slot; any display can show that slot.
+Full list in `lib/dz_draw.h`. Painting operations (Oct 2026):
+
+| Address | Arguments |
+| --- | --- |
+| `/draw/<s>/brush` | r g b x y radius [hardness 0..1] — soft round stamp |
+| `/draw/<s>/stroke` | r g b radius hardness x0 y0 x1 y1 [x y ...] — soft polyline |
+| `/draw/<s>/line` | r g b x0 y0 x1 y1 [width] — 1 = thin, else round |
+| `/draw/<s>/fade` | amount 0..1 [r g b] — pull all pixels toward a colour: trails |
+| `/draw/<s>/blend` | `normal`, `add` (light painting), `lighten`, `multiply` |
+| `/draw/<s>/alpha` | 0..1 for later operations |
+| `/surface/<s>/grab` | [src slot] — copy the real slot content (live capture = 4, a playing movie) into the painting buffer: freeze it, then paint on it |
+| `/surface/<s>/peek` | x y — reply `/pixel s x y r g b` |
+
+Plus the older fills, gradients, rectangles, ellipses, images and movies.
+Every operation stops a movie that plays into the same slot.
+
+Try it: `dzctl /disp/1/show 5`, then on the laptop
+`python3 sw/tools/osc_paint_demo.py <board-ip> 5` (light painting with
+trails, strokes, painting over a frozen capture frame; it prints the fps).
+
+Measured on the board (one bundle per frame, auto present):
+
+| Frame | CPU idle | Movie on the other display |
+| --- | --- | --- |
+| light painting (fade + 3 soft brushes) | 28 ms (35 fps) | 61 ms (16 fps) |
+| strokes + full-width line | — | 47 ms (21 fps) |
+| one circle on a frozen frame | — | 2.6 ms |
+| grab a slot (uncached read) | — | approx. 100 ms |
+
+`fade` touches the whole frame (NEON, fused with the copy to the slot), so it
+is limited by DDR bandwidth, which the displays and the capture share. Small
+operations cost only their own area.
+
+## Display buffers, blank and strobe
+
+There are **12 slots** (0x0800_0000 + n × 0x7E9000, inside the 96 MB
+reservation): 0–5 as before (4 = capture), 6–10 free, 11 = always black.
+Each display keeps the shown slot in VDMA frame store 0 and the black slot in
+frame store 2. A real-time thread in debazd waits for vsync (VTC status bit
+13, 60.03 Hz, jitter < 0.1 ms) and applies every display change right after
+it, so each change lands on a whole frame.
+
+| Address | Effect |
+| --- | --- |
+| `/disp/<d>/show` slot | show a slot (next frame) |
+| `/disp/<d>/blank` [0\|1] | black / back; no argument = toggle (one register write) |
+| `/disp/<d>/seq` slot slot ... | loop through slots, -1 = black |
+| `/disp/<d>/seq/rate` frames | frames per step (default 1) |
+| `/disp/<d>/seq/stop` | back to the shown slot |
+| `/vsync` | → frames, Hz, jitter in µs, ok |
+
+Measured per frame on the board: `seq 5 -1` = black on every second frame
+(30 Hz strobe), `seq 6 7 8 9 10` = a 5-slot flipbook at 60 fps, `rate 3` =
+exactly 3 frames per step. Draw the frames first, then play them: playback
+costs no drawing. ⚠️ Fast strobes are a photosensitivity risk.
+
+## Soft timing: LFOs
+
+16 oscillators in debazd, evaluated once per frame (`debazd/lfo.c` has the
+full list). Shapes: sine, tri, saw, ramp, square, random (sample & hold),
+smooth, step, noise; wave shaping with width, curve, steps, range, phase;
+rate in Hz or a period in frames; loop or one-shot (`trigger`).
+
+A target is either register fields or a **message template**, sent to the
+daemon itself every frame, where `$k` = value of LFO k (`$fk` as float):
+
+```sh
+dzctl /lfo/0/rate 0.31; dzctl /lfo/0/range 100 1180      # x
+dzctl /lfo/1/rate 0.47; dzctl /lfo/1/range 80 640        # y
+dzctl /lfo/1/target "/draw/6/brush 200 80 20 \$0 \$1 30 0"
+dzctl /lfo/2/target "/draw/6/fade 0.12"; dzctl /lfo/2/every 4
+dzctl "/lfo/[0-2]/on" 1                                  # light painting, no client
+dzctl /lfo/4/range 0 255; dzctl /lfo/4/target /hdmi/1/feedback/r; dzctl /lfo/4/on 1
+dzctl /lfo/reset
+```
+
+`every k` applies a target only on every k-th frame: use it for heavy
+targets (a full-frame fade takes 25–60 ms).
+
+## Buttons and GPIO actions
+
+`/io/press/<bit> "template"` and `/io/release/<bit> "template"` bind a
+message to an edge of user I/O bit 0..7 (the 6 buttons / P1 lines, active
+low: a press is 1 → 0). The daemon sends the message to itself, with the
+same syntax as LFO targets. No argument removes the binding. The monitor
+polls every 20 ms (`debazd -i`).
+
+```sh
+dzctl /io/press/0 "/disp/1/blank"                 # button 0 toggles black
+dzctl /io/press/1 "/disp/1/seq 6 7 8 9 10"        # button 1 starts a flipbook
+dzctl /io/press/2 "/lfo/3/trigger"                # button 2 fires an envelope
+```
+
+## Sprites, text and transforms
+
+| Address | Arguments |
+| --- | --- |
+| `/sprite/<id>/load` | "file" [w h] — image from `/home/ebaz/img` (PNG alpha kept) |
+| `/sprite/<id>/grab` | slot x y w h — a rectangle of a slot (e.g. the capture) |
+| `/sprite/<id>/text` | r g b "text" [scale] [16\|32] — pixel font |
+| `/sprite/<id>/ttf` | r g b size "text" ["font file"] — anti-aliased |
+| `/sprite/<id>/key` | r g b [tolerance] — colour → transparent |
+| `/sprite/<id>/draw` | slot x y [scale] [angle] [alpha] — centred at x,y |
+| `/draw/<s>/text` | r g b x y "text" [scale] [16\|32] |
+| `/draw/<s>/ttf` | r g b x y size "text" ["font file"] |
+| `/draw/<s>/rotozoom` | angle zoom [cx cy] [src] — on itself = feedback tunnel |
+| `/draw/<s>/transform` | a b c d e f [src] — affine map with wrap-around |
+| `/draw/<s>/scroll` | dx dy [src] |
+| `/draw/<s>/mirror` | h \| v \| quad (4-way kaleidoscope) |
+| `/draw/<s>/wave` | axis amp period phase [src] |
+
+Fonts: the pixel font is derived from Terminus Font (SIL OFL 1.1,
+`third_party/fonts/OFL.txt`); TrueType files come from `/usr/share/fonts`
+(default `LiberationSans-Regular.ttf`), rendered by stb_truetype
+(`third_party/stb`, public domain / MIT).
+
+Measured on the board (ms per operation, including the copy to the slot):
+
+| Operation | CPU idle | movie on the other display |
+| --- | --- | --- |
+| sprite load (jpeg, ffmpeg) | — | 700–1200 |
+| sprite 600×600 / ×0.5 rotated / 869×860 ×0.3 α | 38 / 15 / 17 | 74 / 35 / 39 |
+| pixel text (32 chars ×2) / TrueType 64 px | — | 3 / 14 |
+| rotozoom / scroll / wave / shear / mirror quad (full frame) | 27 / 22 / 22 / 29 / 15 | 64 / 48 / 62 / 73 / — |
+
+Full-frame transforms read the source once, write a spare buffer, copy each
+finished row to the slot while it is in cache, then swap the buffers.
+
+## "ffmpeg -f fbdev /dev/fb0 does not work"
+
+ffmpeg writes slot 0. It shows only if display 0 scans slot 0. After the
+hdmi2 menu key 'a' ("capture on display 0"), display 0 scans the capture
+slot, and ffmpeg writes to a slot that nobody shows. Fix:
+
+```sh
+dzctl /disp/0/home        # display 0 shows slot 0 (ffmpeg) again
+dzctl /disp/0/capture     # display 0 shows the live input
+dzctl /disp/0             # which slot does display 0 show now?
+```
+
+## Memory safety (important)
+
+Frame slots are `0x0800_0000 + n * 0x7E9000`. They must be inside the
+`reserved-memory` of the RUNNING kernel. On the bench board (Oct 2026) only
+16 MB is reserved, so only slots 0 and 1 are safe; slots 2-5 are Linux RAM.
+debazd, fbfeed and hdmi2 check this at run time and refuse unsafe slots
+(`dzctl /info`: last value = usable slots). The fix (a 128 MB DTB, one
+reboot) is ready in `PetaLinux/dtb/` - see its README.
+
+Register blocks: debazd maps only blocks listed in `include/hw_map.h`. Old
+addresses (and the speculative UIO nodes in the dtsi) are refused, because
+any access to them is a bus error.
+
+## Debugging (no Eclipse)
+
+Copy `tools/vscode/launch.json` and `tasks.json` to `.vscode/` (done on the
+bench laptop). Build with `make DEBUG=1 install`, start the gdbserver task,
+then F5. The ARM gdb comes from the Vitis toolchain; its Python files are
+borrowed from the aarch64 package (`--data-directory`, already in the file).
+
+## Measured on the board (Oct 2026)
+
+- Slot writes: /dev/fb0 approx. 630 MB/s, /dev/mem approx. 660 MB/s. Reads from
+  /dev/mem are slow; the drawing code keeps shadow buffers for that reason.
+- fbfeed through a pipe: approx. 25 fps at 720p (92 MB/s). The pipe is the limit.
+- ffmpeg 720p mpeg4: decode only (yuv420p) 36 fps; + ffmpeg's bgra conversion
+  20 fps; + ffmpeg's uyvy422 packing 6 fps (very slow on ARM).
+- `fbfeed -y` (yuv420p in, NEON conversion in fbfeed, `lib/dz_yuv.c`): one
+  720p frame in 16 ms. Two 720p movies at once: **12.5 fps each** (was 7 fps
+  each with ffmpeg's bgra path). Now the decoder is the limit. debazd's
+  `/movie` player uses this path. `fbfeed --selftest` checks NEON vs C.
+- YUV matrix: BT.709 by default (the test files are bt709); `fbfeed -m 601`.
+- Capture colours are exact: red in -> `0xFFFF0000` in the slot.

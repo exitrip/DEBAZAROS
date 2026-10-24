@@ -1,0 +1,32 @@
+{
+    // Copy to <repo>/.vscode/tasks.json. See launch.json in this folder.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "sw: build + install (debug)",
+            "type": "shell",
+            "command": "make -C sw DEBUG=1 install",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "gdbserver: debazd",
+            "type": "shell",
+            "command": "sshpass -p '' ssh -o StrictHostKeyChecking=no ebaz@10.42.0.128 'sudo pkill -x debazd; sudo gdbserver :2345 /home/ebaz/bin/debazd -v'",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": { "regexp": "^__never__$" },
+                "background": { "activeBegin": "Process", "activeEnd": "Listening on port" }
+            }
+        },
+        {
+            "label": "gdbserver: hdmi2.elf (stop capture first, see CLAUDE.md)",
+            "type": "shell",
+            "command": "sshpass -p '' ssh -o StrictHostKeyChecking=no ebaz@10.42.0.128 'sudo gdbserver :2345 /home/ebaz/bin/hdmi2.elf -m'",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": { "regexp": "^__never__$" },
+                "background": { "activeBegin": "Process", "activeEnd": "Listening on port" }
+            }
+        }
+    ]
+}
