@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the debaz
+
+[Service]
+ExecStart=/home/ebaz/debazarosit.sh
+RemainAfterExit=true
+Type=oneshot
+
+[Install]
+WantedBy=multi-user.target

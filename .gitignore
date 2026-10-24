@@ -42,3 +42,6 @@ Vivado/*
 #Qt5 build
 build-*/
 
+
+# Tcl-flow Vivado builds (hw/build.tcl)
+/build/
