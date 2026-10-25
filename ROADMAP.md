@@ -540,10 +540,26 @@ damage the system; a unit is "power off = safe". Media stay on their own
 FAT partition (writable). Software updates then need a remount
 (`mount -o remount,rw /`) or a new image.
 
-### Open questions
+### Decisions (user, 2026-10-25)
 
-- exFAT or FAT32 for media (file size vs compatibility)?
-- Keep the full Yocto package manager (dnf/opkg) on the units?
-- One image, with the variant chosen by a setting on `/data`, or one
-  image per variant? (Recommended: one image, setting.)
+- Media partition: **exFAT** (macOS, Windows and Linux read and write it;
+  files may be larger than 4 GB). Kernel exFAT + exfat-utils are in the
+  image since build 3. Change the FAT32 entries above accordingly.
+- **Keep a package manager.** Debian/Arch repositories cannot be used on a
+  Yocto rootfs (other glibc and library versions). Options: the Yocto feed
+  of our own build as rpm (PetaLinux default) or ipk/opkg (lighter; full
+  package rebuild), or later a Debian armhf rootfs with the PetaLinux boot
+  files and kernel (gives apt).
+- **One image for all variants**; the variant is a setting on `/data`.
+- `uEnv.txt` (MAC) is per-card setup: `debaz-firstboot` writes it when it
+  is missing (MAC from the SD card CID, locally administered), then
+  reboots once.
+
+### Status (2026-10-25)
+
+PetaLinux builds pass with the Tcl XSA (FCLK3 = 200 MHz in the FSBL), the
+new dtsi (no PL nodes, NAND enabled) and the trimmed rootfs (3.46 GB ->
+361 MB). Not yet on a card: the next step is a test card from these
+images (BOOT.BIN, uImage, system.dtb, boot.scr, rootfs) - check boot,
+ethernet + uEnv.txt MAC, /dev/fb0, /dev/mtd0, then the sw.
 

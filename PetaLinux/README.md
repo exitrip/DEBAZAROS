@@ -1,99 +1,63 @@
-# PetaLinux project
- 
-## Description
+# PetaLinux project (DEBAZAROS)
 
-This PetaLinux project is to build and put together:
-* the Linux kernel
-* the root file system (rootfs)
-* the programs (colorbars, sdr-app, wsjtx, jt9 etc)
-to run the main "EBAZ4205 SDR and Spectrum" project
+PetaLinux 2022.2 project for the DEBAZAROS units: FSBL, U-Boot, kernel,
+device tree and root file system. Only `project-spec/` and the small files
+are tracked; `build/` (about 80 GB) and `images/` exist only on the build
+machine (Ubuntu 22.04; PetaLinux 2022.2 does not work well on 24.04).
 
-## Getting Started with this PetaLinux project
+## Build
 
-### build the PetaLinux Image of the SD card
-
-Of course you need to have:
-* PetaLinux 2022.2 installed on Ubuntu 20.04 LTS or 
-* PetaLinux 2023.1 on Ubuntu 22.04 LTS
-
-1. Git or download/unzip this folder to your PC in a directory of your choice
-
-2. cd to the PetaLinux folder
-```
-cd  /home/guido/Github/EBAZ4205_SDR_spectrum/PetaLinux/ 
-```
-3. source PetaLinux there, so that the petalinux command can be launched
-```
-source /tools/Xilinx/PetaLinux/2022.2/bin/settings.sh 
-```
-4. Specify the directory where you exported the XSA file (hardware description) by Vivado
-```
-petalinux-config --get-hw-description=/home/guido/Github/EBAZ4205_SDR_spectrum/Vivado
+```sh
+cd PetaLinux
+source ~/petalinux/2022.2/settings.sh
+petalinux-config --silentconfig
+petalinux-config -c rootfs --silentconfig
+petalinux-build
+petalinux-package --boot --force --fsbl images/linux/zynq_fsbl.elf \
+    --fpga images/linux/system.bit --u-boot
 ```
 
-5. Build the project. The very first time it will take a lot of time (more than one hour on my Intel i9 12900H 32GB RAM vs 5 minutes in case of rebuilding after a Vivado hardware modification)
-```
+Output in `images/linux/`: `BOOT.BIN` (FSBL + default bitstream + U-Boot),
+`uImage`, `system.dtb`, `boot.scr`, `rootfs.ext4` / `rootfs.tar.gz`.
+
+`silentconfig` rewrites `project-spec/configs/*` (sorts, removes stale
+entries, may switch dependencies on). Commit the rewritten files, or the
+next `git pull` on the build machine refuses to overwrite them.
+
+## New hardware description (XSA)
+
+All gateware variants share one PS7 configuration (ROADMAP.md section 8),
+so import an XSA only when the PS7 setup changes, or to change the default
+bitstream in BOOT.BIN. Use a hardware-tested XSA from `artifacts/`:
+
+```sh
+petalinux-config --get-hw-description=<repo>/artifacts/<variant>_<date>.xsa --silentconfig
+# REQUIRED after every import: the FSBL and device-tree recipes keep an
+# xsct workspace with the OLD hardware; without this the FSBL step fails
+# with "Failed to generate bsp for application zynq_fsbl".
+petalinux-build -c fsbl-firmware -x cleansstate
+petalinux-build -c device-tree -x cleansstate
 petalinux-build
 ```
-6. Create the files composing the image (BOOT.bin system.dtb uImage ...) to be flashed on the SD card. You'll find all these files in PetaLinux/images/linux
-```
-petalinux-package --boot --force --fsbl ./images/linux/zynq_fsbl.elf --fpga ./project-spec/hw-description/ebaz4205_wrapper.bit --u-boot
-```
-7. Create the wic file (SD card image) in ...PetaLinux/images/linux/petalinux-sdimage.wic
-```
-petalinux-package --wic
-```
-8. Flash the file on an SD card (>= 8 GB) using [Balena-Etcher](https://etcher.balena.io/)
 
-### test PetaLinux
+No new PetaLinux project is necessary for a new XSA.
 
-1. Insert the SD card in the EBAZ4205 slot
-2. Connect any kind of tty terminal set at 115200,8,n,1 to the serial port of EBAZ4205
-3. Power on 
+## Configuration choices (2026-10-25)
 
-After a few seconds, you should see the PetaLinux boot sequence.
+- `CONFIG_SUBSYSTEM_FPGA_MANAGER` OFF: BOOT.BIN keeps the default bitstream,
+  so the ethernet PHY clock (from the PL) is always there.
+- `CONFIG_SUBSYSTEM_REMOVE_PL_DTB` ON: no PL nodes in the device tree; no
+  kernel driver touches the VDMAs or the VTC. debazd/hdmi2 use /dev/mem.
+- One device tree source:
+  `project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`
+  (96 MB frame memory, one simplefb, fpga-full region, soldered NAND).
+- Kernel fragments in `project-spec/meta-user/recipes-kernel/linux/linux-xlnx/`
+  (`user_2026-10-25-debaz.cfg`: exFAT, UBI/UBIFS).
+- rootfs: SDR-era packages removed (361 MB); ffmpeg, parted, dosfstools,
+  exfat-utils, mtd-utils, rsync, python3 added. ffmpeg needs the
+  `commercial` license flag (`meta-user/conf/petalinuxbsp.conf`).
 
-### build PetaLinux sysroot and get (cross)compilers
+Plan for the full SD card image (partitions, our software as a recipe,
+systemd start-up, read-only root): ROADMAP.md section 10.
 
-If you want to build Linux applications for PetaLinux using your host PC (with Ubuntu) you need a sysroot. In fact Qt Creator installed on Ubuntu can build applications for the PetaLinux version installed in the Zynq7010 of your EBAZ4205 but, to do this, it needs a special compiler and linker which, running on Ubuntu, can build Cortex A9 32 bits executables for PetaLinux, using the proper shared libraries and their include files. 
-
-1. cd to the PetaLinux folder
-```
-cd  /home/guido/EBAZ4205_SDR_spectrum/PetaLinux/ 
-```
-2. source PetaLinux there, so that the petalinux commands can be launched
-```
-source /tools/PetaLinux/2022.2/bin/settings.sh 
-```
-
-3. Temporarily exclude "openssh-sftp-server" from building (because of a PetaLinux bug, the sysroot cannot be created with it!)
-```
-petalinux-config -c rootfs 
-```
-4. Navigate to "Filesystem Packages  → console  → network  → openssh"
-5. Uncheck [ ] openssh-sftp-server 
-6. exit saving
-
-7. Build the sysroot
-```
-petalinux-build -s
-```
-At the end, you'll find the SDK installer in ...PetaLinux/images/linux/sdk.sh
-
-8. Execute sdk.sh to explode the sysroot
-
-cd to the PetaLinux/images/linux
-```
-cd  /home/guido/EBAZ4205_SDR_spectrum/PetaLinux/images/linux
-```
-9. Run sdk.sh. The default destination directory is: /opt/PetaLinux/2022.2/
-```
-./sdk.sh
-```
-10. Revert what you did at step 3 re-including "openssh-sftp-server" in building
-```
-petalinux-config -c rootfs 
-```
-11. Navigate to "Filesystem Packages  → console  → network  → openssh"
-12. Check [X] openssh-sftp-server 
-13. exit saving
+`dtb/`: the 96 MB DTB that runs on the bench board now (before this image).
