@@ -998,7 +998,7 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			else if (!strcmp(op, "gradient/v") && n >= 6)
 				rc = dz_draw_gradient(i, col(a, 0), col(a, 3), 90.0f, rect_at(a, n, 6));
 			else if (!strcmp(op, "gradient/angle") && n >= 7)
-				rc = dz_draw_gradient(i, col(a, 1), col(a, 4), a[0].f, rect_at(a, n, 7));
+				rc = dz_draw_gradient(i, col(a, 1), col(a, 4), argn(&a[0]), rect_at(a, n, 7));
 			else if (!strcmp(op, "gradient/corners") && n >= 12)
 				rc = dz_draw_corners(i, col(a, 0), col(a, 3), col(a, 6), col(a, 9),
 						     rect_at(a, n, 12));

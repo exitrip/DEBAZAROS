@@ -44,7 +44,7 @@ Export round-trip is clean except assign_bd_address line ORDER (nondeterministic
 | `IP_rgb2dvi/`, `Vivado/IP_rgb2dvi/` | **LIVE** | Digilent rgb2dvi 1.3 (copy outside Vivado added Jan 2026) |
 | `IP_axi_dynclk/`, `Vivado/IP_axi_dynclk/` | **LIVE** | Digilent axi_dynclk (dynamic pixel clock) |
 | `PetaLinux/` | **LIVE** (config only) | Actual PetaLinux build lives on another machine; this tracks project-spec / dtsi / rootfs config. PetaLinux 2022.2/2023.1 era |
-| `sw/` | **LIVE** | All userspace code (Oct 2026): debazd, dzctl, libdz, hdmi2, fbfeed. Plain make, no Vitis. See `sw/README.md` |
+| `sw/` | **LIVE** | All userspace code (Oct 2026): debazd, dzctl, dzweb (web app), libdz, hdmi2, fbfeed. Plain make, no Vitis. See `sw/README.md` |
 | `hw/` | **LIVE** | Gateware as Tcl (`hw/bd/<variant>.tcl` = BD source of truth), `hw/README.md` |
 | `Vitis/colorbars/`, `Vitis/hdmi2/` (metadata only) | legacy | Old Vitis workspace copies. hdmi2 source moved to `sw/hdmi2/` |
 | `debazarosit.sh`, `debazit.service` | **LIVE** | Top-level runtime: systemd oneshot → shell script (deployed to `/home/ebaz/` on target) |
@@ -603,6 +603,15 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   sprites (dz_sprite.c), text (dz_text.c: Terminus-derived pixel font OFL + stb_truetype),
   transforms (dz_xform.c: double buffer + row-wise present, 22-29 ms full frame idle).
   dzctl: getopt "+" so negative values after the /address work.
+- **dzweb (Oct 24, sw/README.md "Web app")**: board-side HTTP + WebSocket→UDP OSC bridge
+  (port 8080, runs as ebaz, pages in /home/ebaz/www, `make install` copies them). One UDP
+  socket per browser; WS frame = OSC packet. `/units` = LAN /info broadcast, dedupe by MAC
+  (all boards share MAC 00:0a:35:00:1e:53 today → only one shows until MACs are unique).
+  debazd gained `/fields` and `/files` list queries for it; the UI builds Effects from
+  /fields. Not started by debazarosit.sh yet. Media transfer = dzweb HTTP `/media`
+  (GET list/file, PUT raw-body upload → .part + rename, DELETE; CORS for other units;
+  64 MB disk reserve; nonblocking chunks in the poll loop). Board root fs: 3.8 GB, ~310 MB free. Headless-Chromium testing: `--virtual-time-budget`
+  fakes timers (collect timeouts fire early → empty tabs); drive Chromium over CDP instead.
 - After a reboot WITHOUT debazarosit.sh the mixer is all mode 0 → HDMI_0 output BLACK
   (the colour matrix multiplies by 0). Apply the mixer setup (debaz-start.sh / onlySetup.sh).
 - "ffmpeg -f fbdev /dev/fb0 doesn't work after running the C code" = ROUTING: hdmi2 'a'

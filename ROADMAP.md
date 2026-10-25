@@ -19,6 +19,8 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | DOING: debazd runs on the board (fields, routing, capture status, events, drawing) |
 | 7 | Test the OSC drawing layer against the daemon | 6 | DONE: painter, sprites, text, transforms, LFOs, 60 fps flipbook/strobe (2026-10-24, `sw/README.md`) |
 | 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
+| 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: runs on the board, tested with live registers 2026-10-24; media upload/download/delete tested 2026-10-24; not in the boot script yet |
+| 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DESIGN (2026-10-24) |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -80,8 +82,9 @@ are enough for menu + mode on one unit, but not to manage 12 units.
   or a per-card `uEnv.txt` (boot.scr already imports it).
 - Discovery: mDNS (avahi) or an OSC broadcast "hello".
 - OSC namespace per unit plus group addresses (all units, groups).
-- Time/frame sync between units: later (PTP or NTP + frame-count
-  alignment). No genlock between boards today.
+- Multi-unit UI (selection, spreads, hub), shared show clock, timed
+  OSC bundles, movie transport: design in `FLEET.md` (2026-10-24), tasks
+  F1-F8. No genlock between boards: best case is about one frame.
 - Bitstream variant per unit through the fpga_manager overlays (task 4).
 - Incoming hardware test (50 boards): one script that does a boot check,
   a PL load, ethernet, DDR, both outputs, capture with `capstat.sh`,
@@ -307,3 +310,83 @@ debazarosit.sh). Original plan below.
   output is genlocked to an input, or that the VTCs are used as input
   detectors?
 - The variants do not block tasks 2-7.
+
+## 9. Display views: crop, pan, zoom, split (design, 2026-10-24)
+
+Goal: each display shows a window of any slot (live input 4, a movie, a
+painting), for example display 0 = top-left quarter of the input at 2x and
+display 1 = top-right quarter at 2x. Input and output resolution are the
+same (1280x720). This generalizes to crop, pan and zoom.
+
+### Measured facts (bench board, 2026-10-24)
+
+- CPU path today (`/surface/6/grab 4` then `/draw/6/transform` x2): grab
+  48 ms (uncached read of 3.7 MB, about 77 MB/s), zoom 24 ms. About 72 ms
+  for each live frame = 14 fps for ONE display, 7 fps for two. A grab of
+  only the quarter that is needed (0.9 MB) would give about 25 fps for one
+  display. Not enough for live 60 fps.
+- The display VDMAs (MM2S) can already read a window: start address =
+  slot + y0 * 5120 + x0 * 4, HSIZE, VSIZE, STRIDE = 5120. No DRE and a
+  64-bit memory bus: x0 must be even. A window costs no CPU and no extra
+  DDR bandwidth (a smaller window reads less).
+- But a VDMA cannot scale. v_axi4s_vid_out needs exactly 1280x720 at its
+  input, so a 640x360 window needs a 2x scale between the VDMA and vid_out.
+
+### Design: VDMA window + nearest-neighbour upscaler in the PL
+
+```
+VDMA MM2S (window: start, HSIZE, VSIZE, STRIDE) -> subset converter
+  -> NEW "view" scaler (AXIS, FCLK2) -> v_axi4s_vid_out -> effects -> rgb2dvi
+```
+
+- The scaler repeats pixels and lines (nearest neighbour). It uses a DDA
+  step per axis in 16.16 fixed point, so any zoom >= 1 costs the same as
+  2x: smooth zoom, not only integer steps. X and Y steps are separate.
+- Horizontal: hold TREADY low while a source pixel repeats. Vertical: keep
+  one source line in a line buffer and send it again while the VDMA waits
+  (its 4096-deep line buffer absorbs the stall).
+- Line buffer: one line of up to 1280 px x 24 bit = 30.7 kbit = 1 BRAM36
+  per display, or about 480 LUTs as distributed RAM. BRAM is about 96%
+  used (two BRAM36 free), LUTs about 65%: LUTRAM is the safe choice.
+- It runs in the AXIS clock (FCLK2), NOT in the crowded pixel clock region
+  X1Y1. Logic: two accumulators, counters, SOF/EOL generation: small.
+- Registers (zoom steps, enable) double-buffered and latched at SOF. debazd
+  writes the VDMA window and the scaler at vsync (VSIZE write last = the
+  VDMA commit), so window and zoom change on the same frame.
+- Zoom < 1 (shrink): vertical by STRIDE = n x 5120 (skip lines, integer
+  only, free); horizontal by dropping pixels (the VDMA reads the full line).
+- Cheap extra: read the line buffer backwards = horizontal mirror.
+- One AXI-Lite block with registers for 3 channels (third-port rule: keep
+  room for a third display). Use a spare `M**_AXI` port of ps7_axi_periph
+  (an addition: no address moves).
+- Effects apply AFTER the view (the feedback paths see the zoomed image).
+
+### Software
+
+- `/disp/<d>/view x0 y0 zoom [zoomy]` and `/disp/<d>/view/reset`. Window
+  size = 1280/zoom x 720/zoom. debazd clamps the window inside the slot
+  (a VDMA read past the slot shows the next slot's memory).
+- Pan and zoom from LFOs (`/disp/1/view $0 $1 2`), at 60 fps, no CPU load.
+- Quarter split of the input: `/disp/0/view 0 0 2`, `/disp/1/view 640 0 2`.
+  Zero copy: both displays read capture slot 4.
+- With one decoded movie and two views, both displays show the same movie
+  with different crops at the cost of ONE decode (see FLEET.md section 4).
+- Fleet: a video wall from one HDMI source (split it with an HDMI
+  splitter), each unit shows its own tile; an "offset" spread on x0/y0.
+
+### Interim without gateware
+
+- CPU path (above): about 14 fps for one display, about 25 fps after a
+  quarter-only grab. For slow or frozen effects only.
+- VDMA window at 1:1 only (no scaler): pan a 1280x720 window over a slot
+  that holds a bigger picture (slots are 1920x1080 in size). Useful for a
+  large painted canvas, or a 1080p30 input. With same-size sources there
+  is nothing to pan over.
+
+### Open points
+
+- Measure the free resources in the Tcl build before the BD change.
+- Build the scaler as RTL (module reference, as `div16_8_recip`) or HLS.
+- Branch: `view` (gateware + debazd), after the Tcl flow hardware test
+  (task 2).
+

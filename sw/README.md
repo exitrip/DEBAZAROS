@@ -5,6 +5,7 @@ Built with plain make and the gcc from Vitis 2022.2. No Vitis project, no BSP.
 | Path | What it is |
 | --- | --- |
 | `debazd/` | The hardware daemon: the one owner of the PL registers and frame slots, controlled over OSC/UDP (port 9000). |
+| `dzweb/` | Web app: a small HTTP + WebSocket server on the board (port 8080) and the browser pages in `dzweb/www/`. See "Web app" below. |
 | `dzctl/` | Command-line OSC client for debazd. Runs on the board and on the laptop. |
 | `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing (`dz_draw`). |
 | `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk, capture). Moved from `Vitis/hdmi2` (and jerkspace). |
@@ -34,6 +35,8 @@ decide to.
    debazd does not do this.
 3. Start the daemon: `sudo /home/ebaz/bin/debazd &` (`-v` logs every write).
 4. Control it: `dzctl ...` on the board, `dzctl -h <board-ip> ...` from the LAN.
+5. Optional, the web app: `/home/ebaz/bin/dzweb &` (no sudo), then open
+   `http://<board-ip>:8080/` in a browser.
 
 Only one debazd runs at a time (`/tmp/debazd.lock`). Do not run the devmem
 loop of `debazarosit.sh` at the same time: both write the same registers.
@@ -52,6 +55,8 @@ Full list: `dzctl /list`, or `debazd -l` (prints address, register, bits).
 | `/disp/<d>/capture` | | display d shows the live capture frame |
 | `/disp/<d>` | | reply: slot that display d shows (-1 = not a slot) |
 | `/capture/status` | | plocked, alocked, frames flowing, overflow, DMA status |
+| `/fields` | [prefix] | one `/field path lo width unit ro help` per field, then `/field/end count` |
+| `/files` | `img` or `movies` | one `/file name` per file in `/home/ebaz/img` or `/home/ebaz/movies`, then `/file/end count` |
 | `/subscribe` | [port] | send events to me: `/event/io`, `/event/hpd`, `/event/capture` |
 | `/draw/<slot>/...`, `/img/...`, `/movie/...`, `/surface/...` | | drawing and playback, see `lib/dz_draw.h` |
 
@@ -66,6 +71,73 @@ display bus is RBG ([23:16] R, [15:8] B, [7:0] G), and the fields hide that.
 
 DDS: a write to `/dds/<n>/hz` or `/pinc` also sets bit 31 (TVALID enable).
 Without that bit the DDS ignores the new value.
+
+## Web app (dzweb)
+
+`dzweb` serves the pages in `/home/ebaz/www` and connects browsers to
+debazd. The browser sends OSC packets as WebSocket frames, and dzweb sends
+them to debazd over UDP. Replies and events come back the same way. Thus the
+browser uses the same OSC addresses as `dzctl`.
+
+```sh
+/home/ebaz/bin/dzweb &      # -p 8080  -w /home/ebaz/www  -m /home/ebaz  -d 127.0.0.1 -o 9000  -v
+```
+
+| URL | What it does |
+| --- | --- |
+| `/` and other flat file names | static files from the www folder (no sub folders, `..` gives 404) |
+| `/units` | broadcasts `/info` on the LAN; JSON list of units (ip, variant, slots, host, MAC) |
+| `/osc` | WebSocket. Each binary frame is one OSC packet (message or bundle). |
+| `GET /media` | JSON: free bytes on the disk, files in `img/` and `movies/` (name, size, mtime) |
+| `GET /media/<img\|movies>/<name>` | download a file (`?dl`: as an attachment) |
+| `PUT /media/<img\|movies>/<name>` | upload a file (raw body with Content-Length) |
+| `DELETE /media/<img\|movies>/<name>` | delete a file |
+
+Tabs in the app:
+
+- **Displays**: slot grid per display (12 slots), Home, Live input, Blank,
+  frame sequencer. The page asks for a confirmation before a fast black
+  strobe (photosensitivity).
+- **Effects**: all register fields. The page gets them from `/fields`, so a
+  new field in `dz_fields.c` shows without a change to the page. Mixer: a
+  table with 9 channels (mode, K, lo, hi, stream B, 5 gains).
+- **Oscillators**: the 16 LFOs. debazd reports only value and on/off, so the
+  page keeps its own copy of the settings in the browser.
+  "Send all settings" sends that copy again (for example after a debazd restart).
+- **Paint**: brush, line, pixel text, TrueType text and sprites on a
+  1280x720 canvas, in board coordinates. The canvas shows a local preview
+  only. Board effects (grab, transforms) show on the display.
+- **Media**: upload (drop files or choose them), download and delete images
+  and movies; use them as sprites, draw them, play movies; sprites from
+  text, colour key.
+- **Console**: all replies and events, and a command line
+  (`/disp/1/show 5`, `"quoted text"` = one string, numbers with a point = float).
+
+Header: unit selector and "Scan" (`/units`). With "all units" set, each
+control goes to all units found, not only to the selected unit.
+
+Test without a board: `make NATIVE=1`, then
+`out/native/debazd -n -p 19500 &` and
+`out/native/dzweb -p 18080 -o 19500 -w dzweb/www`, open `http://127.0.0.1:18080/`.
+
+Media transfer rules:
+
+- The media folders are `<-m>/img` and `<-m>/movies`, the same folders
+  that debazd reads. dzweb makes them if they do not exist.
+- Names: `A-Z a-z 0-9 . _ -` only, 96 characters maximum, no leading dot
+  (the same rule as debazd). The page changes other characters to `_`.
+- An upload writes `.<name>.part` and renames it when all bytes are on the
+  disk. If the connection stops, dzweb deletes the part file.
+- dzweb refuses an upload that leaves less than 64 MB free (507), or that is
+  larger than 4 GB (413). The page also checks this before it sends.
+- Transfers move in chunks in the poll loop. Measured on the board
+  (2026-10-24): upload 6.2 MB/s, download 11.8 MB/s (100 Mbit/s Ethernet);
+  OSC `/ping` through the WebSocket during an upload: median 21 ms, max 60 ms.
+- The root file system of the bench board is 3.8 GB with about 310 MB free.
+
+Limits: 16 browsers at a time, 64 KB per WebSocket frame, no fragmented
+frames. No login: use the app only on a closed LAN. Anyone on the LAN can
+upload and delete media.
 
 ## Video painter
 

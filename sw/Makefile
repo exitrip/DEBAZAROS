@@ -15,11 +15,12 @@ ARCH    := $(if $(filter 1,$(NATIVE)),native,arm)
 OUT     := out/$(ARCH)
 OBJ     := $(OUT)/obj
 VARIANT ?= ebaz4205_2out1in
+WWW     ?= /home/ebaz/www
 
 LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h)
-BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe
+BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe $(OUT)/dzweb
 SCRIPTS := tools/capstat.sh
 
 all: $(BINS) hdmi2
@@ -43,6 +44,9 @@ $(OUT)/debazd: $(DZDOBJ) $(OUT)/libdz.a
 $(OUT)/dzctl: $(OBJ)/dzctl/dzctl.o $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ -lm $(LDLIBS)
 
+$(OUT)/dzweb: $(OBJ)/dzweb/dzweb.o $(OUT)/libdz.a
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+
 $(OUT)/vsync_probe: $(OBJ)/tools/vsync_probe.o $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
@@ -55,6 +59,8 @@ install: all
 	$(SSH) $(SSH_HOST) 'rm -rf /tmp/dz-install && mkdir -p /tmp/dz-install $(DEST)'
 	$(SCP) $(BINS) $(SCRIPTS) $(TARGET):/tmp/dz-install/
 	$(SSH) $(SSH_HOST) 'mv -f /tmp/dz-install/* $(DEST)/ && rmdir /tmp/dz-install'
+	$(SSH) $(SSH_HOST) 'mkdir -p $(WWW)'
+	$(SCP) dzweb/www/* $(TARGET):$(WWW)/
 
 test:
 	$(MAKE) NATIVE=1 $(BINS:out/arm/%=out/native/%)

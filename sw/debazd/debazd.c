@@ -18,6 +18,9 @@
  *                                    s:hostname s:mac  (usable = slots inside
  *                                    reserved memory; dzctl -s broadcasts it)
  *   /list [s:prefix]              -> /entry s:path s:help ... /entry/end i:count
+ *   /fields [s:prefix]            -> /field s:path i:lo i:width s:unit i:ro
+ *                                    s:help ... /field/end i:count  (for UIs)
+ *   /files s:img|movies           -> /file s:name ... /file/end i:count
  *   <field> value...              set a field (see sw/lib/dz_fields.h rules)
  *   <field>                       (no value) -> /value s:path i:raw f:normalized
  *   /get s:path                   same as <field> without value
@@ -52,6 +55,7 @@
 #include "dz_vdma.h"
 
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -291,6 +295,46 @@ static void handle(dz_msg *m, void *ctx)
 		}
 		reply("/info", "siiiss", HW_VARIANT, dz_fields_count(), DZ_SLOTS,
 		      dz_slots_usable(), host, mac);
+		return;
+	}
+	if (!strcmp(m->path, "/fields")) {
+		static const char *units[] = { "raw", "bool", "hz", "rgb" };
+		const char *pre = (m->n >= 1 && m->a[0].type == 's') ? m->a[0].s : "";
+		int count = 0;
+
+		for (int i = 0; i < dz_fields_count(); i++) {
+			const dz_field *f = dz_field_at(i);
+
+			if (strncmp(f->path, pre, strlen(pre)))
+				continue;
+			reply("/field", "siisis", f->path, f->lo, f->width,
+			      units[f->unit & 3], (f->flags & DZ_F_RO) ? 1 : 0, f->help);
+			count++;
+		}
+		reply("/field/end", "i", count);
+		return;
+	}
+	if (!strcmp(m->path, "/files")) {
+		const char *which = (m->n >= 1 && m->a[0].type == 's') ? m->a[0].s : "";
+		const char *dir = !strcmp(which, "movies") ? DZ_MOVIE_DIR :
+				  !strcmp(which, "img") ? DZ_IMG_DIR : NULL;
+		DIR *d = dir ? opendir(dir) : NULL;
+		struct dirent *e;
+		int count = 0;
+
+		if (!dir) {
+			reply("/error", "ss", "/files needs img or movies", m->path);
+			return;
+		}
+		while (d && (e = readdir(d)) != NULL) {
+			if (e->d_name[0] == '.')
+				continue;
+			reply("/file", "s", e->d_name);
+			count++;
+		}
+		if (d)
+			closedir(d);
+		reply("/file/end", "i", count);
 		return;
 	}
 	if (!strcmp(m->path, "/list")) {
