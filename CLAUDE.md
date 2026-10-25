@@ -68,6 +68,21 @@ External (not in repo):
   (Ubuntu 22.04; the project is that machine's repo clone `~/Documents/projects/DEBAZAROS/PetaLinux`;
   build/ and images/ live only there).
 
+## PetaLinux (state 2026-10-25; procedure in `PetaLinux/README.md`)
+
+- Builds pass on the build machine with the Tcl XSA (FSBL: FCLK3 = 200 MHz), the
+  single dtsi (no PL nodes, NAND on, 96 MB), and a 200 MB rootfs (ffmpeg, LuaJIT,
+  libjpeg-turbo, pixman, exFAT, mtd-utils; no package manager, no Qt/SDR load).
+  Images NOT yet on any card (next: spare test card).
+- After EVERY XSA import: `petalinux-build -c fsbl-firmware -x cleansstate` and the
+  same for `device-tree` (stale xsct workspace -> "Failed to generate bsp").
+- `silentconfig` rewrites `configs/*`: copy the rewritten files back into the repo
+  and commit, or the next pull on the build machine is refused.
+- LuaJIT recipe needed `meta-user/recipes-devtools/luajit/*.bbappend` (dead
+  luajit.org tarball + broken `CCOPT:x86=` make word).
+- Workflow used: edit here, commit locally, `git bundle` -> build machine ff-merge
+  (same hashes, no push). Cache backup: build machine `~/petalinux-2022.2-cache/`.
+
 ## Hardware / gateware architecture (BD `ebaz4205`)
 
 Three hierarchies: `PS`, `HDMI_0`, `HDMI_1`. Both HDMI channels share one pixel clock.
