@@ -2604,7 +2604,7 @@ CONFIG_packagegroup-core-ssh-dropbear=y
 #
 # pixman 
 #
-# CONFIG_pixman is not set
+CONFIG_pixman=y
 # CONFIG_pixman-dbg is not set
 # CONFIG_pixman-dev is not set
 

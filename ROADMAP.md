@@ -515,6 +515,8 @@ works; per-unit identity lives in small files, not in the image.
     process per image. TODO.
   - libjpeg-turbo 2.1 (+ cjpeg/djpeg): in the image (2026-10-25). NEON
     JPEG for image loads and a possible MJPEG scrub/reverse format.
+  - pixman: in the image (2026-10-25). NEON compositing/scaling, if our
+    own blend and transform code becomes a bottleneck.
   - GStreamer: not now. Same libav decode on this chip, more RAM/CPU, needs
     a custom appsink for our frame slots. Its network clock
     (GstNetClientClock) is a good model for the FLEET.md show clock.
