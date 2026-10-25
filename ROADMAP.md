@@ -513,15 +513,16 @@ works; per-unit identity lives in small files, not in the image.
   - stb_image (single header, same project as stb_truetype): PNG/JPEG
     decode inside debazd for `/img` and sprites, instead of one ffmpeg
     process per image. TODO.
-  - libjpeg-turbo: only if MJPEG becomes the scrub/reverse format.
+  - libjpeg-turbo 2.1 (+ cjpeg/djpeg): in the image (2026-10-25). NEON
+    JPEG for image loads and a possible MJPEG scrub/reverse format.
   - GStreamer: not now. Same libav decode on this chip, more RAM/CPU, needs
     a custom appsink for our frame slots. Its network clock
     (GstNetClientClock) is a good model for the FLEET.md show clock.
   - OpenGL: no (software Mesa only: a few fps at 720p). Effects belong in
     the PL, generative drawing in the NEON painter.
   - Media preparation (encode, resize, GOP) on the laptop, not the board.
-- Languages (2026-10-25): Python 3.9 in the image (scripts, tools, hub
-  logic); LuaJIT 2.1 in the image (see "Local scripts"); no Perl, Ruby,
+- Languages (2026-10-25): Python 3.9 in the image for users who want
+  Python (the DEBAZAROS software does not depend on it); LuaJIT 2.1 in the image (see "Local scripts"); no Perl, Ruby,
   Node.js (none was installed anyway). Rust: built outside PetaLinux with
   rustup (static `armv7-unknown-linux-musleabihf` binaries), only to
   replace C code later; PetaLinux's own Rust 1.54 is too old. PetaLinux

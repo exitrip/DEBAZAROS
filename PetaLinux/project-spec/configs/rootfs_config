@@ -1461,9 +1461,9 @@ CONFIG_ffmpeg=y
 #
 # libjpeg-turbo 
 #
-# CONFIG_libjpeg-turbo is not set
+CONFIG_libjpeg-turbo=y
 # CONFIG_libturbojpeg is not set
-# CONFIG_jpeg-tools is not set
+CONFIG_jpeg-tools=y
 # CONFIG_libjpeg-turbo-dbg is not set
 # CONFIG_libjpeg-turbo-dev is not set
 
