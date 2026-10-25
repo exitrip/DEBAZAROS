@@ -8,11 +8,10 @@ Built with plain make and the gcc from Vitis 2022.2. No Vitis project, no BSP.
 | `dzweb/` | Web app: a small HTTP + WebSocket server on the board (port 8080) and the browser pages in `dzweb/www/`. See "Web app" below. |
 | `dzctl/` | Command-line OSC client for debazd. Runs on the board and on the laptop. |
 | `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing (`dz_draw`). |
-| `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk, capture). Moved from `Vitis/hdmi2` (and jerkspace). |
+| `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk, capture). Moved from the old Vitis workspace (jerkspace). |
 | `fbfeed/` | Copies raw frames from stdin into a frame slot (second video stream). |
 | `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). |
 | `tools/` | `capstat.sh` (capture status), `selftest.sh`, `vscode/` (debug setup). |
-| `oscreg/` | DEPRECATED. Replaced by debazd. Do not deploy: it uses removed addresses (bus error). |
 
 ## Build and install
 

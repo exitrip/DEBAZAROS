@@ -1,3 +1,0 @@
- --> AM_demodulator_pkg
-AMdemod/AM demodulator/Sqrt --> Sqrt
-AMdemod/AM demodulator --> AM_demodulator

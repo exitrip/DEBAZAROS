@@ -5,8 +5,6 @@
 #   <variant>      writes hw/bd/<variant>.tcl
 #   <project.xpr>  project to read the BD from. Default:
 #                  build/<variant>/<variant>.xpr  (the project hw/build.tcl made)
-#                  Use Vivado/Vivado.xpr only for the one-time import of the
-#                  legacy hand-made project.
 #
 # THE RULE: hw/bd/<variant>.tcl is the source of truth. hw/build.tcl deletes
 # and recreates build/<variant>/ on every run. After you edit a BD in the GUI,

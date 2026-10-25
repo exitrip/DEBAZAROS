@@ -55,3 +55,5 @@ build-*/
 /vivado_pid*.str
 /vivado_pid*.zip
 /.Xil/
+# Vivado PS7 summary (NA/ps7_summary.html) when Vivado runs from the repo root
+/NA/

@@ -11,7 +11,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | # | Task | Depends on | Status |
 | --- | --- | --- | --- |
 | 1 | HDMI input hot-plug: find the cause | hardware | DONE (2026-10-19) |
-| 2 | Export the Vivado project to Tcl, rebuild it, compare | — | DOING (netlist, util, timing OK; HW test open) |
+| 2 | Export the Vivado project to Tcl, rebuild it, compare | — | DONE (2026-10-25): Tcl build tested on hardware (outputs, capture, 117/117 register fields, GPIO, ethernet); legacy `Vivado/`, `Vitis/` and SDR folders removed (branch `legacy-vivado-project`) |
 | 3 | Capture robustness BD changes (resets, HPD, status bits) | 1, 2 | TODO |
 | 0 | **URGENT: reserved memory** (`PetaLinux/dtb/README.md`): 16 MB was too small; 128 MB is rejected by the kernel; 96 MB DTB installed | reboot | DONE, verified 2026-10-24: iomem hole, /dev/fb0, 6 usable slots, capture in slot 4, movie into slot 3 without corruption |
 | 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO |
@@ -129,7 +129,7 @@ Second run (2026-10-19, source = ELMO presenter, DVI, hardware switch
   in each frame: the ELMO frame is not exactly 1280x720 (line lengths
   vary, more than 720 lines). The VDMA flushes and resyncs in each frame,
   so the picture is correct. The daemon must measure the real frame.
-- FIX VERIFIED (2026-10-19, bitstream `debaz4205_wrapper_20261019_dvi2ms.bit` + `.bit.bin` in the repo root):
+- FIX VERIFIED (2026-10-19, bitstream `debaz4205_wrapper_20261019_dvi2ms.bit` + `.bit.bin`, now in `artifacts/`):
   10 replugs with the ELMO, including fast replugs and contact bounces.
   In all of them, frames start in the same 250 ms sample as `pL=1`.
   The BD changes below are no longer necessary for hot-plug. They are

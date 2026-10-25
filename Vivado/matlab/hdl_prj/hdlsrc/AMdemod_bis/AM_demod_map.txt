@@ -1,3 +1,0 @@
- --> AM_demod_pkg
-AMdemod_bis/AM demod/Sqrt --> Sqrt
-AMdemod_bis/AM demod --> AM_demod

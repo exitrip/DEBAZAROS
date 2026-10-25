@@ -37,29 +37,37 @@ live impl_2: same util (LUT +1, FF −12, BRAM/DSP equal), same timing character
 (all fails in PXL_CLK_O @10 ns over-constraint + FCLK0→PXL GPIO crossings).
 Export round-trip is clean except assign_bd_address line ORDER (nondeterministic).
 
-## Folder map: live vs legacy
+## Folder map (after the cleanup of Oct 25 2026)
 
-| Path | Status | Notes |
-|---|---|---|
-| `Vivado/` | **LIVE** | Vivado 2022.2 project (`Vivado.xpr`), top = `ebaz4205_wrapper`, active BD = `ebaz4205` (`design_1` is an abandoned stub) |
-| `ip_repo/mixer_1_0/` | **LIVE** | Custom mixer IP, vlnv `user.org:user:mixer:2.0` (folder name says 1_0, component.xml says 2.0) |
-| `IP_rgb2dvi/`, `Vivado/IP_rgb2dvi/` | **LIVE** | Digilent rgb2dvi 1.3 (copy outside Vivado added Jan 2026) |
-| `IP_axi_dynclk/`, `Vivado/IP_axi_dynclk/` | **LIVE** | Digilent axi_dynclk (dynamic pixel clock) |
-| `PetaLinux/` | **LIVE** (config only) | Actual PetaLinux build lives on another machine; this tracks project-spec / dtsi / rootfs config. PetaLinux 2022.2/2023.1 era |
-| `sw/` | **LIVE** | All userspace code (Oct 2026): debazd, dzctl, dzweb (web app), libdz, hdmi2, fbfeed. Plain make, no Vitis. See `sw/README.md` |
-| `hw/` | **LIVE** | Gateware as Tcl (`hw/bd/<variant>.tcl` = BD source of truth), `hw/README.md` |
-| `Vitis/colorbars/`, `Vitis/hdmi2/` (metadata only) | legacy | Old Vitis workspace copies. hdmi2 source moved to `sw/hdmi2/` |
-| `debazarosit.sh`, `debazit.service` | **LIVE** | Top-level runtime: systemd oneshot → shell script (deployed to `/home/ebaz/` on target) |
-| `system-user.dtsi` (repo root) | **LIVE** | The *current* dtsi ("save dtsi" commit, Dec 2025). Newer than the copy inside `PetaLinux/project-spec/.../device-tree/files/system-user.dtsi`, which still references SDR-era nodes |
-| `debaz*.img/.bit/.bin/.xsa/.bsp`, `ebaz4205_wrapper*.xsa/.bit` | artifacts | Build/deploy snapshots. BOOT/fpga_manager bitstream: `debaz4205_wrapper_20250916.bit.bin`; current dev (JTAG) bitstream: `debaz4205_wrapper_20261019_dvi2ms.bit(.bin)` |
-| `ad9851*`, `CIC_FIR*`, `axi_gen_test`, `jt9-flask`, `matlab/`, `qt5/`, `xapp888/`, `fritzing/`, `docs/`, `Vitis/Capture_RF/` | **LEGACY** | SDR-era remnants, safe to ignore (candidates for cleanup/archive) |
+| Path | Notes |
+|---|---|
+| `hw/` | Gateware as Tcl: `hw/bd/<variant>.tcl` (BD source of truth), `hw/rtl/` (4 module-ref RTL files), `hw/xdc/ebaz4205.xdc`, `build.tcl`, `export_bd.tcl`, `repackage_ip.tcl`, `hw_map.tcl`, `patches/` (dvi2rgb vs Digilent f4613ff). See `hw/README.md` |
+| `ip_repo/if/`, `ip_repo/mixer_1_0/` | Digilent TMDS interface def (vendored); custom mixer IP, vlnv `user.org:user:mixer:2.0` (folder name says 1_0) |
+| `IP_dvi2rgb/`, `IP_rgb2dvi/`, `IP_axi_dynclk/` | Digilent IP repos used by the build (dvi2rgb = local fork, see `hw/patches/`) |
+| `artifacts/` | Bitstreams/XSA in use (BOOT fallback 20250916, legacy dev 20261019_dvi2ms, first Tcl build 20261025 = hardware-tested) + README |
+| `sw/` | All userspace code: debazd, dzctl, dzweb (web app), libdz, hdmi2, fbfeed. Plain make. See `sw/README.md` |
+| `PetaLinux/` | PetaLinux 2022.2 project-spec + `dtb/`. The project itself is built on the build machine (see below) |
+| `pcb/` | 3xHDMI adapter PCB (KiCad) |
+| `debazarosit.sh`, `debazit.service` | Old boot runtime: systemd oneshot (disabled on the bench board) → shell script in `/home/ebaz/` |
+| `system-user.dtsi` (root) | Stale (128 MB reservation is rejected by this U-Boot; see Device tree). To be merged with the PetaLinux copy (decision pending) |
+| `FLEET.md`, `ROADMAP.md` | Fleet/time-sync/transport design; work plan |
+
+REMOVED Oct 25 2026 (all still in branch `legacy-vivado-project`, commit f2f0b80c; untracked
+files of those folders + SD images moved to `~/Documents/github/DEBAZAROS-archive-20261025/`):
+`Vivado/` (legacy GUI project), `Vitis/`, `sw/oscreg`, SDR remnants (`ad9851*`, `AD9851_test`,
+`CIC_FIR*`, `axi_gen_test`, `jt9-flask`, `qt5`, `fritzing`, `docs`, `matlab`, `xapp888`),
+`ip_repo/{ad9851gfsk*,myip_1_0,edit_myip_v1_0.*}`, old root `.xsa/.bit/.bin/.bsp/.img`.
+**Paths under `Vivado/...` elsewhere in this file (reports, ipshared copies, impl_2) refer to
+that legacy project**: check them out from the branch when needed.
 
 External (not in repo):
 - **Vitis workspace:** `/home/aescape/workspace/jerkspace/` — where hdmi2 was edited and
   built until Oct 2026. Its `hdmi2/src` was copied into the repo and is now `sw/hdmi2/src`
   (the board's boot `/home/ebaz/hdmi2.elf` is still the jerkspace build). Others
   (`nuMixer*`, `hdmi22`, `debazaros`, `*_bare`) are experiments.
-- **PetaLinux build machine:** elsewhere; only config is tracked here.
+- **PetaLinux build machine:** `ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 aescape@192.168.1.239`
+  (Ubuntu 22.04; the project is that machine's repo clone `~/Documents/projects/DEBAZAROS/PetaLinux`;
+  build/ and images/ live only there).
 
 ## Hardware / gateware architecture (BD `ebaz4205`)
 

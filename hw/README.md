@@ -2,7 +2,8 @@
 
 `hw/bd/<variant>.tcl` is the source of truth for each block design.
 Vivado projects are generated from it into `build/<variant>/` (git-ignored).
-Do not edit the legacy `Vivado/` project for new work.
+The legacy hand-made `Vivado/` project was removed on 2026-10-25 (branch
+`legacy-vivado-project`).
 
 All commands: Vivado 2022.2, run from the repo root.
 
@@ -63,10 +64,9 @@ edit it in the GUI, and export it with `-tclargs <new>`.
   `div16_8_recip.v`, `dds_axi_inteface.vhd`, `dds_axi_interface_logic.vhd`).
 - XDC: `hw/xdc/ebaz4205.xdc`.
 
-The build reads nothing from the legacy `Vivado/` project. The files in
-`hw/rtl/` and `hw/xdc/` were copied from it on 2026-10-25 (identical). The
-originals stay in `Vivado/` until that folder is deleted; edit only the
-`hw/` copies.
+The files in `hw/rtl/` and `hw/xdc/` came from the legacy `Vivado/` project
+(copied unchanged on 2026-10-25). The dvi2rgb changes against Digilent's
+original are recorded in `hw/patches/`.
 
 ## Packaged IP edits
 

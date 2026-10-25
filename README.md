@@ -86,19 +86,19 @@ The same data from the memory side:
 | Path | What it is |
 | --- | --- |
 | [`hw/`](hw/README.md) | Gateware as Tcl. `hw/bd/<variant>.tcl` is the source of the block design. `hw/build.tcl` makes the Vivado project, the bitstream, the XSA and `hw_map.h`. |
-| [`sw/`](sw/README.md) | All software for the board: `debazd` (control daemon), `dzctl` (OSC client), `hdmi2` (display bring-up), `fbfeed` (frames from a pipe into a slot), `libdz`. Plain `make`, no Vitis project. |
+| [`sw/`](sw/README.md) | All software for the board: `debazd` (control daemon), `dzctl` (OSC client), `dzweb` (web app), `hdmi2` (display bring-up), `fbfeed` (frames from a pipe into a slot), `libdz`. Plain `make`, no Vitis project. |
+| [`artifacts/`](artifacts/README.md) | Bitstreams and XSA in use (hardware-tested builds only). |
 | `ip_repo/`, `IP_dvi2rgb/`, `IP_rgb2dvi/`, `IP_axi_dynclk/` | Custom and Digilent IP cores used by the block design. |
 | [`PetaLinux/`](PetaLinux) | PetaLinux configuration (the build machine is separate). `PetaLinux/dtb/` has the device-tree fix for the frame memory. |
-| `system-user.dtsi` | Current device-tree additions (frame memory, framebuffer, UIO nodes). |
-| `debazarosit.sh`, `debazit.service` | Current start script for the installation. |
+| `system-user.dtsi` | Old device-tree additions (stale: its 128 MB reservation fails on this board; see `PetaLinux/dtb/`). |
+| `debazarosit.sh`, `debazit.service` | Old start script for the installation (being replaced by `sw/`). |
 | `pcb/3xHDMI/` | Adapter PCB (KiCad). `pcb/3xHDMIv1/` is the first revision. |
-| `Vivado/` | The original hand-made Vivado project. Do not edit it; use `hw/`. |
 | [ROADMAP.md](ROADMAP.md) | Plan, status and open questions. |
 | [CLAUDE.md](CLAUDE.md) | Detailed engineering notes: address map, register fields, measured problems and their causes. |
 
-**Legacy folders** from the radio project, not used: `ad9851*`, `AD9851_test`,
-`CIC_FIR*`, `axi_gen_test`, `jt9-flask`, `matlab/`, `qt5/`, `xapp888/`,
-`fritzing/`, `docs/`, `Vitis/`.
+The original hand-made Vivado project, the Vitis workspace and the folders of
+the radio project that this repository started from were removed on
+2026-10-25. They are in the branch `legacy-vivado-project`.
 
 ## Getting started
 
