@@ -89,8 +89,7 @@ The same data from the memory side:
 | [`sw/`](sw/README.md) | All software for the board: `debazd` (control daemon), `dzctl` (OSC client), `dzweb` (web app), `hdmi2` (display bring-up), `fbfeed` (frames from a pipe into a slot), `libdz`. Plain `make`, no Vitis project. |
 | [`artifacts/`](artifacts/README.md) | Bitstreams and XSA in use (hardware-tested builds only). |
 | `ip_repo/`, `IP_dvi2rgb/`, `IP_rgb2dvi/`, `IP_axi_dynclk/` | Custom and Digilent IP cores used by the block design. |
-| [`PetaLinux/`](PetaLinux) | PetaLinux configuration (the build machine is separate). `PetaLinux/dtb/` has the device-tree fix for the frame memory. |
-| `system-user.dtsi` | Old device-tree additions (stale: its 128 MB reservation fails on this board; see `PetaLinux/dtb/`). |
+| [`PetaLinux/`](PetaLinux) | PetaLinux configuration (the build machine is separate). The one device tree source is `PetaLinux/project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`; `PetaLinux/dtb/` has the DTB now on the bench board. |
 | `debazarosit.sh`, `debazit.service` | Old start script for the installation (being replaced by `sw/`). |
 | `pcb/3xHDMI/` | Adapter PCB (KiCad). `pcb/3xHDMIv1/` is the first revision. |
 | [ROADMAP.md](ROADMAP.md) | Plan, status and open questions. |

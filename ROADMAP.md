@@ -235,10 +235,15 @@ round trip is clean. Open: hardware test of
 - A bitstream swap stops the PHY clock for a short time. An ssh session
   can drop during a swap. Use a local script or the serial console for
   swaps.
-- Keep the PetaLinux copy of `system-user.dtsi` in sync with the repo
-  root copy.
-- Decide: does BOOT.BIN still carry the old stable bitstream, or does it
-  carry the new default variant?
+- DONE 2026-10-25: one dtsi only
+  (`PetaLinux/project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`;
+  root copy removed): 96 MB reservation, one simplefb, fpga-full region, no PL
+  nodes (`CONFIG_SUBSYSTEM_REMOVE_PL_DTB=y`: generated PL nodes had bound
+  xilinx-vdma/xilinx-vtc and stale SDR-era nodes).
+- DECIDED 2026-10-25: BOOT.BIN carries the default variant (now
+  `ebaz4205_2out1in_20261025`, hardware-tested), so ethernet always comes
+  up; FPGA_MANAGER option stays OFF (it would drop the bitstream from
+  BOOT.BIN). XSA imported 2026-10-25: the new FSBL sets FCLK3 = 200 MHz.
 
 ## 5. C code without Vitis
 
@@ -302,14 +307,87 @@ debazarosit.sh). Original plan below.
   - The EDID ROM needs an 800x600 entry.
   - A mode change needs an HPD pulse (see task 3).
 
-## 8. Variants
+## 8. Variants (analysis 2026-10-25)
 
-- "3out/0in": the third port is an output.
-- "1out/2in": two capture paths. There are only two VTCs.
-- OPEN QUESTION: "the 1 out is timed by the 2 input" - does this mean the
-  output is genlocked to an input, or that the VTCs are used as input
-  detectors?
-- The variants do not block tasks 2-7.
+Swapped rarely, with jumpers on the adapter: not hot-swap, but modular
+fleet setups (feedback over HDMI cables between units, video walls from
+splitter arrays).
+
+| Variant | HDMI_0 | HDMI_1 | HDMI_2 |
+| --- | --- | --- | --- |
+| `ebaz4205_2out1in` (now, default) | out | out | in |
+| `ebaz4205_3out0in` | out | out | out |
+| `ebaz4205_1out2in` | **in** | out (timed by HDMI_0) | in |
+
+### Pins and clock regions (the real limit)
+
+HDMI_0 (pins A-F) and HDMI_1 (G-L) are both in bank 35: one clock region,
+served by the one BUFIO/BUFR pair of axi_dynclk. HDMI_2 is split: clock and
+data 0 (N20/P20, N17/P18) in bank 34, data 1-2 (M17-M20) in bank 35.
+
+- **3out0in.** rgb2dvi needs serial + pixel clock on a skew-matched pair in
+  BOTH banks of HDMI_2. (a) BUFG + BUFG, as in the dvi2rgb input fork: fine
+  at 720p (serial 371 MHz); at 1080p the serial clock (742.5 MHz) is above
+  the BUFG limit of a -1 part (about 628 MHz). (b) BUFMR -> BUFIO/BUFR in
+  both regions (the `kAddBUFMR` stub in `IP_axi_dynclk`): one pixel clock
+  for all three outputs; at 1080p outside the BUFIO data sheet limit, as
+  the two current outputs already are (they work at 1080p60). Plan: 720p
+  with (a) first, then try (b) for 1080p.
+- **1out2in.** The XC7Z010 has 2 MMCM + 2 PLL. Now: dynclk = 1 MMCM,
+  dvi2rgb = 1 MMCM. A second dvi2rgb needs a third MMCM. Solution: HDMI_1's
+  rgb2dvi and the shared VTC run from the recovered pixel clock of the
+  HDMI_0 input, and dynclk is removed in this variant (HDMI_1 goes dark
+  when HDMI_0 has no source: accepted). HDMI_0 input uses the BUFG+BUFG
+  dvi2rgb fork. Alternative: port one dvi2rgb to PLLE2.
+- Each variant: its own VDMA set (MM2S x3, or S2MM x2 + MM2S x1), VTC role
+  (generator / follower of an input), `hw_map.h`, and debazd/hdmi2 code
+  paths. Shared blocks keep their addresses; new blocks are additions.
+- **Add to every variant: a constant variant/build ID word** at a fixed
+  address (spare bits of the 0x4120_0000 ch1 input are enough), so the
+  software reads what is really loaded.
+
+### PetaLinux and the XSA with several variants
+
+PetaLinux takes three things from an XSA: the PS7 setup (FSBL `ps7_init`:
+FCLK0-3, DDR, MIO, which GP/HP ports and interrupts are on), the PL device
+tree, and the default bitstream for BOOT.BIN. Only the PS7 setup is fixed
+at boot.
+
+- **Rule (PS contract): all variants have the same PS7 configuration.**
+  Then ONE XSA (the default variant) is enough for PetaLinux, and a variant
+  is only `<variant>.bit.bin` (+ optional `.dtbo`) loaded by fpga_manager.
+  Contract now: FCLK0 100, FCLK1 64, FCLK2 142 (145.45), FCLK3 200 MHz;
+  M_AXI_GP0; S_AXI_HP0/1/2 (64 bit); IRQ_F2P; ENET0 on EMIO. (3 VDMAs fit
+  every variant; enable HP3 only if a variant needs a 4th port, and then
+  rebuild BOOT.BIN for all.) TODO: build.tcl compares the PS7 config of
+  each variant with this contract and stops on a difference.
+- If a variant ever needs another FCLK: set it at run time (SLCR, or
+  `assigned-clock-rates` in the variant overlay: the zynq clock driver
+  exposes fclk0-3), not with a new FSBL.
+- Base device tree: no PL nodes (`CONFIG_SUBSYSTEM_REMOVE_PL_DTB`) or the
+  default variant's nodes; each variant's UIO nodes in a small overlay made
+  from its `hw_map.h`: `fpgautil -b x.bit.bin -o x.dtbo`. The kernel on the
+  board has CONFIG_OF_OVERLAY, CONFIG_OF_CONFIGFS, an `fpga-full` region and
+  `fpgautil`. Overlays are optional: debazd falls back to /dev/mem.
+- PetaLinux `CONFIG_SUBSYSTEM_FPGA_MANAGER` stays OFF: it removes the
+  bitstream from BOOT.BIN, and the ethernet PHY clock comes from the PL
+  (decision 2026-10-25: a stable default bitstream always brings up
+  ethernet).
+
+### 1080p30 input on 1080p60 outputs
+
+No gateware for the frame rate: the frame buffers decouple it (each
+captured frame is shown twice). Open points: (1) tearing - capture circular
+over its 3 frame stores and debazd parks the display on the last complete
+frame at each vsync (software; VDMA genlock wiring is the gateware
+alternative); (2) DDR bandwidth - 2 x 1080p60 out (about 1.0 GB/s) + 1080p30
+in (0.25 GB/s) on 16-bit DDR3 (about 2.1 GB/s peak): measure; (3) effects at
+148.5 MHz (6.7 ns): the effects chain needs a register after every
+multiplier/adder - the planned pipelining fix (CLAUDE.md) targets 720p60
+(13.5 ns) only; (4) hdmi2 CAPTURE_W/H 1920x1080 (EDID already has 1080p30).
+
+Order: variant ID word -> 3out0in at 720p (BUFG+BUFG) -> 1080p / BUFMR ->
+1out2in (HDMI_1 on the HDMI_0 input clock).
 
 ## 9. Display views: crop, pan, zoom, split (design, 2026-10-24)
 

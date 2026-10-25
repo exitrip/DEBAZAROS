@@ -49,7 +49,6 @@ Export round-trip is clean except assign_bd_address line ORDER (nondeterministic
 | `PetaLinux/` | PetaLinux 2022.2 project-spec + `dtb/`. The project itself is built on the build machine (see below) |
 | `pcb/` | 3xHDMI adapter PCB (KiCad) |
 | `debazarosit.sh`, `debazit.service` | Old boot runtime: systemd oneshot (disabled on the bench board) → shell script in `/home/ebaz/` |
-| `system-user.dtsi` (root) | Stale (128 MB reservation is rejected by this U-Boot; see Device tree). To be merged with the PetaLinux copy (decision pending) |
 | `FLEET.md`, `ROADMAP.md` | Fleet/time-sync/transport design; work plan |
 
 REMOVED Oct 25 2026 (all still in branch `legacy-vivado-project`, commit f2f0b80c; untracked
@@ -350,7 +349,14 @@ display 1's frame (slot 2) EVERY 10 s — with only 16 MB reserved that is 3.4 M
 Linux RAM (see Device tree). sw/hdmi2 now refuses frames outside reserved memory
 and moves the capture to slot 1 when slot 4 is not reserved.
 
-**Device tree** (root `system-user.dtsi`): reserved-memory `removed-dma-pool`
+**Device tree — NEW (2026-10-25):** the only dtsi is now
+`PetaLinux/project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`
+(96 MB, one simplefb 1280x2160, fpga-full region, NO PL nodes via
+`CONFIG_SUBSYSTEM_REMOVE_PL_DTB=y`; the root copy was removed). The running board
+(Jan 2025 image + `/boot/system.dtb` 96M) still binds xilinx-vdma to the display VDMAs,
+xilinx-vtc, and has stale audio_formatter/i2s/mixer1-8 nodes until the new image is
+deployed. History of the old dtsi:
+**Device tree** (old root `system-user.dtsi`): reserved-memory `removed-dma-pool`
 **128 MB** @0x0800_0000 in the REPO (no-map, `reg = <0x08000000 0x08000000>`, commit
 45a668cb, Jul 2026) — that value FAILS on this U-Boot (see below); use 96 MB. Until 2026-10-24 **the bench board ran 16 MB** (verified Oct 2026:
 /proc/device-tree reg = 0x08000000 0x01000000, /proc/iomem System RAM 0x0900_0000+):
