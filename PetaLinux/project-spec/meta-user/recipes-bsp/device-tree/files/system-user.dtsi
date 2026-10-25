@@ -57,3 +57,20 @@
 		ranges;
 	};
 };
+
+/* Soldered NAND (128 MB, PS NAND controller on MIO 0, 2-14; enabled in the
+ * PS7 setup). It holds the board's first life as a miner control card. Without
+ * this node: "pl353-smc: no matching children", empty /proc/mtd. One MTD
+ * device, no partitions. READ IT ONLY: nanddump, or mount with -o ro; a
+ * read-write JFFS2/UBIFS mount writes to the chip. */
+&smcc {
+	status = "okay";
+};
+
+&nfc0 {
+	status = "okay";
+	nand@0 {
+		reg = <0>;
+		nand-bus-width = <8>;
+	};
+};

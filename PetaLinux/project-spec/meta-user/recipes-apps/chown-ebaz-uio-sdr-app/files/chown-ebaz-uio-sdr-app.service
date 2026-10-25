@@ -1,9 +1,0 @@
-[Unit]
-Description=chown-ebaz-uio-sdr-app
-  
-[Service]
-ExecStart=/usr/bin/chown-ebaz-uio-sdr-app
-StandardOutput=journal+console
-  
-[Install]
-WantedBy=multi-user.target

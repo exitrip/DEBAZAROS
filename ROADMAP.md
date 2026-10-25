@@ -21,6 +21,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
 | 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: runs on the board, tested with live registers 2026-10-24; media upload/download/delete tested 2026-10-24; not in the boot script yet |
 | 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DESIGN (2026-10-24) |
+| 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | PLAN (2026-10-25) |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -467,4 +468,82 @@ VDMA MM2S (window: start, HSIZE, VSIZE, STRIDE) -> subset converter
 - Build the scaler as RTL (module reference, as `div16_8_recip`) or HLS.
 - Branch: `view` (gateware + debazd), after the Tcl flow hardware test
   (task 2).
+
+## 10. SD card image and software deploy (plan, 2026-10-25)
+
+Goal: one image for every card (16 GB or larger). Flash it, and the unit
+works; per-unit identity lives in small files, not in the image.
+
+### Partitions
+
+| # | Type | Size | Mount | Content |
+| --- | --- | --- | --- | --- |
+| 1 | FAT32 `BOOT` | 256 MB | `/boot` | BOOT.BIN (FSBL + default bitstream + U-Boot), boot.scr, uImage, system.dtb, `uEnv.txt` (MAC, see Fleet) |
+| 2 | ext4 `rootfs` | 3-4 GB | `/` (read-only later) | system + our software |
+| 3 | ext4 `data` | 256 MB | `/data` | per-unit state that must survive: ssh host keys, machine-id, unit settings, presets, logs |
+| 4 | FAT32 `DEBAZMEDIA` | rest of the card | `/media/debaz` | `img/`, `movies/`, `fonts/`: load media with any card reader |
+
+- The image file holds partitions 1-3 only (small, quick to flash).
+  A first-boot service makes partition 4 in the free space (`parted` +
+  `mkfs.vfat -n DEBAZMEDIA`) and creates the media folders. A 16 GB card
+  and a 64 GB card both get all the remaining space.
+- FAT32: every computer reads it; the limit is 4 GB per file (the same as
+  the dzweb upload limit). exFAT (kernel 5.15 has a native driver) is the
+  option if one movie must be larger than 4 GB.
+- debazd and dzweb use the media partition: `DZ_IMG_DIR` /
+  `DZ_MOVIE_DIR` -> `/media/debaz/{img,movies}`, `dzweb -m /media/debaz`.
+  The file name rule (A-Z a-z 0-9 . _ -) is safe on FAT.
+- Tool: a custom `.wks` file for `petalinux-package --wic` (or a script
+  with `sfdisk` + `mkfs` + copies, which is easier to read and change).
+
+### Packages (rootfs_config / user-rootfsconfig)
+
+- REMOVE the SDR-era load: Qt5 + PyQt5, matplotlib, fftw, audio groups,
+  `packagegroup-core-buildessential` (+dbg), python modules -dbg/-dev,
+  `myjtdx`, `fftw`, `chown-ebaz-uio-sdr-app`, `colorbars` recipes.
+- ADD: `ffmpeg` (+ libav* for the future dzplay; needs
+  `LICENSE_FLAGS_ACCEPTED` for some codecs), `parted`, `dosfstools`,
+  `e2fsprogs`, `rsync`, `curl`, `iproute2`, `ethtool`, `htop`, `python3`
+  (small: for tools/demos), `gdbserver`. Keep dropbear + sftp.
+- Fonts: our default `LiberationSans-Regular.ttf` (dz_text) + OFL notice.
+
+### Our software in the image
+
+Three ways, in this order of work:
+
+1. Now (development): `make -C sw install` over the network, unchanged.
+2. Image (recommended next): a meta-user recipe `debaz-sw` that builds
+   `sw/` with the Yocto cross compiler (the Makefiles are plain; set
+   `CC`/`CFLAGS` from the recipe) and installs `/usr/bin/{debazd,dzctl,
+   dzweb,fbfeed,hdmi2,vsync_probe}`, `/usr/share/debaz/www`, the scripts,
+   the bitstreams (`/lib/firmware`) and the systemd units. The recipe
+   reads the source from the repo (`EXTERNALSRC`), so a rebuild picks up
+   the current `sw/`.
+3. Option for quick images: a recipe that installs prebuilt binaries from
+   `sw/out/arm/` (no compile in Yocto).
+
+### Start-up (replaces debazarosit.sh)
+
+systemd units, in order: `debaz-firstboot` (media partition, data
+partition, ssh keys, hostname from the MAC) -> `debaz-pl` (optional:
+load a non-default variant + overlay from a setting in `/data`; the
+default variant is already in BOOT.BIN) -> `debaz-display` (hdmi2: video
+mode, VDMAs) -> `debazd` -> `dzweb` -> `debaz-scene` (apply the unit's
+start scene: mixer setup, movie, LFOs - from `/data` or the media card).
+
+### Read-only root (after the above works)
+
+Yocto `read-only-rootfs` image feature: `/` mounted read-only, `/var`
+volatile (tmpfs), writable things bind-mounted from `/data` (ssh host
+keys, machine-id, `/etc/hostname`, network). Gain: a power cut cannot
+damage the system; a unit is "power off = safe". Media stay on their own
+FAT partition (writable). Software updates then need a remount
+(`mount -o remount,rw /`) or a new image.
+
+### Open questions
+
+- exFAT or FAT32 for media (file size vs compatibility)?
+- Keep the full Yocto package manager (dnf/opkg) on the units?
+- One image, with the variant chosen by a setting on `/data`, or one
+  image per variant? (Recommended: one image, setting.)
 

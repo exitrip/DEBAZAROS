@@ -105,8 +105,8 @@ CONFIG_system-zynq=y
 #
 # e2fsprogs 
 #
-# CONFIG_e2fsprogs is not set
-# CONFIG_e2fsprogs-resize2fs is not set
+CONFIG_e2fsprogs=y
+CONFIG_e2fsprogs-resize2fs=y
 # CONFIG_e2fsprogs-badblocks is not set
 # CONFIG_e2fsprogs-e2fsck is not set
 # CONFIG_libss is not set
@@ -179,7 +179,7 @@ CONFIG_haveged=y
 #
 # iproute2 
 #
-# CONFIG_iproute2 is not set
+CONFIG_iproute2=y
 # CONFIG_iproute2-tc is not set
 # CONFIG_iproute2-nstat is not set
 # CONFIG_iproute2-dev is not set
@@ -468,7 +468,7 @@ CONFIG_can-utils=y
 #
 # curl 
 #
-# CONFIG_curl is not set
+CONFIG_curl=y
 # CONFIG_curl-dev is not set
 # CONFIG_libcurl is not set
 # CONFIG_curl-dbg is not set
@@ -483,7 +483,7 @@ CONFIG_dropbear=y
 #
 # ethtool 
 #
-# CONFIG_ethtool is not set
+CONFIG_ethtool=y
 # CONFIG_ethtool-dbg is not set
 # CONFIG_ethtool-dev is not set
 
@@ -556,7 +556,7 @@ CONFIG_openssh-sftp-server=y
 #
 # rsync 
 #
-# CONFIG_rsync is not set
+CONFIG_rsync=y
 # CONFIG_rsync-dev is not set
 # CONFIG_rsync-dbg is not set
 
@@ -596,7 +596,7 @@ CONFIG_openssh-sftp-server=y
 #
 # parted 
 #
-# CONFIG_parted is not set
+CONFIG_parted=y
 # CONFIG_parted-dbg is not set
 # CONFIG_parted-dev is not set
 
@@ -1210,7 +1210,7 @@ CONFIG_boost-log=y
 #
 # ffmpeg 
 #
-# CONFIG_ffmpeg is not set
+CONFIG_ffmpeg=y
 # CONFIG_ffmpeg-dbg is not set
 # CONFIG_ffmpeg-dev is not set
 
@@ -2247,7 +2247,7 @@ CONFIG_fbset-modes=y
 #
 # gdb 
 #
-CONFIG_gdb=y
+# CONFIG_gdb is not set
 # CONFIG_gdb-dbg is not set
 # CONFIG_gdb-dev is not set
 CONFIG_gdbserver=y
@@ -2500,9 +2500,9 @@ CONFIG_packagegroup-core-boot=y
 #
 # packagegroup-core-buildessential 
 #
-CONFIG_packagegroup-core-buildessential=y
+# CONFIG_packagegroup-core-buildessential is not set
 # CONFIG_packagegroup-core-buildessential-dev is not set
-CONFIG_packagegroup-core-buildessential-dbg=y
+# CONFIG_packagegroup-core-buildessential-dbg is not set
 
 #
 # packagegroup-core-sdk 
@@ -2573,7 +2573,7 @@ CONFIG_packagegroup-core-ssh-dropbear=y
 #
 # packagegroup-self-hosted 
 #
-CONFIG_packagegroup-self-hosted=y
+# CONFIG_packagegroup-self-hosted is not set
 # CONFIG_packagegroup-self-hosted-extended-dev is not set
 # CONFIG_packagegroup-self-hosted-debug-dev is not set
 # CONFIG_packagegroup-self-hosted-dev is not set
@@ -2625,7 +2625,7 @@ CONFIG_packagegroup-self-hosted=y
 #
 # python3 
 #
-# CONFIG_python3 is not set
+CONFIG_python3=y
 # CONFIG_python3-smtpd is not set
 # CONFIG_python3-syslog is not set
 # CONFIG_python3-pickle is not set
@@ -3368,7 +3368,7 @@ CONFIG_ntp=y
 #
 # dosfstools 
 #
-# CONFIG_dosfstools is not set
+CONFIG_dosfstools=y
 # CONFIG_dosfstools-dev is not set
 # CONFIG_dosfstools-dbg is not set
 
@@ -3767,9 +3767,9 @@ CONFIG_u-boot-tools=y
 #
 # packagegroup-petalinux-audio 
 #
-CONFIG_packagegroup-petalinux-audio=y
+# CONFIG_packagegroup-petalinux-audio is not set
 # CONFIG_packagegroup-petalinux-audio-dbg is not set
-CONFIG_packagegroup-petalinux-audio-dev=y
+# CONFIG_packagegroup-petalinux-audio-dev is not set
 
 #
 # packagegroup-petalinux-display-debug 
@@ -3823,14 +3823,14 @@ CONFIG_packagegroup-petalinux-audio-dev=y
 #
 # packagegroup-petalinux-python-modules 
 #
-CONFIG_packagegroup-petalinux-python-modules=y
-CONFIG_packagegroup-petalinux-python-modules-dbg=y
-CONFIG_packagegroup-petalinux-python-modules-dev=y
+# CONFIG_packagegroup-petalinux-python-modules is not set
+# CONFIG_packagegroup-petalinux-python-modules-dbg is not set
+# CONFIG_packagegroup-petalinux-python-modules-dev is not set
 
 #
 # packagegroup-petalinux-qt 
 #
-CONFIG_packagegroup-petalinux-qt=y
+# CONFIG_packagegroup-petalinux-qt is not set
 # CONFIG_packagegroup-petalinux-qt-dbg is not set
 # CONFIG_packagegroup-petalinux-qt-dev is not set
 CONFIG_imageclass-populate-sdk-qt5=y
@@ -3838,7 +3838,7 @@ CONFIG_imageclass-populate-sdk-qt5=y
 #
 # packagegroup-petalinux-qt-extended 
 #
-CONFIG_packagegroup-petalinux-qt-extended=y
+# CONFIG_packagegroup-petalinux-qt-extended is not set
 # CONFIG_packagegroup-petalinux-qt-extended-dbg is not set
 # CONFIG_packagegroup-petalinux-qt-extended-dev is not set
 
@@ -3894,29 +3894,29 @@ CONFIG_Init-manager-systemd=y
 #
 # apps 
 #
-CONFIG_chown-ebaz-uio-sdr-app=y
-CONFIG_colorbars=y
-CONFIG_myjtdx=y
+# CONFIG_chown-ebaz-uio-sdr-app is not set
+# CONFIG_colorbars is not set
+# CONFIG_myjtdx is not set
 
 #
 # modules 
 #
-CONFIG_zgpio=y
+# CONFIG_zgpio is not set
 
 #
 # user packages 
 #
-CONFIG_fftw=y
-CONFIG_libgfortran=y
-CONFIG_libvncserver=y
-CONFIG_evtest=y
+# CONFIG_fftw is not set
+# CONFIG_libgfortran is not set
+# CONFIG_libvncserver is not set
+# CONFIG_evtest is not set
 # CONFIG_fftwg is not set
 # CONFIG_gpio-demo is not set
 # CONFIG_peekpoke is not set
-CONFIG_python3-matplotlib=y
-CONFIG_python3-pillow=y
-CONFIG_python3-pip=y
-CONFIG_python3-pyqt5=y
+# CONFIG_python3-matplotlib is not set
+# CONFIG_python3-pillow is not set
+# CONFIG_python3-pip is not set
+# CONFIG_python3-pyqt5 is not set
 
 #
 # PetaLinux RootFS Settings
@@ -3925,3 +3925,5 @@ CONFIG_ADD_EXTRA_USERS="root:root;petalinux::passwd-expire;ebaz:;"
 CONFIG_CREATE_NEW_GROUPS="aie;"
 CONFIG_ADD_USERS_TO_GROUPS="petalinux:audio,video,aie;ebaz:audio,video,aie,input;\""
 CONFIG_ADD_USERS_TO_SUDOERS="petalinux ebaz"
+CONFIG_exfat-utils=y
+CONFIG_htop=y
