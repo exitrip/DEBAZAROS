@@ -8,3 +8,9 @@ SRC_URI:remove = "http://luajit.org/download/LuaJIT-${PV}.tar.gz"
 SRC_URI:prepend = "git://github.com/LuaJIT/LuaJIT.git;protocol=https;branch=v2.1 "
 SRCREV = "8271c643c21d1b2f344e339f559f2de6f3663191"
 S = "${WORKDIR}/git"
+
+# The recipe's EXTRA_OEMAKE has "CCOPT:x86=": the automatic _ -> : override
+# conversion broke LuaJIT's make variable CCOPT_x86, and make reads the word
+# as a target ("No rule to make target 'CCOPT:x86='"). It only cleared x86
+# options; drop it.
+EXTRA_OEMAKE:remove = "CCOPT:x86="
