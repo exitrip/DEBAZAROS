@@ -155,8 +155,31 @@ Full list in `lib/dz_draw.h`. Painting operations (Oct 2026):
 | `/surface/<s>/grab` | [src slot] — copy the real slot content (live capture = 4, a playing movie) into the painting buffer: freeze it, then paint on it |
 | `/surface/<s>/peek` | x y — reply `/pixel s x y r g b` |
 
-Plus the older fills, gradients, rectangles, ellipses, images and movies.
+Plus the older fills, gradients, images and movies (`lib/dz_draw.h`).
 Every operation stops a movie that plays into the same slot.
+
+Shapes (`lib/dz_shape.h`): rotation, gradient fill, polygons and stars.
+`thickness` 0 or absent = filled; an outline stays inside the shape size.
+`angle` in degrees, clockwise, about the shape centre.
+
+| Address | Arguments |
+| --- | --- |
+| `/draw/<s>/fill` | `solid`, or `linear` r2 g2 b2 [deg], or `radial` r2 g2 b2. Stays set for later shapes on that slot. Colour 1 = the r g b of each shape. |
+| `/draw/<s>/rect` | r g b x y w h [thickness] [angle] |
+| `/draw/<s>/square` | r g b x y size [thickness] [angle] |
+| `/draw/<s>/circle` | r g b cx cy radius [thickness] |
+| `/draw/<s>/ellipse` | r g b cx cy rx ry [thickness] [angle] |
+| `/draw/<s>/polygon` | r g b cx cy rx ry sides [thickness] [angle] |
+| `/draw/<s>/star` | r g b cx cy rx ry points [inner] [thickness] [angle] — inner 0 = classic star |
+| `/draw/<s>/starpoly` | r g b cx cy rx ry n k [thickness] [angle] — {5/2} pentagram, {6/2} star of David; filled = even-odd (open centre) |
+| `/draw/<s>/gradient/radial` | r1 g1 b1 r2 g2 b2 [cx cy radius] — whole slot |
+
+The new shapes are antialiased. rect/ellipse with angle 0 and fill
+`solid` keep the old exact pixels. Measured on the board (2026-10-24):
+rotated 600x400 rect 23 ms, radial-filled ellipse 39 ms, 24 px rotated
+ellipse outline 49 ms, star or pentagram (r 300) 13 ms, full-screen radial
+gradient 115 ms. Web app Paint tab: tools rect, ellipse, shape; Ctrl =
+equal width and height, Shift while dragging = rotate (Ctrl+Shift: 15°).
 
 Try it: `dzctl /disp/1/show 5`, then on the laptop
 `python3 sw/tools/osc_paint_demo.py <board-ip> 5` (light painting with

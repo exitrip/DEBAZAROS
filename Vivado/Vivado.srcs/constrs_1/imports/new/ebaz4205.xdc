@@ -114,7 +114,9 @@ set_property -dict { PACKAGE_PIN U20   IOSTANDARD LVCMOS33 } [get_ports { PL_KEY
 
 #720p60Hz max input
 create_clock -period 13.468 -waveform {0.000 6.734} [get_ports TMDS_Clk_p_2]
-
+#100T
+create_clock -period 40.000 -name enet0_rx_clk [get_ports ENET0_GMII_RX_CLK_0]
+create_clock -period 40.000 -name enet0_tx_clk [get_ports ENET0_GMII_TX_CLK_0]
 
 #create_pblock pblock_AD9851
 #add_cells_to_pblock [get_pblocks pblock_AD9851] [get_cells -quiet [list ebaz4205_i/AD9851]]

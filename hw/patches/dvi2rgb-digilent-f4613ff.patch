@@ -1,0 +1,143 @@
+DEBAZAROS changes to Digilent dvi2rgb 2.0 (vivado-library commit f4613ff,
+ip/dvi2rgb/src). The full patched IP is vendored in IP_dvi2rgb/ (that copy is
+what hw/build.tcl uses); this patch is the record of what differs and why.
+
+1. TMDS_Clocking.vhd: MMCM CLKOUT1 = 1x pixel clock, serial and pixel clocks
+   on BUFG + BUFG (not BUFIO + BUFR): the HDMI_2 input pins are split across
+   banks 34 and 35, out of reach of one regional clock.
+2. DVI_Constants.vhd: kBlankTimeoutMs 50 -> 2. The alignment sweep waited
+   50 ms per IDELAY tap per bitslip (16 s per sweep): hot-plug looked frozen
+   (fixed 2026-10-19, ROADMAP.md section 1).
+3. dgl_720p_cea.data: EDID ROM advertises 720p60 native + 1080p30 (VIC 34,
+   74.25 MHz DTDs); 1080p60 removed (1.485 Gbps is too fast for this silicon).
+
+Apply in a vivado-library clone:  git checkout f4613ff && git apply <this file>
+Then IP_dvi2rgb/component.xml also needs new checksums and coreRevision + 1:
+  vivado -mode batch -source hw/repackage_ip.tcl -tclargs IP_dvi2rgb
+
+diff --git a/ip/dvi2rgb/src/DVI_Constants.vhd b/ip/dvi2rgb/src/DVI_Constants.vhd
+index 83a602e..312d274 100644
+--- a/ip/dvi2rgb/src/DVI_Constants.vhd
++++ b/ip/dvi2rgb/src/DVI_Constants.vhd
+@@ -62,7 +62,7 @@ package DVI_Constants is
+    constant kCtlTkn3 : std_logic_vector(9 downto 0) := "1010101011";
+    
+    constant kMinTknCntForBlank : natural := 128; --tB
+-   constant kBlankTimeoutMs : natural := 50;
++   constant kBlankTimeoutMs : natural := 2;
+ end DVI_Constants;
+ 
+ package body DVI_Constants is 
+diff --git a/ip/dvi2rgb/src/TMDS_Clocking.vhd b/ip/dvi2rgb/src/TMDS_Clocking.vhd
+index 66a8541..59f1b64 100644
+--- a/ip/dvi2rgb/src/TMDS_Clocking.vhd
++++ b/ip/dvi2rgb/src/TMDS_Clocking.vhd
+@@ -191,6 +191,9 @@ DVI_ClkGenerator: MMCME2_ADV
+       CLKOUT0_PHASE        => 0.000,
+       CLKOUT0_DUTY_CYCLE   => 0.500,
+       CLKOUT0_USE_FINE_PS  => FALSE,
++      CLKOUT1_DIVIDE       => kClkRange * 5,
++      CLKOUT1_PHASE        => 0.000,
++      CLKOUT1_DUTY_CYCLE   => 0.500,
+       CLKIN1_PERIOD        => real(kClkRange) * 6.0,
+       REF_JITTER1          => 0.010)
+    port map
+@@ -200,7 +203,7 @@ DVI_ClkGenerator: MMCME2_ADV
+       CLKFBOUTB           => clkfboutb_unused,
+       CLKOUT0             => CLK_OUT_5x_hdmi_clk,
+       CLKOUT0B            => clkout0b_unused,
+-      CLKOUT1             => clkout1_unused,
++      CLKOUT1             => CLK_OUT_1x_hdmi_clk,
+       CLKOUT1B            => clkout1b_unused,
+       CLKOUT2             => clkout2_unused,
+       CLKOUT2B            => clkout2b_unused,
+@@ -236,23 +239,29 @@ DVI_ClkGenerator: MMCME2_ADV
+       RST                 => rMMCM_Reset_q(0));
+ 
+ -- 5x fast serial clock
+-SerialClkBuffer: BUFIO
++SerialClkBuffer: BUFG
+    port map (
+       O => SerialClk, -- 1-bit output: Clock output (connect to I/O clock loads).
+       I => CLK_OUT_5x_hdmi_clk  -- 1-bit input: Clock input (connect to an IBUF or BUFMR).
+    );
+ -- 1x slow parallel clock
+-PixelClkBuffer: BUFR
+-   generic map (
+-      BUFR_DIVIDE => "5",   -- Values: "BYPASS, 1, 2, 3, 4, 5, 6, 7, 8" 
+-      SIM_DEVICE => "7SERIES"  -- Must be set to "7SERIES" 
+-   )
++PixelClkBuffer: BUFG
+    port map (
+-      O => PixelClk,     -- 1-bit output: Clock output port
+-      CE => '1',   -- 1-bit input: Active high, clock enable (Divided modes only)
+-      CLR => rBUFR_Rst, -- 1-bit input: Active high, asynchronous clear (Divided modes only)        
+-      I => CLK_OUT_5x_hdmi_clk      -- 1-bit input: Clock buffer input driven by an IBUF, MMCM or local interconnect
+-   );     
++      I => CLK_OUT_1x_hdmi_clk,
++      O => PixelClk
++   );
++
++-- PixelClkBuffer: BUFR
++--    generic map (
++--       BUFR_DIVIDE => "5",   -- Values: "BYPASS, 1, 2, 3, 4, 5, 6, 7, 8" 
++--       SIM_DEVICE => "7SERIES"  -- Must be set to "7SERIES" 
++--    )
++--    port map (
++--       O => PixelClk,     -- 1-bit output: Clock output port
++--       CE => '1',   -- 1-bit input: Active high, clock enable (Divided modes only)
++--       CLR => rBUFR_Rst, -- 1-bit input: Active high, asynchronous clear (Divided modes only)        
++--       I => CLK_OUT_5x_hdmi_clk      -- 1-bit input: Clock buffer input driven by an IBUF, MMCM or local interconnect
++--    );     
+ rBUFR_Rst <= rMMCM_LckdRisingFlag; --pulse CLR on BUFR once the clock returns
+ 
+ MMCM_Reset: process(rLockLostRst, RefClk)
+diff --git a/ip/dvi2rgb/src/dgl_720p_cea.data b/ip/dvi2rgb/src/dgl_720p_cea.data
+index 8ee16d4..55de7bd 100644
+--- a/ip/dvi2rgb/src/dgl_720p_cea.data
++++ b/ip/dvi2rgb/src/dgl_720p_cea.data
+@@ -70,8 +70,8 @@
+ 00000000
+ 00000000
+ 00011110
+-00000010
+-00111010
++00000001
++00011101
+ 10000000
+ 00011000
+ 01110001
+@@ -125,14 +125,14 @@
+ 00100000
+ 00100000
+ 00000001
+-00000100
++00100010
+ 00000010
+ 00000011
+ 00001001
+ 00000001
+ 01000100
+ 10000100
+-00010000
++00100010
+ 00000001
+ 00000010
+ 00000001
+@@ -153,8 +153,8 @@
+ 00000000
+ 00000000
+ 00011110
+-00000010
+-00111010
++00000001
++00011101
+ 10000000
+ 00011000
+ 01110001
+@@ -253,4 +253,4 @@
+ 00000000
+ 00000000
+ 00000000
+-00111100
++01001000

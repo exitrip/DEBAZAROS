@@ -19,10 +19,11 @@
  *   /draw/<s>/gradient/v       r1 g1 b1 r2 g2 b2 [x y w h]
  *   /draw/<s>/gradient/angle   deg r1 g1 b1 r2 g2 b2 [x y w h]
  *   /draw/<s>/gradient/corners tl(3) tr(3) bl(3) br(3) [x y w h]
- *   /draw/<s>/rect             r g b x y w h [thickness]
- *   /draw/<s>/square           r g b x y size [thickness]
+ *   /draw/<s>/rect             r g b x y w h [thickness] [angle]
+ *   /draw/<s>/square           r g b x y size [thickness] [angle]
  *   /draw/<s>/circle           r g b cx cy radius [thickness]
- *   /draw/<s>/ellipse          r g b cx cy rx ry [thickness]
+ *   /draw/<s>/ellipse          r g b cx cy rx ry [thickness] [angle]
+ *   /draw/<s>/polygon, /star, /starpoly, /fill, /gradient/radial: dz_shape.h
  *   /draw/<s>/line             r g b x0 y0 x1 y1 [width]   (1 = thin, else round)
  *   /draw/<s>/brush            r g b x y radius [hardness] (soft stamp, 0..1)
  *   /draw/<s>/stroke           r g b radius hardness x0 y0 x1 y1 [x y ...]

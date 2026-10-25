@@ -84,6 +84,26 @@ q /surface/2/grab 4 >/dev/null
 check grab         "/pixel 2 640 360 10 20 30"     q /surface/2/peek 640 360
 check peek-bad     "bad surface"                   q /surface/2/peek 5000 0
 
+# --- shapes: rotation, polygons, stars, gradient fills (dz_shape.c) ---
+q /draw/7/clear >/dev/null
+q /draw/7/square 255 0 0 540 260 200 0 45.0 >/dev/null
+check rot-square    "/pixel 7 640 225 255 0 0"     q /surface/7/peek 640 225
+check rot-corner    "/pixel 7 548 268 0 0 0"       q /surface/7/peek 548 268
+q /draw/7/clear >/dev/null
+q /draw/7/star 255 255 0 640 360 150 150 5 >/dev/null
+check star-tip      "/pixel 7 640 216 255 255 0"   q /surface/7/peek 640 216
+check star-gap      "/pixel 7 640 470 0 0 0"       q /surface/7/peek 640 470
+q /draw/7/clear >/dev/null
+q /draw/7/starpoly 255 0 255 640 360 150 150 5 2 >/dev/null
+check pentagram-hole "/pixel 7 640 360 0 0 0"      q /surface/7/peek 640 360
+check pentagram-tip "/pixel 7 640 220 255 0 255"   q /surface/7/peek 640 220
+q /draw/7/clear >/dev/null
+q /draw/7/fill radial 0 0 255 >/dev/null
+q /draw/7/circle 255 0 0 640 360 200 >/dev/null
+check radial-centre "/pixel 7 640 360 255 0 0"     q /surface/7/peek 640 360
+check radial-mid    "/pixel 7 740 360 128 0 127"   q /surface/7/peek 740 360
+q /draw/7/fill solid >/dev/null
+
 # --- text (pixel font: 'A' row 2 = ..####.. -> x 2..5) ---
 q /draw/7/clear 0 0 0 >/dev/null
 q /draw/7/text 255 255 255 0 0 A 1 16 >/dev/null

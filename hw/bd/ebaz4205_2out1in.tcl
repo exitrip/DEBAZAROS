@@ -2996,7 +2996,7 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net In4_1 [get_bd_pins In4] [get_bd_pins xlconcat_IRQ/In4]
   connect_bd_net -net In5_1 [get_bd_pins In5] [get_bd_pins xlconcat_IRQ/In5]
   connect_bd_net -net Net [get_bd_pins m_axis_mm2s_aclk] [get_bd_pins axi_interconnect_1/ACLK] [get_bd_pins axi_interconnect_1/M00_ACLK] [get_bd_pins axi_interconnect_1/S00_ACLK] [get_bd_pins axi_vdma_0/m_axi_mm2s_aclk] [get_bd_pins axi_vdma_0/m_axis_mm2s_aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins v_axi4s_vid_out_0/aclk]
-  connect_bd_net -net PS_ARESETN [get_bd_pins s_axi_aresetn] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins dds_compiler_0/aresetn] [get_bd_pins mixerMatrix/s_axi_aresetn] [get_bd_pins v_tc_0/s_axi_aresetn]
+  connect_bd_net -net PS_ARESETN [get_bd_pins s_axi_aresetn] [get_bd_pins axi_gpio_mainG_shift_memdelay/s_axi_aresetn] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins dds_compiler_0/aresetn] [get_bd_pins mixerMatrix/s_axi_aresetn] [get_bd_pins v_tc_0/s_axi_aresetn]
   connect_bd_net -net PS_FCLK_CLK0 [get_bd_pins s_axi_aclk] [get_bd_pins axi_gpio_mainG_shift_memdelay/s_axi_aclk] [get_bd_pins axi_vdma_0/s_axi_lite_aclk] [get_bd_pins dds_compiler_0/aclk] [get_bd_pins div16_8_recip_0/clk] [get_bd_pins div16_8_recip_1/clk] [get_bd_pins mixerMatrix/s_axi_aclk] [get_bd_pins v_tc_0/s_axi_aclk]
   connect_bd_net -net SerialClk_1 [get_bd_pins SerialClk] [get_bd_pins rgb2dvi_0/SerialClk]
   connect_bd_net -net aRst_n_1 [get_bd_pins aRst_n] [get_bd_pins blk_mem_gen_0/wea] [get_bd_pins rgb2dvi_0/aRst_n] [get_bd_pins v_axi4s_vid_out_0/aresetn]
@@ -3021,7 +3021,7 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net rgb2dvi_0_TMDS_Clk_p [get_bd_pins TMDS_Clk_p_0] [get_bd_pins rgb2dvi_0/TMDS_Clk_p]
   connect_bd_net -net rgb2dvi_0_TMDS_Data_n [get_bd_pins TMDS_Data_n_0] [get_bd_pins rgb2dvi_0/TMDS_Data_n]
   connect_bd_net -net rgb2dvi_0_TMDS_Data_p [get_bd_pins TMDS_Data_p_0] [get_bd_pins rgb2dvi_0/TMDS_Data_p]
-  connect_bd_net -net rst_ps7_0_140M_peripheral_aresetn [get_bd_pins ARESETN] [get_bd_pins axi_gpio_mainG_shift_memdelay/s_axi_aresetn] [get_bd_pins axi_interconnect_1/ARESETN] [get_bd_pins axi_interconnect_1/M00_ARESETN] [get_bd_pins axi_interconnect_1/S00_ARESETN] [get_bd_pins axis_subset_converter_0/aresetn]
+  connect_bd_net -net rst_ps7_0_140M_peripheral_aresetn [get_bd_pins ARESETN] [get_bd_pins axi_interconnect_1/ARESETN] [get_bd_pins axi_interconnect_1/M00_ARESETN] [get_bd_pins axi_interconnect_1/S00_ARESETN] [get_bd_pins axis_subset_converter_0/aresetn]
   connect_bd_net -net v_axi4s_vid_out_0_vid_data [get_bd_pins mixerMatrix/pixIn0] [get_bd_pins v_axi4s_vid_out_0/vid_data]
   connect_bd_net -net v_axi4s_vid_out_0_vid_hsync [get_bd_pins rgb2dvi_0/vid_pHSync] [get_bd_pins v_axi4s_vid_out_0/vid_hsync]
   connect_bd_net -net v_axi4s_vid_out_0_vid_vsync [get_bd_pins rgb2dvi_0/vid_pVSync] [get_bd_pins v_axi4s_vid_out_0/vid_vsync]
@@ -3094,9 +3094,9 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.FREQ_HZ {25000000} \
  ] $CLK25M
-  set ENET0_GMII_RX_CLK_0 [ create_bd_port -dir I -type clk ENET0_GMII_RX_CLK_0 ]
+  set ENET0_GMII_RX_CLK_0 [ create_bd_port -dir I -type clk -freq_hz 25000000 ENET0_GMII_RX_CLK_0 ]
   set ENET0_GMII_RX_DV_0 [ create_bd_port -dir I ENET0_GMII_RX_DV_0 ]
-  set ENET0_GMII_TX_CLK_0 [ create_bd_port -dir I -type clk ENET0_GMII_TX_CLK_0 ]
+  set ENET0_GMII_TX_CLK_0 [ create_bd_port -dir I -type clk -freq_hz 25000000 ENET0_GMII_TX_CLK_0 ]
   set ENET0_GMII_TX_EN_0 [ create_bd_port -dir O -from 0 -to 0 ENET0_GMII_TX_EN_0 ]
   set HDMI_CEC_0 [ create_bd_port -dir O -from 0 -to 0 HDMI_CEC_0 ]
   set HDMI_CEC_1 [ create_bd_port -dir O -from 0 -to 0 HDMI_CEC_1 ]
@@ -3320,8 +3320,8 @@ proc create_root_design { parentCell } {
   # Perform GUI Layout
   regenerate_bd_layout -layout_string {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"0.301738",
-   "Default View_TopLeft":"-1239,-17",
+   "Default View_ScaleFactor":"0.853444",
+   "Default View_TopLeft":"-356,1562",
    "ExpandedHierarchyInLayout":"",
    "comment_0":"PS groups:
 - Programmable System(CPU)
@@ -3332,131 +3332,131 @@ proc create_root_design { parentCell } {
    "font_comment_0":"14",
    "guistr":"# # String gsaved with Nlview 7.0r4  2019-12-20 bk=1.5203 VDI=41 GEI=36 GUI=JA:10.0 TLS
 #  -string -flagsOSRD
-preplace port DDR -pg 1 -lvl 5 -x 2060 -y 2020 -defaultsOSRD
-preplace port FIXED_IO -pg 1 -lvl 5 -x 2060 -y 2040 -defaultsOSRD
-preplace port MDIO_ETHERNET_0_0 -pg 1 -lvl 5 -x 2060 -y 2000 -defaultsOSRD
-preplace port DDC_2 -pg 1 -lvl 5 -x 2060 -y 1450 -defaultsOSRD
+preplace port DDC_2 -pg 1 -lvl 5 -x 2100 -y 1450 -defaultsOSRD
+preplace port DDR -pg 1 -lvl 5 -x 2100 -y 2020 -defaultsOSRD
+preplace port FIXED_IO -pg 1 -lvl 5 -x 2100 -y 2040 -defaultsOSRD
+preplace port MDIO_ETHERNET_0_0 -pg 1 -lvl 5 -x 2100 -y 2000 -defaultsOSRD
+preplace port port-id_AUDIO_L -pg 1 -lvl 0 -x -10 -y 2020 -defaultsOSRD
+preplace port port-id_AUDIO_R -pg 1 -lvl 0 -x -10 -y 2040 -defaultsOSRD
+preplace port port-id_CLK25M -pg 1 -lvl 5 -x 2100 -y 2120 -defaultsOSRD
 preplace port port-id_ENET0_GMII_RX_CLK_0 -pg 1 -lvl 0 -x -10 -y 2100 -defaultsOSRD
 preplace port port-id_ENET0_GMII_RX_DV_0 -pg 1 -lvl 0 -x -10 -y 2120 -defaultsOSRD
 preplace port port-id_ENET0_GMII_TX_CLK_0 -pg 1 -lvl 0 -x -10 -y 2140 -defaultsOSRD
-preplace port port-id_CLK25M -pg 1 -lvl 5 -x 2060 -y 2120 -defaultsOSRD
-preplace port port-id_TMDS_Clk_p_0 -pg 1 -lvl 5 -x 2060 -y 700 -defaultsOSRD
-preplace port port-id_TMDS_Clk_n_0 -pg 1 -lvl 5 -x 2060 -y 720 -defaultsOSRD
-preplace port port-id_TMDS_Clk_n_1 -pg 1 -lvl 5 -x 2060 -y 260 -defaultsOSRD
-preplace port port-id_TMDS_Clk_p_1 -pg 1 -lvl 5 -x 2060 -y 280 -defaultsOSRD
+preplace port port-id_TMDS_Clk_n_0 -pg 1 -lvl 5 -x 2100 -y 720 -defaultsOSRD
+preplace port port-id_TMDS_Clk_n_1 -pg 1 -lvl 5 -x 2100 -y 260 -defaultsOSRD
 preplace port port-id_TMDS_Clk_n_2 -pg 1 -lvl 0 -x -10 -y 1170 -defaultsOSRD
+preplace port port-id_TMDS_Clk_p_0 -pg 1 -lvl 5 -x 2100 -y 700 -defaultsOSRD
+preplace port port-id_TMDS_Clk_p_1 -pg 1 -lvl 5 -x 2100 -y 280 -defaultsOSRD
 preplace port port-id_TMDS_Clk_p_2 -pg 1 -lvl 0 -x -10 -y 1150 -defaultsOSRD
-preplace port port-id_AUDIO_L -pg 1 -lvl 0 -x -10 -y 2020 -defaultsOSRD
-preplace port port-id_AUDIO_R -pg 1 -lvl 0 -x -10 -y 2040 -defaultsOSRD
-preplace portBus ENET0_GMII_TX_EN_0 -pg 1 -lvl 5 -x 2060 -y 2080 -defaultsOSRD
-preplace portBus enet0_gmii_rxd -pg 1 -lvl 0 -x -10 -y 2160 -defaultsOSRD
-preplace portBus enet0_gmii_txd -pg 1 -lvl 5 -x 2060 -y 2140 -defaultsOSRD
-preplace portBus HDMI_CEC_0 -pg 1 -lvl 5 -x 2060 -y 680 -defaultsOSRD
-preplace portBus TMDS_Data_p_0 -pg 1 -lvl 5 -x 2060 -y 740 -defaultsOSRD
-preplace portBus TMDS_Data_n_0 -pg 1 -lvl 5 -x 2060 -y 760 -defaultsOSRD
-preplace portBus HDMI_CEC_1 -pg 1 -lvl 5 -x 2060 -y 200 -defaultsOSRD
-preplace portBus TMDS_Data_n_1 -pg 1 -lvl 5 -x 2060 -y 300 -defaultsOSRD
-preplace portBus TMDS_Data_p_1 -pg 1 -lvl 5 -x 2060 -y 320 -defaultsOSRD
-preplace portBus HDMI_HPD -pg 1 -lvl 5 -x 2060 -y 1790 -defaultsOSRD -right
-preplace portBus TMDS_Data_n_2 -pg 1 -lvl 0 -x -10 -y 1190 -defaultsOSRD
-preplace portBus TMDS_Data_p_2 -pg 1 -lvl 0 -x -10 -y 1210 -defaultsOSRD
-preplace portBus HDMI_HPD_2 -pg 1 -lvl 5 -x 2060 -y 2340 -defaultsOSRD
-preplace portBus LED_GREEN -pg 1 -lvl 5 -x 2060 -y 1850 -defaultsOSRD
+preplace portBus ENET0_GMII_TX_EN_0 -pg 1 -lvl 5 -x 2100 -y 2080 -defaultsOSRD
+preplace portBus HDMI_CEC_0 -pg 1 -lvl 5 -x 2100 -y 680 -defaultsOSRD
+preplace portBus HDMI_CEC_1 -pg 1 -lvl 5 -x 2100 -y 200 -defaultsOSRD
+preplace portBus HDMI_HPD -pg 1 -lvl 5 -x 2100 -y 1790 -defaultsOSRD -right
+preplace portBus HDMI_HPD_2 -pg 1 -lvl 5 -x 2100 -y 2340 -defaultsOSRD
+preplace portBus LED_GREEN -pg 1 -lvl 5 -x 2100 -y 1850 -defaultsOSRD
 preplace portBus PL_KEY -pg 1 -lvl 0 -x -10 -y 1960 -defaultsOSRD
-preplace inst PS -pg 1 -lvl 4 -x 1770 -y 2110 -defaultsOSRD
+preplace portBus TMDS_Data_n_0 -pg 1 -lvl 5 -x 2100 -y 760 -defaultsOSRD
+preplace portBus TMDS_Data_n_1 -pg 1 -lvl 5 -x 2100 -y 300 -defaultsOSRD
+preplace portBus TMDS_Data_n_2 -pg 1 -lvl 0 -x -10 -y 1190 -defaultsOSRD
+preplace portBus TMDS_Data_p_0 -pg 1 -lvl 5 -x 2100 -y 740 -defaultsOSRD
+preplace portBus TMDS_Data_p_1 -pg 1 -lvl 5 -x 2100 -y 320 -defaultsOSRD
+preplace portBus TMDS_Data_p_2 -pg 1 -lvl 0 -x -10 -y 1210 -defaultsOSRD
+preplace portBus enet0_gmii_rxd -pg 1 -lvl 0 -x -10 -y 2160 -defaultsOSRD
+preplace portBus enet0_gmii_txd -pg 1 -lvl 5 -x 2100 -y 2140 -defaultsOSRD
 preplace inst HDMI_0 -pg 1 -lvl 3 -x 1060 -y 780 -defaultsOSRD
 preplace inst HDMI_1 -pg 1 -lvl 3 -x 1060 -y 250 -defaultsOSRD
-preplace inst dds_axi_interface_0 -pg 1 -lvl 2 -x 450 -y 840 -defaultsOSRD
-preplace inst ps7_axi_periph -pg 1 -lvl 3 -x 1060 -y 1550 -defaultsOSRD
-preplace inst dds_axi_interface_1 -pg 1 -lvl 2 -x 450 -y 1050 -defaultsOSRD
-preplace inst xlconstant_0 -pg 1 -lvl 4 -x 1770 -y 2340 -defaultsOSRD
-preplace inst axi_gpio_hdmi_in_phase0_div_gPhase1 -pg 1 -lvl 4 -x 1770 -y 1220 -defaultsOSRD
 preplace inst HDMI_2 -pg 1 -lvl 4 -x 1770 -y 1480 -defaultsOSRD
-preplace inst xlslice_0 -pg 1 -lvl 4 -x 1770 -y 1850 -defaultsOSRD
+preplace inst PS -pg 1 -lvl 4 -x 1770 -y 2110 -defaultsOSRD
 preplace inst axi_dynclk_0 -pg 1 -lvl 4 -x 1770 -y 1030 -defaultsOSRD
+preplace inst axi_gpio_hdmi_in_phase0_div_gPhase1 -pg 1 -lvl 4 -x 1770 -y 1220 -defaultsOSRD
+preplace inst dds_axi_interface_0 -pg 1 -lvl 2 -x 450 -y 840 -defaultsOSRD
+preplace inst dds_axi_interface_1 -pg 1 -lvl 2 -x 450 -y 1050 -defaultsOSRD
+preplace inst ps7_axi_periph -pg 1 -lvl 3 -x 1060 -y 1550 -defaultsOSRD
 preplace inst xlconcat_0 -pg 1 -lvl 4 -x 1770 -y 1710 -defaultsOSRD
 preplace inst xlconcat_1 -pg 1 -lvl 1 -x 130 -y 2030 -defaultsOSRD
 preplace inst xlconcat_2 -pg 1 -lvl 2 -x 450 -y 1970 -defaultsOSRD
+preplace inst xlconstant_0 -pg 1 -lvl 4 -x 1770 -y 2340 -defaultsOSRD
+preplace inst xlslice_0 -pg 1 -lvl 4 -x 1770 -y 1850 -defaultsOSRD
 preplace inst xlslice_1 -pg 1 -lvl 1 -x 130 -y 740 -defaultsOSRD
 preplace inst xlslice_2 -pg 1 -lvl 1 -x 130 -y 440 -defaultsOSRD
-preplace netloc ARESETN_1 1 2 3 740 1000 1340J 900 2040
+preplace netloc ARESETN_1 1 2 3 750 1000 1340J 900 2050
 preplace netloc AUDIO_L_1 1 0 1 NJ 2020
 preplace netloc AUDIO_R_1 1 0 1 NJ 2040
 preplace netloc ENET0_GMII_RX_CLK_0_1 1 0 4 NJ 2100 NJ 2100 NJ 2100 NJ
 preplace netloc ENET0_GMII_RX_DV_0_1 1 0 4 NJ 2120 NJ 2120 NJ 2120 NJ
 preplace netloc ENET0_GMII_TX_CLK_0_1 1 0 4 NJ 2140 NJ 2140 NJ 2140 NJ
-preplace netloc HDMI_0_active_video_out 1 2 2 760 1050 1270
-preplace netloc HDMI_0_dout 1 2 2 780 540 1280
-preplace netloc HDMI_0_hblank_out 1 2 2 810 490 1310
-preplace netloc HDMI_0_hsync_out 1 2 2 820 500 1300
-preplace netloc HDMI_0_vblank_out 1 2 2 790 1010 1260
-preplace netloc HDMI_0_vsync_out 1 2 2 830 530 1290
+preplace netloc HDMI_0_active_video_out 1 2 2 790 1010 1270
+preplace netloc HDMI_0_dout 1 2 2 820 540 1260
+preplace netloc HDMI_0_hblank_out 1 2 2 830 490 1310
+preplace netloc HDMI_0_hsync_out 1 2 2 840 500 1300
+preplace netloc HDMI_0_vblank_out 1 2 2 810 1020 1260
+preplace netloc HDMI_0_vsync_out 1 2 2 850 530 1290
 preplace netloc HDMI_1_HDMI_OEN 1 3 2 NJ 200 NJ
-preplace netloc HDMI_1_TMDS_Clk_n_1 1 3 2 NJ 260 NJ
-preplace netloc HDMI_1_TMDS_Clk_p_1 1 3 2 NJ 280 NJ
-preplace netloc HDMI_1_TMDS_Data_n_1 1 3 2 NJ 300 NJ
-preplace netloc HDMI_1_TMDS_Data_p_1 1 3 2 NJ 320 NJ
-preplace netloc HDMI_1_outIRQ 1 3 1 1380 220n
-preplace netloc HDMI_1_pixData 1 2 2 820 1060 1330
-preplace netloc HDMI_2_debug 1 3 2 1530 1630 1970
-preplace netloc HDMI_2_s2mm_introut_0 1 2 3 830 1020 1360J 910 2020
-preplace netloc HDMI_HPD_1 1 3 2 1540 1790 NJ
-preplace netloc In0_0_1 1 0 4 NJ 2160 NJ 2160 NJ 2160 NJ
-preplace netloc Net 1 2 3 680 1140 1410 1320 2000
+preplace netloc HDMI_1_TMDS_Clk_n_1 1 3 2 NJ 220 2050J
+preplace netloc HDMI_1_TMDS_Clk_p_1 1 3 2 NJ 240 2040J
+preplace netloc HDMI_1_TMDS_Data_n_1 1 3 2 NJ 260 2030J
+preplace netloc HDMI_1_TMDS_Data_p_1 1 3 2 NJ 280 1970J
+preplace netloc HDMI_1_outIRQ 1 3 1 1370 300n
+preplace netloc HDMI_1_pixData 1 2 2 840 1050 1320
+preplace netloc HDMI_2_debug 1 3 2 1540 1320 1970
+preplace netloc HDMI_2_s2mm_introut_0 1 2 3 850 1030 1360J 910 2030
+preplace netloc HDMI_HPD_1 1 3 2 1560 1790 NJ
+preplace netloc In0_0_1 1 0 4 NJ 2160 NJ 2160 NJ 2160 1270J
+preplace netloc Net 1 2 3 730 1140 1440 1630 2010
 preplace netloc PL_KEY_1 1 0 2 NJ 1960 NJ
-preplace netloc PS_ARESETN 1 1 4 250 730 650 1130 1470 2270 1970
-preplace netloc PS_FCLK_CLK0 1 1 4 280 740 640 1100 1500 1920 1970
-preplace netloc PS_FCLK_CLK0_200M 1 3 2 1520 1910 1990
-preplace netloc PS_FCLK_CLK3_0 1 4 1 NJ 2120
-preplace netloc TMDS_Clk_n_2_1 1 0 4 10J 1160 NJ 1160 NJ 1160 1430J
-preplace netloc TMDS_Clk_p_2_1 1 0 4 NJ 1150 NJ 1150 NJ 1150 1450J
-preplace netloc TMDS_Data_n_2_1 1 0 4 20J 1170 NJ 1170 NJ 1170 1390J
+preplace netloc PS_ARESETN 1 1 4 250 730 660 1130 1530 1910 1980
+preplace netloc PS_FCLK_CLK0 1 1 4 240 720 650 1100 1510 1930 1970
+preplace netloc PS_FCLK_CLK0_200M 1 3 2 1550 1920 2000
+preplace netloc PS_FCLK_CLK3_0 1 4 1 2080J 2100n
+preplace netloc TMDS_Clk_n_2_1 1 0 4 10J 1160 NJ 1160 NJ 1160 1460J
+preplace netloc TMDS_Clk_p_2_1 1 0 4 NJ 1150 NJ 1150 NJ 1150 1470J
+preplace netloc TMDS_Data_n_2_1 1 0 4 20J 1170 NJ 1170 NJ 1170 1400J
 preplace netloc TMDS_Data_p_2_1 1 0 4 NJ 1210 NJ 1210 620J 1920 1490J
-preplace netloc axi_dynclk_0_LOCKED_O 1 2 3 690 1090 1480 920 1990
-preplace netloc axi_dynclk_0_PXL_CLK_5X_O 1 2 3 770 1070 1370J 930 1970
-preplace netloc axi_dynclk_0_PXL_CLK_O 1 2 3 800 1030 1350J 890 2010
-preplace netloc axi_gpio_hdmi_in_dds_phase_div_out_gpio2_io_o 1 0 5 10 520 NJ 520 NJ 520 NJ 520 2030
-preplace netloc axi_gpio_hdmi_ip2intc_irpt 1 2 3 810 1080 1390J 940 1980
-preplace netloc pixIn1_1 1 2 2 720 1040 1280
-preplace netloc processing_system7_0_ENET0_GMII_TX_EN 1 4 1 NJ 2080
-preplace netloc rgb2dvi_0_TMDS_Clk_n 1 3 2 NJ 720 NJ
-preplace netloc rgb2dvi_0_TMDS_Clk_p 1 3 2 NJ 700 NJ
-preplace netloc rgb2dvi_0_TMDS_Data_n 1 3 2 NJ 760 NJ
-preplace netloc rgb2dvi_0_TMDS_Data_p 1 3 2 NJ 740 NJ
-preplace netloc xlconcat_0_dout 1 4 1 1990 1200n
-preplace netloc xlconcat_1_dout 1 1 1 260 1980n
-preplace netloc xlconcat_2_dout 1 2 2 NJ 1970 1510
+preplace netloc axi_dynclk_0_LOCKED_O 1 2 3 690 1090 1500 920 1990
+preplace netloc axi_dynclk_0_PXL_CLK_5X_O 1 2 3 700 1060 1380J 930 1970
+preplace netloc axi_dynclk_0_PXL_CLK_O 1 2 3 720 1040 1350J 890 2000
+preplace netloc axi_gpio_hdmi_in_dds_phase_div_out_gpio2_io_o 1 0 5 10 520 NJ 520 NJ 520 NJ 520 2040
+preplace netloc axi_gpio_hdmi_ip2intc_irpt 1 2 3 830 1070 1420J 940 1980
+preplace netloc pixIn1_1 1 2 2 770 1080 1280
+preplace netloc processing_system7_0_ENET0_GMII_TX_EN 1 4 1 2070J 2080n
+preplace netloc rgb2dvi_0_TMDS_Clk_n 1 3 2 NJ 700 2050J
+preplace netloc rgb2dvi_0_TMDS_Clk_p 1 3 2 1340J 710 2070J
+preplace netloc rgb2dvi_0_TMDS_Data_n 1 3 2 NJ 740 2050J
+preplace netloc rgb2dvi_0_TMDS_Data_p 1 3 2 1340J 750 2070J
+preplace netloc xlconcat_0_dout 1 4 1 2000 1200n
+preplace netloc xlconcat_1_dout 1 1 1 250 1980n
+preplace netloc xlconcat_2_dout 1 2 2 NJ 1970 1520
 preplace netloc xlconstant_0_dout 1 3 2 NJ 680 NJ
 preplace netloc xlconstant_0_dout1 1 4 1 NJ 2340
-preplace netloc xlslice_0_Dout 1 4 1 NJ 2140
+preplace netloc xlslice_0_Dout 1 4 1 2080J 2140n
 preplace netloc xlslice_0_Dout1 1 4 1 NJ 1850
-preplace netloc xlslice_1_Dout 1 1 2 240J 950 NJ
-preplace netloc xlslice_2_Dout 1 1 2 NJ 440 NJ
-preplace netloc HDMI_1_M00_AXI1 1 3 1 1420 180n
+preplace netloc xlslice_1_Dout 1 1 2 NJ 740 640J
+preplace netloc xlslice_2_Dout 1 1 2 240J 260 NJ
+preplace netloc HDMI_1_M00_AXI1 1 3 1 1410 180n
 preplace netloc HDMI_2_DDC_2 1 4 1 NJ 1450
-preplace netloc S00_AXI_2 1 2 3 830 1120 NJ 1120 2010
-preplace netloc S_AXI_HP0_1 1 3 1 1400 660n
-preplace netloc S_AXI_HP1_1 1 3 2 1540 1930 1980
-preplace netloc S_AXI_LITE_0_1 1 3 1 1460 1380n
-preplace netloc S_AXI_LITE_1 1 2 2 750 1110 1280
-preplace netloc S_AXI_LITE_gainFeedback_1 1 2 2 700 550 1320
-preplace netloc dds_axi_interface_0_ctrl_m_axis 1 2 1 630 690n
+preplace netloc S00_AXI_2 1 2 3 850 1120 NJ 1120 2020
+preplace netloc S_AXI_HP0_1 1 3 1 1390 660n
+preplace netloc S_AXI_HP1_1 1 3 2 1560 1940 1990
+preplace netloc S_AXI_LITE_0_1 1 3 1 1480 1380n
+preplace netloc S_AXI_LITE_1 1 2 2 800 1110 1280
+preplace netloc S_AXI_LITE_gainFeedback_1 1 2 2 740 550 1330
+preplace netloc dds_axi_interface_0_ctrl_m_axis 1 2 1 630 670n
 preplace netloc dds_axi_interface_1_ctrl_m_axis 1 2 1 620 100n
-preplace netloc processing_system7_0_DDR 1 4 1 NJ 2020
-preplace netloc processing_system7_0_FIXED_IO 1 4 1 NJ 2040
-preplace netloc processing_system7_0_MDIO_ETHERNET_0 1 4 1 NJ 2000
-preplace netloc ps7_axi_periph_M00_AXI 1 3 1 1330 1200n
-preplace netloc ps7_axi_periph_M01_AXI 1 2 2 730 1200 1260
-preplace netloc ps7_axi_periph_M04_AXI 1 3 1 1440 1000n
-preplace netloc ps7_axi_periph_M05_AXI 1 2 2 670 1210 1270
-preplace netloc ps7_axi_periph_M06_AXI 1 2 2 660 1910 1300
-preplace netloc ps7_axi_periph_M07_AXI 1 2 2 700 1890 1270
+preplace netloc processing_system7_0_DDR 1 4 1 2070J 2000n
+preplace netloc processing_system7_0_FIXED_IO 1 4 1 2060J 2020n
+preplace netloc processing_system7_0_MDIO_ETHERNET_0 1 4 1 2080J 2000n
+preplace netloc ps7_axi_periph_M00_AXI 1 3 1 1450 1200n
+preplace netloc ps7_axi_periph_M01_AXI 1 2 2 780 1200 1260
+preplace netloc ps7_axi_periph_M04_AXI 1 3 1 1430 1000n
+preplace netloc ps7_axi_periph_M05_AXI 1 2 2 680 1210 1270
+preplace netloc ps7_axi_periph_M06_AXI 1 2 2 670 1910 1300
+preplace netloc ps7_axi_periph_M07_AXI 1 2 2 760 1890 1270
 preplace netloc ps7_axi_periph_M08_AXI 1 2 2 710 1900 1260
 preplace netloc ps7_axi_periph_M09_AXI 1 1 3 260 1180 NJ 1180 1290
 preplace netloc ps7_axi_periph_M11_AXI 1 1 3 270 1190 NJ 1190 1310
 preplace cgraphic comment_0 place left -113 -3 textcolor 4 linecolor 3
-levelinfo -pg 1 -10 130 450 1060 1770 2060
-pagesize -pg 1 -db -bbox -sgen -230 0 2300 2400
+levelinfo -pg 1 -10 130 450 1060 1770 2100
+pagesize -pg 1 -db -bbox -sgen -230 0 2340 2400
 ",
    "linktoobj_comment_0":"",
    "linktotype_comment_0":"bd_design"
@@ -3465,6 +3465,7 @@ pagesize -pg 1 -db -bbox -sgen -230 0 2300 2400
   # Restore current instance
   current_bd_instance $oldCurInst
 
+  validate_bd_design
   save_bd_design
 }
 # End of create_root_design()
@@ -3476,6 +3477,4 @@ pagesize -pg 1 -db -bbox -sgen -230 0 2300 2400
 
 create_root_design ""
 
-
-common::send_gid_msg -ssname BD::TCL -id 2053 -severity "WARNING" "This Tcl script was generated from a block design that has not been validated. It is possible that design <$design_name> may result in errors during validation."
 

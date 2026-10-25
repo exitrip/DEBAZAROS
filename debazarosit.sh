@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-echo debaz4205_wrapper_20250916.bit.bin >  /sys/class/fpga_manager/fpga0/firmware
+echo debaz4205_wrapper_20261019_dvi2ms.bit.bin >  /sys/class/fpga_manager/fpga0/firmware
 
 # FCLK3 -> 200 MHz (dvi2rgb IDELAYCTRL RefClk). The FSBL in the deployed
 # BOOT.BIN predates the HDMI_2 input port and still programs 25 MHz; the

@@ -124,7 +124,7 @@ Second run (2026-10-19, source = ELMO presenter, DVI, hardware switch
   CAUSE FOUND: dvi2rgb `kBlankTimeoutMs = 50` in
   `IP_dvi2rgb/src/DVI_Constants.vhd`. Fix: 50 -> 2 (sweep 16 s -> 0.64 s).
   No BD/address/PS change, so no PetaLinux rebuild. Rebuild with
-  `tools/vivado/dvi2rgb_rebuild.tcl` (phase `upgrade`, then `build`).
+  `hw/repackage_ip.tcl IP_dvi2rgb`, then `hw/build.tcl <variant> build`.
 - After a W1C clear of DMASR, EOLEarly, SOFLate and EOLLate latch again
   in each frame: the ELMO frame is not exactly 1280x720 (line lengths
   vary, more than 720 lines). The VDMA flushes and resyncs in each frame,

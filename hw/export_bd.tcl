@@ -55,6 +55,9 @@ set stale [get_ips -quiet -filter {UPGRADE_VERSIONS != ""}]
 if {[llength $stale]} {
     puts "WARNING: IP with available upgrades (not exported as upgraded): $stale"
 }
+# Validate the copy first: an unvalidated export gets BD::TCL 103-2053 on every
+# rebuild, and a design that fails validation must not become the source.
+if {[catch {validate_bd_design} msg]} { error "validate_bd_design failed: $msg" }
 write_bd_tcl -force -include_layout $out
 close_project
 puts "INFO: wrote $out from $xpr"

@@ -9,16 +9,20 @@ const MAXPTS = 13; // stroke: 5 fixed args + 13 points = 31 args (< 32)
 const DEF = { slot: 6, tool: "brush", color: "#ff9a3c", color2: "#2040ff", fill: true, size: 24, hard: 0.4,
   alpha: 1, blend: "normal", text: "DEBAZAROS", ttf: 64, scale: 2, sprite: 0, sscale: 1, angle: 0,
   gangle: 45, tl: "#ff0000", tr: "#00ff00", bl: "#0000ff", br: "#ffffff",
-  rz: 3, zoom: 1.04, dx: 8, dy: 0, waxis: 0, wamp: 12, wper: 90 };
+  rz: 3, zoom: 1.04, dx: 8, dy: 0, waxis: 0, wamp: 12, wper: 90,
+  rot: 0, sfill: "solid", sides: 5, pstyle: "star", inner: 0, skip: 2, gtype: "linear" };
 const s = { ...DEF, ...store.get("paint", {}) };
-const DRAG = ["line", "rect", "ellipse", "gradient"]; // tools that use press-drag-release
+const SHAPES = ["rect", "ellipse", "shape"]; // rotatable, gradient-filled (dz_shape.c)
+const DRAG = ["line", "gradient", ...SHAPES]; // tools that use press-drag-release
 let cv, cx, ov, ox, drawing = false, start = null, pending = [], last = null, raf = false;
+let end = null, rotating = null, rotOut = null, rotEl = null; // drag state, rotation slider
 
 const save = () => store.set("paint", s);
 const rgb = () => hexToRgb(s.color);
 const rgb2 = () => hexToRgb(s.color2);
-const box = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])];
 const thick = () => (s.fill ? 0 : Math.max(1, s.size | 0)); // 0 = filled
+const rad = (d) => (d * Math.PI) / 180;
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 const D = () => `/draw/${s.slot}`;
 
 function toBoard(e) {
@@ -61,28 +65,114 @@ function previewGradient(deg, c1, c2, x = 0, y = 0, w = W, hh = H) {
   cx.fillStyle = g;
   cx.fillRect(x, y, w, hh);
 }
-function previewShape(tool, a, b) {
-  previewStyle();
-  cx.fillStyle = cx.strokeStyle = s.color;
-  cx.lineWidth = Math.max(1, s.size);
-  const [x, y, w, hh] = box(a, b);
-  cx.beginPath();
-  if (tool === "rect") cx.rect(x, y, w, hh);
-  else cx.ellipse(x + w / 2, y + hh / 2, Math.max(1, w / 2), Math.max(1, hh / 2), 0, 0, Math.PI * 2);
-  s.fill ? cx.fill() : cx.stroke();
+// ---- shapes: same geometry as sw/lib/dz_shape.c ----
+// drag a -> b: box; lock (Ctrl) = equal width and height
+function geom(a, b, lock) {
+  let dx = b[0] - a[0], dy = b[1] - a[1];
+  if (lock) {
+    const m = Math.max(Math.abs(dx), Math.abs(dy));
+    dx = Math.sign(dx || 1) * m;
+    dy = Math.sign(dy || 1) * m;
+  }
+  const x = Math.min(a[0], a[0] + dx), y = Math.min(a[1], a[1] + dy), w = Math.abs(dx), hh = Math.abs(dy);
+  return { x, y, w, h: hh, cx: x + w / 2, cy: y + hh / 2, hx: w / 2, hy: hh / 2 };
+}
+// closed loops in the shape frame (centre 0,0, not rotated); points first at the top
+function loops(kind, hx, hy) {
+  const ring = (k, n, rx, ry) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * k) / n;
+    return [rx * Math.cos(a), ry * Math.sin(a)];
+  };
+  const range = (n) => [...Array(n).keys()];
+  if (kind === "rect") return [[[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]]];
+  if (kind === "ellipse") return [range(96).map((k) => ring(k, 96, hx, hy))];
+  const n = Math.max(3, s.sides | 0);
+  if (s.pstyle === "polygon") return [range(n).map((k) => ring(k, n, hx, hy))];
+  if (s.pstyle === "star") {
+    const inner = s.inner > 0 ? Math.min(1, s.inner) : n >= 5 ? Math.cos((2 * Math.PI) / n) / Math.cos(Math.PI / n) : 0.5;
+    return [range(2 * n).map((k) => ring(k, 2 * n, hx * (k & 1 ? inner : 1), hy * (k & 1 ? inner : 1)))];
+  }
+  const k = s.skip % n || 1, g = gcd(n, k), m = n / g, pts = range(n).map((q) => ring(q, n, hx, hy));
+  return range(g).map((l) => range(m).map((q) => pts[(l + q * k) % n]));
+}
+function path(ctx, kind, hx, hy) {
+  ctx.beginPath();
+  for (const lp of loops(kind, hx, hy)) {
+    lp.forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
+    ctx.closePath();
+  }
+}
+// preview fill in the shape frame (like dz_shape.c colour())
+function fillStyle(ctx, g) {
+  if (s.sfill === "solid") return s.color;
+  let gr;
+  if (s.sfill === "radial") {
+    gr = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, (g.hx + g.hy) / 2));
+  } else {
+    const gc = Math.cos(rad(s.gangle)), gs = Math.sin(rad(s.gangle));
+    const d = [gc / Math.max(g.hx, 0.5), gs / Math.max(g.hy, 0.5)], dd = d[0] ** 2 + d[1] ** 2;
+    const l = (Math.abs(gc) + Math.abs(gs)) / dd;
+    gr = ctx.createLinearGradient(-l * d[0], -l * d[1], l * d[0], l * d[1]);
+  }
+  gr.addColorStop(0, s.color);
+  gr.addColorStop(1, s.color2);
+  return gr;
+}
+function drawShape(ctx, kind, g, preview) {
+  const t = thick(), ins = (r) => (t ? Math.max(0.5, r - t / 2) : r);
+  ctx.save();
+  ctx.translate(g.cx, g.cy);
+  ctx.rotate(rad(s.rot));
+  path(ctx, kind, ins(g.hx), ins(g.hy));
+  if (preview) {
+    previewStyle();
+    ctx.fillStyle = ctx.strokeStyle = fillStyle(ctx, g);
+    ctx.lineWidth = t;
+    ctx.lineJoin = "round";
+    t ? ctx.stroke() : ctx.fill(kind === "shape" && s.pstyle === "starpoly" ? "evenodd" : "nonzero");
+  } else {
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function fillMsg() {
+  if (s.sfill === "solid") return net.message(`${D()}/fill`, "solid");
+  if (s.sfill === "radial") return net.message(`${D()}/fill`, "radial", ...rgb2());
+  return net.message(`${D()}/fill`, "linear", ...rgb2(), net.float(s.gangle));
+}
+function shapeMsg(kind, g) {
+  const [r, gg, b] = rgb(), t = thick(), ang = net.float(s.rot);
+  const c = [Math.round(g.cx), Math.round(g.cy), Math.max(1, Math.round(g.hx)), Math.max(1, Math.round(g.hy))];
+  if (kind === "rect") return net.message(`${D()}/rect`, r, gg, b, Math.round(g.x), Math.round(g.y), Math.round(g.w), Math.round(g.h), t, ang);
+  if (kind === "ellipse") return net.message(`${D()}/ellipse`, r, gg, b, ...c, t, ang);
+  if (s.pstyle === "polygon") return net.message(`${D()}/polygon`, r, gg, b, ...c, s.sides | 0, t, ang);
+  if (s.pstyle === "star") return net.message(`${D()}/star`, r, gg, b, ...c, s.sides | 0, net.float(s.inner), t, ang);
+  return net.message(`${D()}/starpoly`, r, gg, b, ...c, s.sides | 0, s.skip | 0, t, ang);
+}
+function setRot(v) {
+  s.rot = Math.round(((v + 540) % 360) - 180);
+  if (rotEl) { rotEl.value = s.rot; rotOut.textContent = s.rot; }
+  save();
 }
 // rubber band on the overlay while a drag tool is down
-function band(a, b) {
+function band(a, b, lock) {
   ox.clearRect(0, 0, W, H);
   ox.strokeStyle = "#fff";
   ox.setLineDash([12, 8]);
   ox.lineWidth = 3;
+  if (SHAPES.includes(s.tool)) return drawShape(ox, s.tool, geom(a, b, lock), false);
   ox.beginPath();
-  const [x, y, w, hh] = box(a, b);
-  if (s.tool === "rect") ox.rect(x, y, w, hh);
-  else if (s.tool === "ellipse") ox.ellipse(x + w / 2, y + hh / 2, Math.max(1, w / 2), Math.max(1, hh / 2), 0, 0, Math.PI * 2);
+  if (s.tool === "gradient" && s.gtype === "radial") ox.arc(a[0], a[1], Math.hypot(b[0] - a[0], b[1] - a[1]), 0, Math.PI * 2);
   else { ox.moveTo(...a); ox.lineTo(...b); }
   ox.stroke();
+}
+function previewRadial(x, y, r) {
+  const g = cx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, s.color);
+  g.addColorStop(1, s.color2);
+  previewStyle();
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, W, H);
 }
 const dragAngle = (a, b) => Math.round((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI);
 
@@ -118,7 +208,8 @@ function down(e) {
     previewDot(...p);
   } else if (DRAG.includes(s.tool)) {
     drawing = true;
-    start = p;
+    start = end = p;
+    rotating = null;
   } else if (s.tool === "text") {
     net.msg(`${D()}/text`, r, g, b, p[0], p[1], s.text, s.scale | 0, 16);
     previewStyle();
@@ -142,7 +233,19 @@ function down(e) {
   }
 }
 function move(e) {
-  if (drawing && start && DRAG.includes(s.tool)) return band(start, toBoard(e));
+  if (drawing && start && DRAG.includes(s.tool)) {
+    const p = toBoard(e), lock = e.ctrlKey || e.metaKey;
+    if (e.shiftKey && SHAPES.includes(s.tool)) {	// Shift: rotate about the centre
+      const g = geom(start, end, lock), a = (Math.atan2(p[1] - g.cy, p[0] - g.cx) * 180) / Math.PI;
+      if (!rotating) rotating = { base: a, rot0: s.rot };
+      const v = rotating.rot0 + a - rotating.base;
+      setRot(lock ? Math.round(v / 15) * 15 : v);	// Ctrl+Shift: 15 degree steps
+    } else {
+      rotating = null;
+      end = p;
+    }
+    return band(start, end, lock);
+  }
   if (!drawing || s.tool !== "brush") return;
   for (const ev of e.getCoalescedEvents ? e.getCoalescedEvents() : [e]) {
     const p = toBoard(ev);
@@ -169,14 +272,18 @@ function up(e) {
     cx.lineTo(...p);
     cx.stroke();
     start = null;
-  } else if ((s.tool === "rect" || s.tool === "ellipse") && start) {
-    const p = toBoard(e);
-    const [r, g, b] = rgb();
-    const [x, y, w, hh] = box(start, p);
-    if (w > 1 && hh > 1) {
-      if (s.tool === "rect") net.msg(`${D()}/rect`, r, g, b, x, y, w, hh, thick());
-      else net.msg(`${D()}/ellipse`, r, g, b, x + (w >> 1), y + (hh >> 1), Math.max(1, w >> 1), Math.max(1, hh >> 1), thick());
-      previewShape(s.tool, start, p);
+  } else if (SHAPES.includes(s.tool) && start) {
+    const g = geom(start, rotating ? end : toBoard(e), e.ctrlKey || e.metaKey);
+    if (g.w > 1 && g.h > 1) {
+      net.send(net.bundle(fillMsg(), shapeMsg(s.tool, g)));
+      drawShape(cx, s.tool, g, true);
+    }
+    start = rotating = null;
+  } else if (s.tool === "gradient" && s.gtype === "radial" && start) {
+    const p = toBoard(e), r = Math.round(Math.hypot(p[0] - start[0], p[1] - start[1]));
+    if (r > 8) {
+      net.msg(`${D()}/gradient/radial`, ...rgb(), ...rgb2(), start[0], start[1], r);
+      previewRadial(start[0], start[1], r);
     }
     start = null;
   } else if (s.tool === "gradient" && start) {
@@ -210,7 +317,7 @@ export function init(root) {
 
   const slot = h("select", { onchange: () => { s.slot = parseInt(slot.value); save(); } },
     [...Array(12).keys()].map((i) => h("option", { value: i, selected: i === s.slot }, `slot ${i}`)));
-  const tools = ["brush", "line", "rect", "ellipse", "gradient", "text", "ttf", "sprite"].map((t) =>
+  const tools = ["brush", "line", "rect", "ellipse", "shape", "gradient", "text", "ttf", "sprite"].map((t) =>
     h("button", { onclick: () => { s.tool = t; save(); tools.forEach((b) => b.classList.toggle("on", b.textContent === t)); } }, t));
   tools.forEach((b) => b.classList.toggle("on", b.textContent === s.tool));
   const pick = (key, title) => {
@@ -244,7 +351,27 @@ export function init(root) {
     h("div", {},
       card("Tool", h("div.tools", {}, tools),
         row("colour", color, swap, color2, blend),
-        row("filled", fill, h("span.hint", {}, "rect/ellipse; off = outline of 'size' px")),
+        row("filled", fill, h("span.hint", {}, "off = outline, 'size' px wide")),
+        row("fill",
+          h("select", { title: "fill of rect, ellipse and shape", onchange: (e) => { s.sfill = e.target.value; save(); } },
+            ["solid", "linear", "radial"].map((v) => h("option", { value: v, selected: v === s.sfill }, v))),
+          h("span.hint", {}, "angle"), num("gangle", 1, "linear gradient angle (degrees, in the shape)", -360, 360),
+          h("span.hint", {}, "colour 1 → 2")),
+        (() => { // rotation, also set by Shift+drag
+          rotOut = h("span.hint", {}, String(s.rot));
+          rotEl = h("input", { type: "range", min: -180, max: 180, step: 1, value: s.rot,
+            oninput: () => setRot(Number(rotEl.value)) });
+          return row("rotation", rotEl, rotOut);
+        })(),
+        row("shape",
+          h("select", { onchange: (e) => { s.pstyle = e.target.value; save(); } },
+            [["polygon", "polygon"], ["star", "star"], ["starpoly", "star polygon {n/k}"]].map(([v, t]) =>
+              h("option", { value: v, selected: v === s.pstyle }, t))),
+          h("span.hint", {}, "n"), num("sides", 1, "sides / points (n)", 3, 64),
+          h("span.hint", {}, "k"), num("skip", 1, "star polygon: join every k-th point (5/2 = pentagram, 6/2 = star of David)", 2, 31),
+          h("span.hint", {}, "inner"), num("inner", 0.05, "star: inner radius ratio (0 = classic)", 0, 1)),
+        h("p.hint", {}, "Drag a box. Ctrl: square/circle/regular. Shift while dragging: rotate " +
+          "(Ctrl+Shift: 15° steps). Shape: n sides; star: n points, inner ratio; star polygon: n and k."),
         slider("size", 1, 200, 1, "size"),
         slider("hard", 0, 1, 0.05, "hardness"),
         slider("alpha", 0, 1, 0.05, "alpha", () => net.msg(`${D()}/alpha`, net.float(s.alpha))),
@@ -275,7 +402,13 @@ export function init(root) {
             prevAll(() => ["#fff", "#ff0", "#0ff", "#0f0", "#f0f", "#f00", "#00f", "#000"].forEach((c, i) => {
               cx.fillStyle = c; cx.fillRect((i * W) / 8, 0, W / 8 + 1, H); }));
           })),
+        row("tool",
+          h("select", { title: "gradient tool: drag direction (linear) or centre and radius (radial)",
+            onchange: (e) => { s.gtype = e.target.value; save(); } },
+            ["linear", "radial"].map((v) => h("option", { value: v, selected: v === s.gtype }, `gradient tool: ${v}`)))),
         row("gradient",
+          act("Radial", () => { net.msg(`${D()}/gradient/radial`, ...rgb(), ...rgb2());
+            previewRadial(W / 2, H / 2, Math.hypot(W, H) / 2); }),
           act("H", () => { net.msg(`${D()}/gradient/h`, ...rgb(), ...rgb2()); previewGradient(0, s.color, s.color2); }),
           act("V", () => { net.msg(`${D()}/gradient/v`, ...rgb(), ...rgb2()); previewGradient(90, s.color, s.color2); }),
           num("gangle", 1, "angle in degrees (0 = left to right, 90 = top to bottom)", -360, 360),

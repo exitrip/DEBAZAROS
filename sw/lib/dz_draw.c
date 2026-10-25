@@ -5,6 +5,7 @@
 #include "dz_draw.h"
 #include "dz_draw_int.h"
 #include "dz_text.h"
+#include "dz_shape.h"
 #include "dz_xform.h"
 #include "dz_hw.h"
 #include "dz_map.h"
@@ -974,6 +975,48 @@ static int split(const char *path, const char *group, unsigned *mask, const char
 	return 1;
 }
 
+#define NI(k) ((int)argn(&a[k]))
+
+/* rect/square: x y w h [thickness] [angle]; k = index of thickness */
+static int op_rect(int i, const dz_arg *a, int n, float w, float h, int k)
+{
+	int t = n > k ? NI(k) : 0;
+	float ang = n > k + 1 ? argn(&a[k + 1]) : 0.0f;
+
+	if (ang == 0.0f && !dz_shape_fancy(i))	/* the old exact pixels */
+		return dz_draw_rect(i, col(a, 0), (dz_rect){ NI(3), NI(4), (int)w, (int)h }, t);
+	return dz_shape_rect(i, col(a, 0), argn(&a[3]), argn(&a[4]), w, h, t, ang);
+}
+
+/* circle/ellipse: cx cy rx ry [thickness] [angle] */
+static int op_ellipse(int i, const dz_arg *a, int n, float rx, float ry, int k)
+{
+	int t = n > k ? NI(k) : 0;
+	float ang = n > k + 1 ? argn(&a[k + 1]) : 0.0f;
+
+	if (ang == 0.0f && !dz_shape_fancy(i))
+		return dz_draw_ellipse(i, col(a, 0), NI(3), NI(4), (int)rx, (int)ry, t);
+	return dz_shape_ellipse(i, col(a, 0), argn(&a[3]), argn(&a[4]), rx, ry, t, ang);
+}
+
+/* fill solid | linear r2 g2 b2 [deg] | radial r2 g2 b2   (or mode 0/1/2) */
+static int op_fill(int i, const dz_arg *a, int n)
+{
+	int mode = -1;
+
+	if (a[0].type == 's')
+		mode = !strcmp(a[0].s, "solid") ? DZ_FILL_SOLID :
+		       !strcmp(a[0].s, "linear") ? DZ_FILL_LINEAR :
+		       !strcmp(a[0].s, "radial") ? DZ_FILL_RADIAL : -1;
+	else
+		mode = a[0].i;
+	if (mode < DZ_FILL_SOLID || mode > DZ_FILL_RADIAL || (mode != DZ_FILL_SOLID && n < 4))
+		return -1;
+	dz_shape_fill(i, mode, mode == DZ_FILL_SOLID ? DZ_RGB8(0, 0, 0) : col(a, 1),
+		      n >= 5 ? argn(&a[4]) : 0.0f);
+	return 0;
+}
+
 int dz_draw_dispatch(const dz_msg *m, int verbose)
 {
 	const dz_arg *a = m->a;
@@ -1003,18 +1046,33 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 				rc = dz_draw_corners(i, col(a, 0), col(a, 3), col(a, 6), col(a, 9),
 						     rect_at(a, n, 12));
 			else if (!strcmp(op, "rect") && n >= 7)
-				rc = dz_draw_rect(i, col(a, 0), (dz_rect){ a[3].i, a[4].i, a[5].i, a[6].i },
-						  n >= 8 ? a[7].i : 0);
+				rc = op_rect(i, a, n, argn(&a[5]), argn(&a[6]), 7);
 			else if (!strcmp(op, "square") && n >= 6)
-				rc = dz_draw_rect(i, col(a, 0), (dz_rect){ a[3].i, a[4].i, a[5].i, a[5].i },
-						  n >= 7 ? a[6].i : 0);
+				rc = op_rect(i, a, n, argn(&a[5]), argn(&a[5]), 6);
 			else if (!strcmp(op, "circle") && n >= 6)
-				rc = dz_draw_ellipse(i, col(a, 0), a[3].i, a[4].i, a[5].i, a[5].i,
-						     n >= 7 ? a[6].i : 0);
+				rc = op_ellipse(i, a, n, argn(&a[5]), argn(&a[5]), 6);
 			else if (!strcmp(op, "ellipse") && n >= 7)
-				rc = dz_draw_ellipse(i, col(a, 0), a[3].i, a[4].i, a[5].i, a[6].i,
-						     n >= 8 ? a[7].i : 0);
-			else if (!strcmp(op, "text") && n >= 6 && a[5].type == 's')
+				rc = op_ellipse(i, a, n, argn(&a[5]), argn(&a[6]), 7);
+			else if (!strcmp(op, "polygon") && n >= 8)
+				rc = dz_shape_polygon(i, col(a, 0), argn(&a[3]), argn(&a[4]), argn(&a[5]),
+						      argn(&a[6]), NI(7), n >= 9 ? NI(8) : 0,
+						      n >= 10 ? argn(&a[9]) : 0.0f);
+			else if (!strcmp(op, "star") && n >= 8)
+				rc = dz_shape_star(i, col(a, 0), argn(&a[3]), argn(&a[4]), argn(&a[5]),
+						   argn(&a[6]), NI(7), n >= 9 ? argn(&a[8]) : 0.0f,
+						   n >= 10 ? NI(9) : 0, n >= 11 ? argn(&a[10]) : 0.0f);
+			else if (!strcmp(op, "starpoly") && n >= 9)
+				rc = dz_shape_starpoly(i, col(a, 0), argn(&a[3]), argn(&a[4]), argn(&a[5]),
+						       argn(&a[6]), NI(7), NI(8), n >= 10 ? NI(9) : 0,
+						       n >= 11 ? argn(&a[10]) : 0.0f);
+			else if (!strcmp(op, "gradient/radial") && n >= 6)
+				rc = dz_shape_radial(i, col(a, 0), col(a, 3),
+						     n >= 8 ? argn(&a[6]) : DZ_WIDTH / 2.0f,
+						     n >= 8 ? argn(&a[7]) : DZ_HEIGHT / 2.0f,
+						     n >= 9 ? argn(&a[8]) : 0.0f);
+			else if (!strcmp(op, "fill") && n >= 1) {
+				rc = op_fill(i, a, n);
+			} else if (!strcmp(op, "text") && n >= 6 && a[5].type == 's')
 				rc = dz_text_draw(i, col(a, 0), a[3].i, a[4].i, a[5].s,
 						  n >= 7 ? a[6].i : 1, n >= 8 ? a[7].i : 16);
 			else if (!strcmp(op, "ttf") && n >= 7 && a[6].type == 's')

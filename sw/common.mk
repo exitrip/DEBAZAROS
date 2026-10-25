@@ -45,7 +45,10 @@ CFLAGS  += -I$(SWDIR)include -I$(SWDIR)lib
 LDLIBS  ?=
 
 # Board access. The board has an empty password for user ebaz (bench setup).
-TARGET  ?= ebaz@[fe80::20a:35ff:fe00:1e53%enp0s31f6]
+# IPv6 link-local of the bench board: it follows the MAC (EUI-64), which is set
+# per SD card in /boot/uEnv.txt (mac=02:de:ad:be:a4:01, 2026-10-25). Another
+# board: make install TARGET=ebaz@[fe80::...%enp0s31f6] or TARGET=ebaz@<ipv4>.
+TARGET  ?= ebaz@[fe80::de:adff:febe:a401%enp0s31f6]
 DEST    ?= /home/ebaz/bin
 SSHPASS ?= sshpass -p ''
 SCP     ?= $(SSHPASS) scp -o StrictHostKeyChecking=no

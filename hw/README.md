@@ -59,16 +59,26 @@ edit it in the GUI, and export it with `-tclargs <new>`.
 
 - IP repos: `ip_repo/if` (Digilent TMDS interface definition, MIT),
   `ip_repo/mixer_1_0`, `IP_axi_dynclk`, `IP_dvi2rgb`, `IP_rgb2dvi`.
-- RTL for BD module references: `DivideBy2N.v`, `div16_8_recip.v`,
-  `dds_axi_inteface.vhd`, `dds_axi_interface_logic.vhd` (now in
-  `Vivado/Vivado.srcs/sources_1/new/`). No other RTL in that folder is used.
-- XDC: `Vivado/Vivado.srcs/constrs_1/imports/new/ebaz4205.xdc`.
+- RTL for BD module references: `hw/rtl/` (`DivideBy2N.v`,
+  `div16_8_recip.v`, `dds_axi_inteface.vhd`, `dds_axi_interface_logic.vhd`).
+- XDC: `hw/xdc/ebaz4205.xdc`.
+
+The build reads nothing from the legacy `Vivado/` project. The files in
+`hw/rtl/` and `hw/xdc/` were copied from it on 2026-10-25 (identical). The
+originals stay in `Vivado/` until that folder is deleted; edit only the
+`hw/` copies.
 
 ## Packaged IP edits
 
 To change RTL inside a packaged IP (for example `IP_dvi2rgb/src/*.vhd`),
 edit the file in the IP folder, NOT a copy in `*.gen/.../ipshared/`.
 Then re-package the IP (new checksums, `coreRevision` + 1) and run
-`build.tcl` again. The BD Tcl names each IP by version only (for example
+`build.tcl` again:
+
+```sh
+vivado -mode batch -source hw/repackage_ip.tcl -tclargs IP_dvi2rgb
+vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in build
+```
+ The BD Tcl names each IP by version only (for example
 `dvi2rgb:2.0`), so a new build uses the new revision. You need an
 `upgrade_ip` only in a project that is already open.

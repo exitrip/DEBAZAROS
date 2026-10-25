@@ -6,8 +6,9 @@
 #   phase    project  create project + generate BD output products, then stop
 #            build    project + synth + impl + .bit/.bit.bin/.xsa + hw_map.h
 #
-# Output goes to build/<variant>/ (git-ignored). The live Vivado/ project is
-# never opened. Vivado 2022.2 only (write_bd_tcl scripts are version-locked).
+# Output goes to build/<variant>/ (git-ignored). All inputs are in hw/ and the
+# root IP repos; nothing is read from the legacy Vivado/ project.
+# Vivado 2022.2 only (write_bd_tcl scripts are version-locked).
 
 set repo    [file normalize [file join [file dirname [info script]] ..]]
 set variant [lindex $argv 0]
@@ -22,7 +23,7 @@ if {$variant eq "" || [lsearch {project build} $phase] < 0} {
 if {![file exists $bdtcl]} { error "missing $bdtcl (run hw/export_bd.tcl)" }
 
 # --- sources shared by all variants ------------------------------------------
-# Custom IP repos (same set as Vivado/Vivado.xpr IPRepoPath).
+# Custom IP repos.
 set ip_repos [list \
     $repo/ip_repo/if \
     $repo/ip_repo/mixer_1_0 \
@@ -30,14 +31,14 @@ set ip_repos [list \
     $repo/IP_dvi2rgb \
     $repo/IP_rgb2dvi]
 # RTL used by BD module references (DivideBy2N, div16_8_recip,
-# dds_axi_interface). Still in the live project tree; move to hw/rtl later.
-set rtl_dir $repo/Vivado/Vivado.srcs/sources_1/new
+# dds_axi_interface).
+set rtl_dir $repo/hw/rtl
 set rtl [list \
     $rtl_dir/DivideBy2N.v \
     $rtl_dir/div16_8_recip.v \
     $rtl_dir/dds_axi_interface_logic.vhd \
     $rtl_dir/dds_axi_inteface.vhd]
-set xdc [list $repo/Vivado/Vivado.srcs/constrs_1/imports/new/ebaz4205.xdc]
+set xdc [list $repo/hw/xdc/ebaz4205.xdc]
 
 # --- project -------------------------------------------------------------------
 create_project -force $variant $out -part $part

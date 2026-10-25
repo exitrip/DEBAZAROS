@@ -24,7 +24,9 @@ deleted every run; normal GUI-openable .xpr) and writes .bit/.bit.bin/.xsa +
 `hw/export_bd.tcl <variant>` (or `write_bd_tcl -force -include_layout`) → commit
 the Tcl diff, else the next build erases it. Only 4 RTL files feed the BD
 (DivideBy2N, div16_8_recip, dds_axi_inteface + _logic); all other RTL in
-`Vivado.srcs/sources_1/new/` is unused legacy. Digilent TMDS interface def is
+`Vivado.srcs/sources_1/new/` is unused legacy. Those 4 RTL files and the XDC
+are now copied to `hw/rtl/` and `hw/xdc/` (Oct 25 2026) and build.tcl reads only
+those: the Tcl flow no longer reads anything from `Vivado/`. Digilent TMDS interface def is
 vendored in `ip_repo/if/` (was silently resolved from an external
 `~/Documents/github/vivado-library` clone). Rebuild vs live netlist: identical
 except the K17/E19 GPIO lines (ports `AUDIO_L/R`) moved 0x4120_0000 bits
@@ -101,8 +103,10 @@ vid_out video side, rgb2dvi fabric) must place in ¼ of the die → congestion, 
 feedback ceiling, and why global-buffer experiments failed: OSERDES in rgb2dvi needs
 CLK/CLKDIV on a *skew-matched pair* (BUFIO+BUFR same region, or BUFG+BUFG); mixing
 BUFG pixel + BUFIO serial has undefined skew → garbage TMDS that mimics CDC failure.
-The repo-local `IP_axi_dynclk/` copy has the BUFR commented out and an `ADD_BUFMR`
-generic — remnants of these experiments; the *packaged* IP the BD uses is unmodified.
+The repo-local `IP_axi_dynclk/` IS the IP the BD uses (its `src/axi_dynclk.vhd` is
+byte-identical to the live `ipshared/2a7c` copy, verified Oct 25 2026): BUFIO 5× +
+BUFR ÷5, plus a `kAddBUFMR` generic (default false) left from these experiments.
+(`Vivado/IP_axi_dynclk/` is only an IP-packager project, not used by any build.)
 Proper global fix = MMCM emits both 1× and 5× (two CLKOUTs, inherently phase-aligned)
 each through BUFG; requires extending the DRP ROM in `mmcme2_drp.v` (currently programs
 CLKOUT0/FB/DIV only) + matching updates in hdmi2.elf `dynclk.c`. CLKOUT1 divider is
@@ -238,7 +242,8 @@ still hang off the OUTPUT dynclk LOCKED; `vid_io_in_reset` tied 0; pLocked =
 MMCM lock only. Latched S2MM SOF/EOL errors are non-fatal (c_flush_on_fsync=1);
 the ELMO presenter source latches them every frame (not exactly 1280×720).
 Edit packaged-IP RTL in `IP_dvi2rgb/` (NOT IP_rgb2dvi, NOT ipshared copies),
-then repackage + upgrade_ip (`tools/vivado/dvi2rgb_rebuild.tcl`).
+then `hw/repackage_ip.tcl IP_dvi2rgb` + `hw/build.tcl` (the old
+`tools/vivado/dvi2rgb_rebuild.tcl` needed the legacy project; removed).
 
 **VDMA driver fork fix (Aug 2026):** the hacked XAxiVdma_ReadReg/WriteReg in
 jerkspace hdmi2 used to DISCARD the channel base address, collapsing every
@@ -301,7 +306,7 @@ dout5→g_bg, dout6→g_rb, dout7→g_gb, dout8→g_bb.
 Multiply path is unregistered single-pixel-clock — a likely timing
 limiter at higher pixel clocks.
 
-**dds_axi_interface** (`Vivado/Vivado.srcs/sources_1/new/dds_axi_inteface.vhd` — note
+**dds_axi_interface** (`hw/rtl/dds_axi_inteface.vhd` — note
 filename typo): single 32-bit reg at +0. Bit31 = TVALID enable, bits[30:0] = phase
 increment to dds_compiler (100 MHz, 32-bit phase acc → f = PINC × 100e6/2³² ≈
 0.0233 Hz/LSB; PINC 0xa11 ≈ 60 Hz). Reg +0x4 (slv_reg_4 bit0; ADDR_LSB=2, index 1)
@@ -649,7 +654,7 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
 
 ## Build facts
 - Vivado 2022.2, part XC7Z010 (EBAZ4205), top `ebaz4205_wrapper`, pblock constraint on SLR0
-- Constraints: `Vivado/Vivado.srcs/constrs_1/imports/new/ebaz4205.xdc` (TMDS pins for two
+- Constraints: `hw/xdc/ebaz4205.xdc` (TMDS pins for two
   DVI ports on adapter PCB, HPD/CEC, ethernet GMII, LED W13, 25 MHz clk U18)
 - PetaLinux: machine zynq-generic; build with
   `petalinux-config --get-hw-description=<Vivado dir>` then `petalinux-build`;

@@ -1,3 +1,6 @@
+.vscode/
+.vscode-ctags
+
 # Prerequisites
 *.d
 
@@ -45,3 +48,10 @@ build-*/
 
 # Tcl-flow Vivado builds (hw/build.tcl)
 /build/
+
+# Vivado batch/GUI run files in the repo root (vivado.log, vivado_1234.backup.jou, ...)
+/vivado*.log
+/vivado*.jou
+/vivado_pid*.str
+/vivado_pid*.zip
+/.Xil/
