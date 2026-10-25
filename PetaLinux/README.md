@@ -42,6 +42,36 @@ petalinux-build
 
 No new PetaLinux project is necessary for a new XSA.
 
+## Backup and local-only build (tested 2026-10-25)
+
+Upstream download addresses disappear over the years (LuaJIT, 2026-10-25),
+and this project also uses AMD's `petalinux.xilinx.com` pre-mirror and
+sstate feed. A backup of the caches makes the build independent of them.
+
+1. Backup (after a green build): copy `build/downloads/` without its
+   `git2/` bare clones (PetaLinux keeps a `git2_*.tar.gz` mirror tarball
+   for every git source) and `build/sstate-cache/`. Script on the build
+   machine: `~/plnx-cache-backup.sh` -> `~/petalinux-2022.2-cache/`
+   (24 GB). Keep a copy on another disk.
+2. Local-only build: in `project-spec/configs/config` set
+
+   ```text
+   CONFIG_PRE_MIRROR_URL="file:///<backup>/downloads"
+   # CONFIG_YOCTO_NETWORK_SSTATE_FEEDS is not set
+   CONFIG_YOCTO_LOCAL_SSTATE_FEEDS_URL="/<backup>/sstate-cache"
+   CONFIG_YOCTO_BB_NO_NETWORK=y
+   ```
+
+   These paths are per machine, so the tracked config keeps the network
+   defaults; use the settings in a local copy, or set them only on the
+   build machine.
+
+Test result: a copy of the project with no `build/` built with these
+settings in 10 minutes; `system.bit`, `system.dtb` and the rootfs package
+list were identical to the networked build. The test used the sstate
+cache for most tasks, so it proves the backup for THIS configuration; a
+new package still needs one networked build (then back up again).
+
 ## Configuration choices (2026-10-25)
 
 - `CONFIG_SUBSYSTEM_FPGA_MANAGER` OFF: BOOT.BIN keeps the default bitstream,
