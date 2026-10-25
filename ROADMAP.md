@@ -593,6 +593,28 @@ FAT partition (writable). Software updates then need a remount
   is missing (MAC from the SD card CID, locally administered), then
   reboots once.
 
+### Build tools: stay on PetaLinux 2022.2 (decision 2026-10-25)
+
+- No upgrade: the units are offline (no security updates needed), the
+  Zynq-7000 support in kernel 5.15 / U-Boot 2022.01 is complete for us,
+  and Vivado 2022.2 + its XSA + write_bd_tcl + PetaLinux 2022.2 are locked
+  together; an upgrade means weeks of re-validation. PetaLinux ends after
+  2024.2 anyway.
+- If ever: go to plain Yocto + meta-xilinx WITHOUT a Vivado upgrade. Since
+  the device tree has no PL nodes, only the FSBL (from ps7_init) and the
+  bitstream need the XSA; make both with Vitis/Vivado 2022.2 (xsct +
+  bootgen) and let Yocto build only U-Boot, kernel, a hand-written PS dts
+  and the rootfs.
+- The real risk is "bit rot" of the build: upstream download addresses die
+  (seen 2026-10-25: luajit.org tarball gone, LuaJIT tags deleted, and the
+  2022.2 LuaJIT recipe was broken by the override conversion). The project
+  also uses AMD's petalinux.xilinx.com pre-mirror and sstate feed.
+  Measures: (1) backup of build/downloads + sstate-cache, with git sources
+  also as mirror tarballs; (2) a tested "local only" build (no network);
+  (3) a container (Ubuntu 22.04 + PetaLinux 2022.2, built from the AMD
+  installer, which cannot go to a public registry) so any computer can
+  build.
+
 ### Status (2026-10-25)
 
 PetaLinux builds pass with the Tcl XSA (FCLK3 = 200 MHz in the FSBL), the
