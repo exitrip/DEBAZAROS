@@ -5,3 +5,4 @@
 
 CONFIG_exfat-utils
 CONFIG_htop
+CONFIG_luajit

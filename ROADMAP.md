@@ -520,6 +520,26 @@ works; per-unit identity lives in small files, not in the image.
   - OpenGL: no (software Mesa only: a few fps at 720p). Effects belong in
     the PL, generative drawing in the NEON painter.
   - Media preparation (encode, resize, GOP) on the laptop, not the board.
+- Languages (2026-10-25): Python 3.9 in the image (scripts, tools, hub
+  logic); LuaJIT 2.1 in the image (see "Local scripts"); no Perl, Ruby,
+  Node.js (none was installed anyway). Rust: built outside PetaLinux with
+  rustup (static `armv7-unknown-linux-musleabihf` binaries), only to
+  replace C code later; PetaLinux's own Rust 1.54 is too old. PetaLinux
+  2022.2 also ships, if ever needed: Node.js 14, Lua 5.3, Go 1.16, Ruby 3.0,
+  Perl 5.34, Tcl 8.6, PHP 7.4, meta-jupyter.
+
+### Local scripts (scenes without a controller)
+
+- First form: a text file of time-coded OSC messages on the media card,
+  for example `0.000 /disp/1/show 5`, `2.500 /lfo/0/on 1`, and a runner.
+  The runner can be debazd itself (`/scene/play <file>`: lines applied
+  from the vsync thread at their time, frame-exact, looped or once) or a
+  shell script (`dzctl` + `sleep`, or UDP from bash) for quick tests.
+  The same file format can come from the hub (record a performance,
+  play it back on a unit) and later carry show-clock times (FLEET.md).
+- Second form, when a scene needs logic (random choices, reactions to
+  buttons or input lock): LuaJIT embedded in debazd, with the OSC
+  addresses as Lua functions.
 
 ### Our software in the image
 

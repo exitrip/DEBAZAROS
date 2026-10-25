@@ -3902,3 +3902,4 @@ CONFIG_ADD_EXTRA_USERS="root:root;petalinux::passwd-expire;ebaz:;"
 CONFIG_CREATE_NEW_GROUPS="aie;"
 CONFIG_ADD_USERS_TO_GROUPS="petalinux:audio,video,aie;ebaz:audio,video,aie,input;\""
 CONFIG_ADD_USERS_TO_SUDOERS="petalinux ebaz"
+CONFIG_luajit=y
