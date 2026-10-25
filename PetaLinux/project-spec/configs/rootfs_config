@@ -2247,7 +2247,7 @@ CONFIG_fbset-modes=y
 #
 # gdb 
 #
-# CONFIG_gdb is not set
+CONFIG_gdb=y
 # CONFIG_gdb-dbg is not set
 # CONFIG_gdb-dev is not set
 CONFIG_gdbserver=y
@@ -3892,31 +3892,10 @@ CONFIG_Init-manager-systemd=y
 # CONFIG_Init-manager-sysvinit is not set
 
 #
-# apps 
-#
-# CONFIG_chown-ebaz-uio-sdr-app is not set
-# CONFIG_colorbars is not set
-# CONFIG_myjtdx is not set
-
-#
-# modules 
-#
-# CONFIG_zgpio is not set
-
-#
 # user packages 
 #
-# CONFIG_fftw is not set
-# CONFIG_libgfortran is not set
-# CONFIG_libvncserver is not set
-# CONFIG_evtest is not set
-# CONFIG_fftwg is not set
-# CONFIG_gpio-demo is not set
-# CONFIG_peekpoke is not set
-# CONFIG_python3-matplotlib is not set
-# CONFIG_python3-pillow is not set
-# CONFIG_python3-pip is not set
-# CONFIG_python3-pyqt5 is not set
+CONFIG_exfat-utils=y
+CONFIG_htop=y
 
 #
 # PetaLinux RootFS Settings
@@ -3925,5 +3904,3 @@ CONFIG_ADD_EXTRA_USERS="root:root;petalinux::passwd-expire;ebaz:;"
 CONFIG_CREATE_NEW_GROUPS="aie;"
 CONFIG_ADD_USERS_TO_GROUPS="petalinux:audio,video,aie;ebaz:audio,video,aie,input;\""
 CONFIG_ADD_USERS_TO_SUDOERS="petalinux ebaz"
-CONFIG_exfat-utils=y
-CONFIG_htop=y
