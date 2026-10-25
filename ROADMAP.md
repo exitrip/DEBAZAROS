@@ -506,6 +506,20 @@ works; per-unit identity lives in small files, not in the image.
   `e2fsprogs`, `rsync`, `curl`, `iproute2`, `ethtool`, `htop`, `python3`
   (small: for tools/demos), `gdbserver`. Keep dropbear + sftp.
 - Fonts: our default `LiberationSans-Regular.ttf` (dz_text) + OFL notice.
+- Media libraries (no GPU and no hardware video codec on the Zynq-7010:
+  every decode runs on the A9 cores with NEON):
+  - ffmpeg / libav*: the base. NEON decoders (H.264, MPEG-4, MJPEG),
+    network input (UDP/RTP/SRT/HTTP); the future dzplay links libav.
+  - stb_image (single header, same project as stb_truetype): PNG/JPEG
+    decode inside debazd for `/img` and sprites, instead of one ffmpeg
+    process per image. TODO.
+  - libjpeg-turbo: only if MJPEG becomes the scrub/reverse format.
+  - GStreamer: not now. Same libav decode on this chip, more RAM/CPU, needs
+    a custom appsink for our frame slots. Its network clock
+    (GstNetClientClock) is a good model for the FLEET.md show clock.
+  - OpenGL: no (software Mesa only: a few fps at 720p). Effects belong in
+    the PL, generative drawing in the NEON painter.
+  - Media preparation (encode, resize, GOP) on the laptop, not the board.
 
 ### Our software in the image
 
@@ -545,11 +559,12 @@ FAT partition (writable). Software updates then need a remount
 - Media partition: **exFAT** (macOS, Windows and Linux read and write it;
   files may be larger than 4 GB). Kernel exFAT + exfat-utils are in the
   image since build 3. Change the FAT32 entries above accordingly.
-- **Keep a package manager.** Debian/Arch repositories cannot be used on a
-  Yocto rootfs (other glibc and library versions). Options: the Yocto feed
-  of our own build as rpm (PetaLinux default) or ipk/opkg (lighter; full
-  package rebuild), or later a Debian armhf rootfs with the PetaLinux boot
-  files and kernel (gives apt).
+- **No package manager** (changed the same day): the only use would be
+  externally built tools, and Debian/Arch repositories cannot be used on a
+  Yocto rootfs (other glibc and library versions; grabbing foreign ARM
+  binaries is bad practice). Tools go into the image (recipe, or built
+  with our toolchain), or into `/data/opt` once the root is read-only.
+  `imagefeature-package-management` removed (about 9 MB rpm database).
 - **One image for all variants**; the variant is a setting on `/data`.
 - `uEnv.txt` (MAC) is per-card setup: `debaz-firstboot` writes it when it
   is missing (MAC from the SD card CID, locally administered), then
