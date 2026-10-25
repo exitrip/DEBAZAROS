@@ -1140,27 +1140,27 @@ CONFIG_run-postinsts=y
 #
 # boost 
 #
-CONFIG_boost=y
-CONFIG_boost-random=y
-CONFIG_boost-regex=y
-CONFIG_boost-atomic=y
-CONFIG_boost-thread=y
-CONFIG_boost-serialization=y
-CONFIG_boost-filesystem=y
-CONFIG_boost-test=y
-CONFIG_boost-system=y
-CONFIG_boost-graph=y
-CONFIG_boost-container=y
-CONFIG_boost-date-time=y
-CONFIG_boost-math=y
-CONFIG_boost-wave=y
-CONFIG_boost-chrono=y
-CONFIG_boost-timer=y
-CONFIG_boost-dev=y
-CONFIG_boost-program-options=y
-CONFIG_boost-iostreams=y
-CONFIG_boost-dbg=y
-CONFIG_boost-log=y
+# CONFIG_boost is not set
+# CONFIG_boost-random is not set
+# CONFIG_boost-regex is not set
+# CONFIG_boost-atomic is not set
+# CONFIG_boost-thread is not set
+# CONFIG_boost-serialization is not set
+# CONFIG_boost-filesystem is not set
+# CONFIG_boost-test is not set
+# CONFIG_boost-system is not set
+# CONFIG_boost-graph is not set
+# CONFIG_boost-container is not set
+# CONFIG_boost-date-time is not set
+# CONFIG_boost-math is not set
+# CONFIG_boost-wave is not set
+# CONFIG_boost-chrono is not set
+# CONFIG_boost-timer is not set
+# CONFIG_boost-dev is not set
+# CONFIG_boost-program-options is not set
+# CONFIG_boost-iostreams is not set
+# CONFIG_boost-dbg is not set
+# CONFIG_boost-log is not set
 
 #
 # cairo 
@@ -1820,8 +1820,8 @@ CONFIG_ffmpeg=y
 # alsa-lib 
 #
 CONFIG_alsa-lib=y
-CONFIG_alsa-lib-dbg=y
-CONFIG_alsa-lib-dev=y
+# CONFIG_alsa-lib-dbg is not set
+# CONFIG_alsa-lib-dev is not set
 CONFIG_alsa-server=y
 CONFIG_libasound=y
 CONFIG_alsa-conf-base=y
@@ -2781,8 +2781,8 @@ CONFIG_python3=y
 #
 # qtmultimedia 
 #
-CONFIG_qtmultimedia=y
-CONFIG_qtmultimedia-plugins=y
+# CONFIG_qtmultimedia is not set
+# CONFIG_qtmultimedia-plugins is not set
 # CONFIG_qtmultimedia-mkspecs is not set
 # CONFIG_qtmultimedia-qmlplugins is not set
 # CONFIG_qtmultimedia-dev is not set
@@ -2818,7 +2818,7 @@ CONFIG_qtmultimedia-plugins=y
 #
 # qtserialport 
 #
-CONFIG_qtserialport=y
+# CONFIG_qtserialport is not set
 # CONFIG_qtserialport-mkspecs is not set
 # CONFIG_qtserialport-dev is not set
 # CONFIG_qtserialport-dbg is not set
@@ -2896,7 +2896,7 @@ CONFIG_qtserialport=y
 #
 # qtwebsockets 
 #
-CONFIG_qtwebsockets=y
+# CONFIG_qtwebsockets is not set
 # CONFIG_qtwebsockets-dev is not set
 # CONFIG_qtwebsockets-qmlplugins is not set
 # CONFIG_qtwebsockets-mkspecs is not set
@@ -3252,16 +3252,16 @@ CONFIG_xauth=y
 # alsa-plugins 
 #
 CONFIG_alsa-plugins=y
-CONFIG_alsa-plugins-dev=y
-CONFIG_alsa-plugins-dbg=y
+# CONFIG_alsa-plugins-dev is not set
+# CONFIG_alsa-plugins-dbg is not set
 CONFIG_alsa-plugins-pulseaudio-conf=y
 
 #
 # gstreamer1.0 
 #
-CONFIG_gstreamer1.0=y
-CONFIG_gstreamer1.0-dev=y
-CONFIG_gstreamer1.0-dbg=y
+# CONFIG_gstreamer1.0 is not set
+# CONFIG_gstreamer1.0-dev is not set
+# CONFIG_gstreamer1.0-dbg is not set
 
 #
 # net 
@@ -3833,7 +3833,7 @@ CONFIG_u-boot-tools=y
 # CONFIG_packagegroup-petalinux-qt is not set
 # CONFIG_packagegroup-petalinux-qt-dbg is not set
 # CONFIG_packagegroup-petalinux-qt-dev is not set
-CONFIG_imageclass-populate-sdk-qt5=y
+# CONFIG_imageclass-populate-sdk-qt5 is not set
 
 #
 # packagegroup-petalinux-qt-extended 
