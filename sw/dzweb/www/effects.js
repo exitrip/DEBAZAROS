@@ -61,6 +61,79 @@ function fieldControl(f, prefix = "") {
   return h("div.field", {}, label, rng, num);
 }
 
+const hex24 = (hex) => parseInt(hex.slice(1), 16);
+let refreshTimer;
+const refreshSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 300); };
+
+// Colour matrix (hue, map) and colour key: debazd /fx/... (sw/debazd/fx.c).
+// Both write the mixer; "Boot setup" puts back the debazarosit.sh values.
+function fxCard() {
+  const deg = h("input", { type: "range", min: -180, max: 180, step: 1, value: 0 });
+  const gain = h("input", { type: "range", min: 0, max: 1, step: 0.01, value: 1 });
+  const degOut = h("span", {}, "0°");
+  const sendHue = () => {
+    degOut.textContent = `${deg.value}°`;
+    net.throttled("/fx/hue", () => net.message("/fx/hue", net.float(Number(deg.value)),
+      net.float(Number(gain.value))));
+    refreshSoon();
+  };
+  deg.oninput = sendHue;
+  gain.oninput = sendHue;
+  const pick = (v) => h("input", { type: "color", value: v });
+  const mapR = pick("#ff0000"), mapG = pick("#00ff00"), mapB = pick("#0000ff");
+  const wrap = h("input", { type: "checkbox", title: "allow row sums > 1 (bright colours wrap)",
+    onchange: () => net.msg("/fx/wrap", wrap.checked ? 1 : 0) });
+  const boot = () => {
+    const m = [];
+    for (let c = 0; c < 9; c++) {
+      const diag = c === 0 || c === 5 || c === 7;
+      m.push(net.message(`/mixer/${c}/mode`, diag ? 4 : 0x23),
+        net.message(`/mixer/${c}/k`, diag ? 0x8000 : 0xffff));
+      if (!diag) m.push(net.message(`/mixer/${c}/lo`, 0x20), net.message(`/mixer/${c}/hi`, 0xed));
+    }
+    net.send(net.bundle(...m));
+    refreshSoon();
+  };
+  const keyCol = pick("#00ff00");
+  const tol = h("input", { type: "range", min: 0, max: 128, step: 1, value: 30 });
+  const tolOut = h("span", {}, "30");
+  const sendKey = () => {
+    tolOut.textContent = tol.value;
+    net.throttled("/fx/key/color", () => net.message("/fx/key/color", hex24(keyCol.value),
+      Number(tol.value) | 0));
+    refreshSoon();
+  };
+  const keyOn = h("input", { type: "checkbox",
+    onchange: () => (keyOn.checked ? sendKey() : (net.msg("/fx/key/off"), refreshSoon())) });
+  const keySrc = h("input", { type: "checkbox",
+    onchange: () => net.msg("/fx/key/source", keySrc.checked ? 1 : 0) });
+  keyCol.oninput = () => { keyOn.checked = true; sendKey(); };
+  tol.oninput = () => { keyOn.checked = true; sendKey(); };
+  const keyField = (p) => {
+    const f = fields.find((x) => x[0] === p);
+    return f ? fieldControl(f, "/key/") : null;
+  };
+  return card("Colour FX (HDMI_0)",
+    row("Hue", deg, degOut),
+    row("Gain", gain),
+    row("Map R G B →", mapR, mapG, mapB,
+      h("button", { onclick: () => { net.msg("/fx/map", hex24(mapR.value), hex24(mapG.value),
+        hex24(mapB.value)); refreshSoon(); } }, "Apply")),
+    row("", h("button", { onclick: () => { deg.value = 0; degOut.textContent = "0°";
+      net.msg("/fx/identity"); refreshSoon(); } }, "Identity"),
+      h("button.ghost", { onclick: boot }, "Boot setup"), h("label", {}, wrap, " wrap")),
+    h("p.hint", {}, "Hue and map set all 9 mixer channels to constant gains. " +
+      "Gains are unsigned: between 0°, 120° and 240° the colours lose saturation."),
+    row("Key colour", keyCol, tol, tolOut),
+    row("", h("label", {}, keyOn, " key on"),
+      h("label", { title: "test HDMI_0's video instead of HDMI_1" }, keySrc, " test HDMI_0")),
+    ...["/key/invert", "/key/stream"].map(keyField),
+    h("p.hint", {}, "Key: where the tested pixel is within colour ± tolerance, " +
+      "HDMI_1 replaces HDMI_0 (box = lo/hi of mixer channels 0, 6, 3 with their " +
+      "KEY bit). Default test = HDMI_1's pixel; with invert = green screen on HDMI_1. " +
+      "Needs the key bitstream (Oct 2026)."));
+}
+
 function mixerTable() {
   const tr = (c) => {
     const p = `/mixer/${c}`;
@@ -72,16 +145,20 @@ function mixerTable() {
       controls.set(`${p}/${k}`, { set: (raw) => (n.value = raw) });
       return h("td", {}, n);
     };
-    const stream = h("input", { type: "checkbox", title: "stream B (delayed copy)",
-      onchange: () => net.msg(`${p}/stream`, stream.checked ? 1 : 0) });
+    const bit = (k, title) => {
+      const cb = h("input", { type: "checkbox", title,
+        onchange: () => net.msg(`${p}/${k}`, cb.checked ? 1 : 0) });
+      controls.set(`${p}/${k}`, { set: (raw) => (cb.checked = !!raw) });
+      return h("td", {}, cb);
+    };
     controls.set(`${p}/mode`, { set: (raw) => (mode.value = raw) });
-    controls.set(`${p}/stream`, { set: (raw) => (stream.checked = !!raw) });
     return h("tr", {}, h("td", {}, String(c)), h("td", {}, mode), num("k", 65535),
-      num("lo", 255), num("hi", 255), h("td", {}, stream),
+      num("lo", 255), num("hi", 255), bit("stream", "stream B (delayed copy)"),
+      bit("key", "lo..hi band joins the colour key"), bit("src", "compare HDMI_0's video"),
       ...[0, 1, 2, 3, 4].map((g) => num(`gain/${g}`, 0x7fffffff)));
   };
   return h("div", { style: "overflow-x:auto" }, h("table.mixer", {},
-    h("thead", {}, h("tr", {}, ...["ch", "mode", "K", "lo", "hi", "B",
+    h("thead", {}, h("tr", {}, ...["ch", "mode", "K", "lo", "hi", "B", "key", "src",
       "g0 R", "g1 B", "g2 G", "g3 sin", "g4 saw"].map((t) => h("th", {}, t)))),
     h("tbody", {}, [...Array(9).keys()].map(tr))));
 }
@@ -98,6 +175,7 @@ async function load() {
   grid.append(card(["Inputs (read only)",
     h("button.ghost", { onclick: refresh, style: "margin-left:auto" }, "Refresh")],
     ...status.map((f) => fieldControl(f, "/"))));
+  grid.append(fxCard());
   root.replaceChildren(grid, card("Mixer (HDMI_0 colour matrix, 9 channels)", mixerTable(),
     h("p.hint", {}, "Each channel makes one gain of the 3×3 colour matrix. Inputs: " +
       "din0 R, din1 B, din2 G of HDMI_1 (stream A, or the delayed stream B), din3 sine, din4 saw.")));

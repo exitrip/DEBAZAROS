@@ -15,6 +15,10 @@ vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in project
 
 # Full build: synth + impl + bitstream (about 15-25 min).
 vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in build
+
+# Same, into build/<dir>/ (use it while the GUI has build/<variant>/ open:
+# every run deletes its output folder).
+vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in build <dir>
 ```
 
 Output in `build/<variant>/`:
@@ -82,3 +86,21 @@ vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in build
  The BD Tcl names each IP by version only (for example
 `dvi2rgb:2.0`), so a new build uses the new revision. You need an
 `upgrade_ip` only in a project that is already open.
+
+## Simulation
+
+`sh hw/sim/run_mixer_tb.sh` (Verilator 5): the mixer IP against the mixer of
+commit 4e2d1820 (equivalence on random registers and pixels), then the colour
+key. Expect "ALL PASS". Run it after every mixer RTL edit.
+
+`sh hw/sim/run_hdmi_tx_tb.sh`: `hw/rtl/hdmi_tx` (rgb2dvi replacement with
+HDMI audio) in DVI, HDMI, HDMI + audio and test-tone modes, checked by a
+receiver-side TMDS decoder. Expect 4 x "ALL PASS".
+
+## IP with changed ports
+
+After an RTL edit that adds or changes ports of a packaged IP:
+`vivado -mode batch -source hw/repackage_ip.tcl -tclargs <ipdir> ports <top>`
+(e.g. `ip_repo/mixer_1_0 ports mixer_v1_0`), then connect the new pins in
+`hw/bd/<variant>.tcl`.
+

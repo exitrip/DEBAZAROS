@@ -1,12 +1,14 @@
 # build.tcl - recreate a DEBAZAROS Vivado project from Tcl and build it.
 #
-#   vivado -mode batch -source hw/build.tcl -tclargs <variant> <phase>
+#   vivado -mode batch -source hw/build.tcl -tclargs <variant> <phase> [<dir>]
 #
 #   variant  name of hw/bd/<variant>.tcl (e.g. ebaz4205_2out1in)
 #   phase    project  create project + generate BD output products, then stop
 #            build    project + synth + impl + .bit/.bit.bin/.xsa + hw_map.h
+#   dir      output folder name under build/ (default <variant>). Use another
+#            name while the GUI has build/<variant>/ open: the run deletes it.
 #
-# Output goes to build/<variant>/ (git-ignored). All inputs are in hw/ and the
+# Output goes to build/<dir>/ (git-ignored). All inputs are in hw/ and the
 # root IP repos; nothing is read from the legacy Vivado/ project.
 # Vivado 2022.2 only (write_bd_tcl scripts are version-locked).
 
@@ -14,7 +16,7 @@ set repo    [file normalize [file join [file dirname [info script]] ..]]
 set variant [lindex $argv 0]
 set phase   [lindex $argv 1]
 set part    xc7z010clg400-1
-set out     $repo/build/$variant
+set out     $repo/build/[expr {[llength $argv] > 2 ? [lindex $argv 2] : $variant}]
 set bdtcl   $repo/hw/bd/$variant.tcl
 
 if {$variant eq "" || [lsearch {project build} $phase] < 0} {

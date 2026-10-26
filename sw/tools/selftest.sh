@@ -46,6 +46,24 @@ check wildcard    "/value \"/mixer/8/mode\""       q "/mixer/[0-8]/mode"
 q "/mixer/*/mode" 35 >/dev/null
 check wild-set    "/value \"/mixer/4/mode\" 35"    q /mixer/4/mode
 check no-addr     "no such address"                q /nothing/here
+# --- /fx colour matrix and key (fx.c) ---
+check fx-hue120   "/fx/matrix 0 0 0.999985 0.999985 0 0 0 0.999985 0" q /fx/hue 120
+check fx-hue60    "/fx/matrix 0.5 0 0.5 0.5 0.5 0 0 0.5 0.5" q /fx/hue 60
+check fx-rownorm  "/fx/matrix 0.334641 0.334641 0.334641" q /fx/matrix 1 1 1 0 1 0 0 0 1
+check fx-chanmap  "/value \"/mixer/5/k\" 65535"   q /mixer/5/k
+check fx-chanmap2 "/value \"/mixer/2/k\" 21931"   q /mixer/2/k
+check fx-ident    "/fx/matrix 0.999985 0 0 0 0.999985 0 0 0 0.999985" q /fx/identity
+q /fx/key/color 0x00ff00 30 >/dev/null
+# box (0,225,0)..(30,255,30): R = chan 0, G = chan 6, B = chan 3
+check key-r-hi    "/value \"/mixer/0/hi\" 30 "      q /mixer/0/hi
+check key-g-lo    "/value \"/mixer/6/lo\" 225 "     q /mixer/6/lo
+check key-b-key   "/value \"/mixer/3/key\" 1"       q /mixer/3/key
+check key-other   "/value \"/mixer/1/key\" 0"       q /mixer/1/key
+check key-mode    "/value \"/mixer/0/mode\" 4"      q /mixer/0/mode
+q /key/invert 1 >/dev/null
+check key-invert  "/value \"/mixer/0/mode\" 4"      q /mixer/0/mode
+q /fx/key/off >/dev/null
+check key-off     "/value \"/mixer/6/key\" 0"       q /mixer/6/key
 check disp-show   "/disp/0 4 0 0"                  q /disp/0/show 4
 check disp-blank  "/disp/0 4 1 0"                  q /disp/0/blank 1
 check disp-toggle "/disp/0 4 0 0"                  q /disp/0/blank

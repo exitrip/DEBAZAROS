@@ -36,6 +36,11 @@
     input wire [IN_WIDTH-1 : 0] din5,
     input wire [IN_WIDTH-1 : 0] din6,
     input wire [IN_WIDTH-1 : 0] din7,
+    // colour key: HDMI_0 matrix result, HDMI_0 video before the effects,
+    // keyed result (registered: 1 pixel clock later than bg_in)
+    input wire [23 : 0] bg_in,
+    input wire [23 : 0] vid_in,
+    output wire [23 : 0] pix_out,
 
 		// User ports ends
 		// Do not modify the ports beyond this line
@@ -201,6 +206,19 @@
     wire [IN_WIDTH-1:0] pixB [0:2];
     assign pixA[0] = din0;   assign pixA[1] = din1;   assign pixA[2] = din2;
     assign pixB[0] = din5;   assign pixB[1] = din6;   assign pixB[2] = din7;
+    // HDMI_0 video lanes in the same index order as din0/1/2 (bus lanes
+    // [23:16], [15:8], [7:0])
+    wire [IN_WIDTH-1:0] pix0 [0:2];
+    assign pix0[0] = vid_in[23:16];  assign pix0[1] = vid_in[15:8];  assign pix0[2] = vid_in[7:0];
+
+    // Colour key. Per channel, CTRL_1 [1] KEY: this channel's band test
+    // (lo <= x <= hi; lo > hi = x outside hi..lo) joins the key mask, which
+    // is the AND of all joined tests. CTRL_1 [2] SRC: compare HDMI_0's video
+    // instead of HDMI_1's (also for modes 3, 0x10-0x13, 0x20-0x23). Global
+    // bits in channel 0 CTRL_0 [15:8]: [8] invert the mask, [9] fill with
+    // stream B. Key on = any channel has KEY. Keyed pixels show HDMI_1's
+    // pixel instead of the matrix result. All new bits 0 = old behaviour.
+    wire [OUT_NUM-1:0] key_join, key_band;
 
     reg [OUT_WIDTH-1 : 0] dout_r [0:OUT_NUM-1];
 
@@ -213,8 +231,14 @@
         wire [IN_WIDTH-1:0] m0 = sel ? pixB[0] : pixA[0];
         wire [IN_WIDTH-1:0] m1 = sel ? pixB[1] : pixA[1];
         wire [IN_WIDTH-1:0] m2 = sel ? pixB[2] : pixA[2];
-        // comparison / passthrough source: chans 0-2 red, 3-5 green, 6-8 blue
-        wire [IN_WIDTH-1:0] cmp = sel ? pixB[i/3] : pixA[i/3];
+        // comparison / passthrough source: chans 0-2 red, 3-5 blue, 6-8 green
+        // (bus lane order); CTRL_1 [2] = HDMI_0's video instead of HDMI_1
+        wire [IN_WIDTH-1:0] cmp = ctrl[i][1][2] ? pix0[i/3] : (sel ? pixB[i/3] : pixA[i/3]);
+        wire [7:0] klo = ctrl[i][1][23:16];
+        wire [7:0] khi = ctrl[i][1][31:24];
+        assign key_join[i] = ctrl[i][1][1];
+        assign key_band[i] = (klo <= khi) ? (cmp >= klo && cmp <= khi)
+                                          : (cmp >= klo || cmp <= khi);
 
         always @(posedge pix_clk)
         begin
@@ -265,6 +289,17 @@
     assign dout6 = dout_r[6];
     assign dout7 = dout_r[7];
     assign dout8 = dout_r[8];
+
+    // Key mux. The output register is always in the path, so the picture
+    // does not move when the key turns on or off, and it breaks the
+    // HDMI_1 -> HDMI_0 -> HDMI_1 feedback loop after the matrix.
+    wire [23:0] fill = ctrl[0][0][9] ? {din5[7:0], din6[7:0], din7[7:0]}
+                                     : {din0[7:0], din1[7:0], din2[7:0]};
+    wire keyed = (|key_join) & ((&(key_band | ~key_join)) ^ ctrl[0][0][8]);
+    reg [23:0] pix_r;
+    always @(posedge pix_clk)
+      pix_r <= keyed ? fill : bg_in;
+    assign pix_out = pix_r;
 
   	// User logic ends
 	endmodule

@@ -18,104 +18,104 @@
 	)
 	(
 		// Users to add ports here
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_0_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_0_1,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_0_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_0_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_0_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_1_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_1_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_1_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_1_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_1_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_2_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_2_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_2_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_2_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_2_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_3_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_3_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_3_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_3_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_3_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_4_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_4_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_4_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_4_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_4_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_5_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_5_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_5_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_5_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_5_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_6_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_6_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_6_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_6_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_6_1,
 		
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_7_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_7_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_7_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_7_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_7_1,
 
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_1,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_2,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_3,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_4,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_5,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_6,
-//		output reg [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_7,
-        output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_8_0,
-		output reg [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_8_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_1,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_2,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_3,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_4,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_5,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_6,
+//		output wire [C_S_AXI_DATA_WIDTH-1 : 0] GAIN_8_7,
+        output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_8_0,
+		output wire [C_S_AXI_DATA_WIDTH-1 : 0] CTRL_8_1,
 
 		// User ports ends
 		// Do not modify the ports beyond this line`
@@ -1463,99 +1463,99 @@
 	end    
 
 	// Add user logic here
-	always @( posedge S_AXI_ACLK )
-    begin    
-      GAIN_0_0 <= local_reg0_0;
-      GAIN_0_1 <= local_reg0_1;
-      GAIN_0_2 <= local_reg0_2;
-      GAIN_0_3 <= local_reg0_3;
-      GAIN_0_4 <= local_reg0_4;
-//      GAIN_0_5 <= local_reg0_5;
-//      GAIN_0_6 <= local_reg0_6;
-//      GAIN_0_7 <= local_reg0_7;
-      CTRL_0_0 <= local_reg0_8;
-      CTRL_0_1 <= local_reg0_9;
-      GAIN_1_0 <= local_reg1_0;
-      GAIN_1_1 <= local_reg1_1;
-      GAIN_1_2 <= local_reg1_2;
-      GAIN_1_3 <= local_reg1_3;
-      GAIN_1_4 <= local_reg1_4;
-//      GAIN_1_5 <= local_reg1_5;
-//      GAIN_1_6 <= local_reg1_6;
-//      GAIN_1_7 <= local_reg1_7;
-      CTRL_1_0 <= local_reg1_8;
-      CTRL_1_1 <= local_reg1_9;
-      GAIN_2_0 <= local_reg2_0;
-      GAIN_2_1 <= local_reg2_1;
-      GAIN_2_2 <= local_reg2_2;
-      GAIN_2_3 <= local_reg2_3;
-      GAIN_2_4 <= local_reg2_4;
-//      GAIN_2_5 <= local_reg2_5;
-//      GAIN_2_6 <= local_reg2_6;
-//      GAIN_2_7 <= local_reg2_7;
-      CTRL_2_0 <= local_reg2_8;
-      CTRL_2_1 <= local_reg2_9;
-      GAIN_3_0 <= local_reg3_0;
-      GAIN_3_1 <= local_reg3_1;
-      GAIN_3_2 <= local_reg3_2;
-      GAIN_3_3 <= local_reg3_3;
-      GAIN_3_4 <= local_reg3_4;
-//      GAIN_3_5 <= local_reg3_5;
-//      GAIN_3_6 <= local_reg3_6;
-//      GAIN_3_7 <= local_reg3_7;
-      CTRL_3_0 <= local_reg3_8;
-      CTRL_3_1 <= local_reg3_9;
-      GAIN_4_0 <= local_reg4_0;
-      GAIN_4_1 <= local_reg4_1;
-      GAIN_4_2 <= local_reg4_2;
-      GAIN_4_3 <= local_reg4_3;
-      GAIN_4_4 <= local_reg4_4;
-//      GAIN_4_5 <= local_reg4_5;
-//      GAIN_4_6 <= local_reg4_6;
-//      GAIN_4_7 <= local_reg4_7;
-      CTRL_4_0 <= local_reg4_8;
-      CTRL_4_1 <= local_reg4_9;
-      GAIN_5_0 <= local_reg5_0;
-      GAIN_5_1 <= local_reg5_1;
-      GAIN_5_2 <= local_reg5_2;
-      GAIN_5_3 <= local_reg5_3;
-      GAIN_5_4 <= local_reg5_4;
-//      GAIN_5_5 <= local_reg5_5;
-//      GAIN_5_6 <= local_reg5_6;
-//      GAIN_5_7 <= local_reg5_7;
-      CTRL_5_0 <= local_reg5_8;
-      CTRL_5_1 <= local_reg5_9;
-      GAIN_6_0 <= local_reg6_0;
-      GAIN_6_1 <= local_reg6_1;
-      GAIN_6_2 <= local_reg6_2;
-      GAIN_6_3 <= local_reg6_3;
-      GAIN_6_4 <= local_reg6_4;
-//      GAIN_6_5 <= local_reg6_5;
-//      GAIN_6_6 <= local_reg6_6;
-//      GAIN_6_7 <= local_reg6_7;
-      CTRL_6_0 <= local_reg6_8;
-      CTRL_6_1 <= local_reg6_9;
-      GAIN_7_0 <= local_reg7_0;
-      GAIN_7_1 <= local_reg7_1;
-      GAIN_7_2 <= local_reg7_2;
-      GAIN_7_3 <= local_reg7_3;
-      GAIN_7_4 <= local_reg7_4;
-//      GAIN_7_5 <= local_reg7_5;
-//      GAIN_7_6 <= local_reg7_6;
-//      GAIN_7_7 <= local_reg7_7;
-      CTRL_7_0 <= local_reg7_8;
-      CTRL_7_1 <= local_reg7_9;
-      GAIN_8_0 <= local_reg8_0;
-      GAIN_8_1 <= local_reg8_1;
-      GAIN_8_2 <= local_reg8_2;
-      GAIN_8_3 <= local_reg8_3;
-      GAIN_8_4 <= local_reg8_4;
-//      GAIN_8_5 <= local_reg8_5;
-//      GAIN_8_6 <= local_reg8_6;
-//      GAIN_8_7 <= local_reg8_7;
-      CTRL_8_0 <= local_reg8_8;
-      CTRL_8_1 <= local_reg8_9;   
-    end
+	// The outputs are the AXI-written registers themselves. Until Oct 2026
+	// a second register stage on the same clock (S_AXI_ACLK) copied them:
+	// ~2k flip-flops for one clock of delay and no other effect.
+	assign GAIN_0_0 = local_reg0_0;
+	assign GAIN_0_1 = local_reg0_1;
+	assign GAIN_0_2 = local_reg0_2;
+	assign GAIN_0_3 = local_reg0_3;
+	assign GAIN_0_4 = local_reg0_4;
+//	assign GAIN_0_5 = local_reg0_5;
+//	assign GAIN_0_6 = local_reg0_6;
+//	assign GAIN_0_7 = local_reg0_7;
+	assign CTRL_0_0 = local_reg0_8;
+	assign CTRL_0_1 = local_reg0_9;
+	assign GAIN_1_0 = local_reg1_0;
+	assign GAIN_1_1 = local_reg1_1;
+	assign GAIN_1_2 = local_reg1_2;
+	assign GAIN_1_3 = local_reg1_3;
+	assign GAIN_1_4 = local_reg1_4;
+//	assign GAIN_1_5 = local_reg1_5;
+//	assign GAIN_1_6 = local_reg1_6;
+//	assign GAIN_1_7 = local_reg1_7;
+	assign CTRL_1_0 = local_reg1_8;
+	assign CTRL_1_1 = local_reg1_9;
+	assign GAIN_2_0 = local_reg2_0;
+	assign GAIN_2_1 = local_reg2_1;
+	assign GAIN_2_2 = local_reg2_2;
+	assign GAIN_2_3 = local_reg2_3;
+	assign GAIN_2_4 = local_reg2_4;
+//	assign GAIN_2_5 = local_reg2_5;
+//	assign GAIN_2_6 = local_reg2_6;
+//	assign GAIN_2_7 = local_reg2_7;
+	assign CTRL_2_0 = local_reg2_8;
+	assign CTRL_2_1 = local_reg2_9;
+	assign GAIN_3_0 = local_reg3_0;
+	assign GAIN_3_1 = local_reg3_1;
+	assign GAIN_3_2 = local_reg3_2;
+	assign GAIN_3_3 = local_reg3_3;
+	assign GAIN_3_4 = local_reg3_4;
+//	assign GAIN_3_5 = local_reg3_5;
+//	assign GAIN_3_6 = local_reg3_6;
+//	assign GAIN_3_7 = local_reg3_7;
+	assign CTRL_3_0 = local_reg3_8;
+	assign CTRL_3_1 = local_reg3_9;
+	assign GAIN_4_0 = local_reg4_0;
+	assign GAIN_4_1 = local_reg4_1;
+	assign GAIN_4_2 = local_reg4_2;
+	assign GAIN_4_3 = local_reg4_3;
+	assign GAIN_4_4 = local_reg4_4;
+//	assign GAIN_4_5 = local_reg4_5;
+//	assign GAIN_4_6 = local_reg4_6;
+//	assign GAIN_4_7 = local_reg4_7;
+	assign CTRL_4_0 = local_reg4_8;
+	assign CTRL_4_1 = local_reg4_9;
+	assign GAIN_5_0 = local_reg5_0;
+	assign GAIN_5_1 = local_reg5_1;
+	assign GAIN_5_2 = local_reg5_2;
+	assign GAIN_5_3 = local_reg5_3;
+	assign GAIN_5_4 = local_reg5_4;
+//	assign GAIN_5_5 = local_reg5_5;
+//	assign GAIN_5_6 = local_reg5_6;
+//	assign GAIN_5_7 = local_reg5_7;
+	assign CTRL_5_0 = local_reg5_8;
+	assign CTRL_5_1 = local_reg5_9;
+	assign GAIN_6_0 = local_reg6_0;
+	assign GAIN_6_1 = local_reg6_1;
+	assign GAIN_6_2 = local_reg6_2;
+	assign GAIN_6_3 = local_reg6_3;
+	assign GAIN_6_4 = local_reg6_4;
+//	assign GAIN_6_5 = local_reg6_5;
+//	assign GAIN_6_6 = local_reg6_6;
+//	assign GAIN_6_7 = local_reg6_7;
+	assign CTRL_6_0 = local_reg6_8;
+	assign CTRL_6_1 = local_reg6_9;
+	assign GAIN_7_0 = local_reg7_0;
+	assign GAIN_7_1 = local_reg7_1;
+	assign GAIN_7_2 = local_reg7_2;
+	assign GAIN_7_3 = local_reg7_3;
+	assign GAIN_7_4 = local_reg7_4;
+//	assign GAIN_7_5 = local_reg7_5;
+//	assign GAIN_7_6 = local_reg7_6;
+//	assign GAIN_7_7 = local_reg7_7;
+	assign CTRL_7_0 = local_reg7_8;
+	assign CTRL_7_1 = local_reg7_9;
+	assign GAIN_8_0 = local_reg8_0;
+	assign GAIN_8_1 = local_reg8_1;
+	assign GAIN_8_2 = local_reg8_2;
+	assign GAIN_8_3 = local_reg8_3;
+	assign GAIN_8_4 = local_reg8_4;
+//	assign GAIN_8_5 = local_reg8_5;
+//	assign GAIN_8_6 = local_reg8_6;
+//	assign GAIN_8_7 = local_reg8_7;
+	assign CTRL_8_0 = local_reg8_8;
+	assign CTRL_8_1 = local_reg8_9;
 	// User logic ends
 
 	endmodule

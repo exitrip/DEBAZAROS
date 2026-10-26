@@ -58,6 +58,7 @@ Full list: `dzctl /list`, or `debazd -l` (prints address, register, bits).
 | `/files` | `img` or `movies` | one `/file name` per file in `/home/ebaz/img` or `/home/ebaz/movies`, then `/file/end count` |
 | `/subscribe` | [port] | send events to me: `/event/io`, `/event/hpd`, `/event/capture` |
 | `/draw/<slot>/...`, `/img/...`, `/movie/...`, `/surface/...` | | drawing and playback, see `lib/dz_draw.h` |
+| `/fx/hue`, `/fx/map`, `/fx/matrix`, `/fx/key/...` | | colour matrix and colour key on HDMI_0, see "Colour FX" |
 
 Field groups: `/hdmi/0/...` (gain, osc sin/phase divider and offset, mixer
 pixel delay), `/hdmi/1/...` (own-video gain, feedback gain from HDMI_0, sine
@@ -242,6 +243,46 @@ dzctl /lfo/reset
 
 `every k` applies a target only on every k-th frame: use it for heavy
 targets (a full-frame fade takes 25–60 ms).
+
+## Colour FX: hue, colour map, colour key
+
+`debazd/fx.c`. The HDMI_0 colour matrix multiplies HDMI_0's video by 9
+gains from the mixer (CLAUDE.md "Colour matrix math"). These commands set
+all 9 channels to constant gains (mode 4), so they replace the boot mixer
+setup ("Boot setup" in the web app puts it back).
+
+```sh
+dzctl /fx/hue 120            # R->G, G->B, B->R; any angle, + optional gain 0..1
+dzctl /fx/map 0x00ff00 0x0000ff 0xff0000   # where input R, G, B go (= hue 120)
+dzctl /fx/matrix 1 0 0  0 0 1  0 1 0       # rows out R G B, columns in R G B
+dzctl /fx/matrix             # read back (-1 = channel not in mode 4)
+dzctl /fx/identity
+dzctl /fx/wrap 1             # allow row sums > 1: bright colours wrap to dark
+dzctl /lfo/5/range -180 180; dzctl /lfo/5/target "/fx/hue \$f5"; dzctl /lfo/5/on 1
+```
+
+The gains are unsigned, so a hue angle between the multiples of 120 degrees
+clips the negative terms: less saturation and brightness (60 degrees: red ->
+half-bright yellow).
+
+Colour key (needs the key bitstream, Oct 26 2026; older bitstreams ignore
+it): where the tested pixel is inside a colour box, HDMI_1's pixel replaces
+HDMI_0's. The box is the lo/hi of mixer channels 0 (R), 6 (G), 3 (B) with
+their `key` bit; those channels keep their mode, but a band-clip mode on them
+uses the same lo/hi.
+
+```sh
+dzctl /fx/key/color 0x00ff00 30      # box = colour +- 30 per channel, key on
+dzctl /fx/key/range 0x000080 0x4040ff  # low and high corner
+dzctl /key/invert 1                  # insert HDMI_1 OUTSIDE the box
+dzctl /fx/key/source 1               # test HDMI_0's video (default: HDMI_1)
+dzctl /key/stream 1                  # fill with the delayed HDMI_1 copy
+dzctl /mixer/2/key 1                 # add another band (here: a 2nd R range)
+dzctl /fx/key/off
+```
+
+Green screen on HDMI_1 over HDMI_0: `/key/invert 1`,
+`/fx/key/color 0x00ff00 40`.
 
 ## Buttons and GPIO actions
 

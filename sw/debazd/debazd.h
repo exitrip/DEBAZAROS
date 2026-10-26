@@ -31,4 +31,7 @@ void lfo_tick(double dt);		/* once per frame (or timer) */
 /* Send a message template ("/addr a b $0 ...") to debazd itself. */
 void dzd_send_template(const char *tpl);
 
+/* ---- fx.c: colour matrix (hue, map) and colour key on the HDMI_0 mixer ---- */
+int  fx_dispatch(const dz_msg *m);	/* 0 = not an /fx address */
+
 #endif /* DEBAZD_H */

@@ -85,12 +85,17 @@ static const dz_field static_fields[] = {
 	{ "/capture/overflow",  IO, CH1, 12, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s FIFO overflow" },
 	{ "/capture/underflow", IO, CH1, 13, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s FIFO underflow" },
 	{ "/capture/fid",       IO, CH1, 14, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s field id" },
+
+	/* colour key (mixer coreRevision 22, 2026-10-26): the global bits are
+	 * in channel 0 CTRL_0 [15:8]; per channel /mixer/<c>/key and /src */
+	{ "/key/invert", MIX, 8 * 4, 8, 1, DZ_BOOL, 0, "colour key: HDMI_1 OUTSIDE the box (mixer chan 0 CTRL_0 [8])" },
+	{ "/key/stream", MIX, 8 * 4, 9, 1, DZ_BOOL, 0, "colour key fill: 0 = live HDMI_1, 1 = delayed stream B (chan 0 CTRL_0 [9])" },
 };
 
 /* mixer 2.0: register index = chan*10 + n, byte offset = index*4 */
 #define MIX_CHANS	9
 #define MIX_GAINS	5
-#define MIX_PER_CHAN	(MIX_GAINS + 5)
+#define MIX_PER_CHAN	(MIX_GAINS + 7)
 #define MIX_REG(c, n)	((((uint32_t)(c) * 10u) + (uint32_t)(n)) * 4u)
 #define N_STATIC	((int)(sizeof(static_fields) / sizeof(static_fields[0])))
 #define N_MIX		(MIX_CHANS * MIX_PER_CHAN)
@@ -138,6 +143,10 @@ void dz_fields_build(void)
 			"0 = stream A (live HDMI_1), 1 = stream B (BRAM-delayed HDMI_1)");
 		mix_add(&k, &p, c, "lo", 9, 16, 8, DZ_RAW, "clip threshold low");
 		mix_add(&k, &p, c, "hi", 9, 24, 8, DZ_RAW, "clip threshold high");
+		mix_add(&k, &p, c, "key", 9, 1, 1, DZ_BOOL,
+			"colour key: this channel's lo..hi band joins the key mask (AND)");
+		mix_add(&k, &p, c, "src", 9, 2, 1, DZ_BOOL,
+			"compare HDMI_0's video instead of HDMI_1 (key, modes 3, 0x1x, 0x2x)");
 	}
 	n_fields = k;
 }

@@ -21,7 +21,7 @@ LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h)
 BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe $(OUT)/dzweb
-SCRIPTS := tools/capstat.sh
+SCRIPTS := tools/capstat.sh tools/plreload.sh tools/keytest.sh
 
 all: $(BINS) hdmi2
 

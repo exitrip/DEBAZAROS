@@ -111,6 +111,9 @@ loses the dev PL (reflash needed, and the ethernet often needs a cable replug
 to renegotiate); do NOT run debazarosit.sh after a JTAG flash — its first line
 would reload the old bitstream from /lib/firmware over the dev design. The
 FCLK3 SLCR poke must be redone after every reboot.
+**fpga_manager reload (new image, 2026-10-26):** works and the ethernet link
+stayed up: `sw/tools/plreload.sh` (stops hdmi2 + debazd, loads, restarts them,
+re-applies the boot mixer setup). Soft-reset capture first.
 - `axi_dynclk_0` (0x43C4_0000) generates **shared** `PXL_CLK_O` (PixelClk) + `PXL_CLK_5X_O`
   (SerialClk) for both rgb2dvi instances; its `LOCKED_O` is the aRst_n for both output stages.
   Both displays therefore always run the same resolution; last `DisplayStart()` wins.
@@ -244,10 +247,22 @@ gateware-only change; 49.9Ω pull-up terminations on all TMDS lines.
 PL_KEY0-5), also on header P1 (pins 1-6, +3V3, GND). PL_KEY[3:0] =
 U19/V20/T19/U20 (J7/DATA3). The other two GPIO lines = J9/DATA1 pins 19/17 =
 FPGA K17/E19. They are GPIO, not audio: the BD/XDC ports are still named
-`AUDIO_L/R` from an old PCB label (which-is-which unverified). Plan: one port
+`AUDIO_L/R` from an old PCB label. From the netlists (Oct 26): PL_KEY4 = K17
+(SW6, MRCC clock-capable), PL_KEY5 = E19 (SW5); 10 kΩ pull-ups, no capacitors
+(fit for MHz I2C/SPI/UART/I2S via EMIO). Not yet checked by pressing. Plan: one port
 `PL_GPIO[5:0]`. Keep all 6 live in every variant —
 see ROADMAP.md "User I/O". Fleet use (2-12+ units, network control first)
 is in ROADMAP.md "Fleet".
+**Other board I/O (traced EBAZ4205 schematic, Oct 26; details ROADMAP.md
+"PS buttons and reset" + §11):** S2 = PS MIO 20 (S3, not fitted = MIO 32),
+active HIGH with 10 kΩ pull-down — the PS7 internal pull-up fights it (TODO).
+Reset button = U65 SGM706 ~MR pin 1 to GND (resets PS_POR_B + PHY). Fan
+connectors J3/J5 = 12 V opto level shifters, NOT isolated (GND3 tied to GND
+by L36): pin 4 out (U12 J3, V12 J5; inverted open collector), pin 3 in (V13
+J3, V15 J5; active low), a few kHz max — triggers, relays, servo PWM,
+contact inputs, a vsync pulse between units. MIDI/DMX/RS485 need UART0 on
+PL_KEY + an add-on board. SD0 = MIO 40-45 (CD MIO 34); NAND W29N01HV on the
+SMC (MIO 0, 2-14) = /dev/mtd0; no QSPI. Factory NAND dump: `original_flash/`.
 Debug bits readable at 0x4120_0000 GPIO ch1 (see address map; verified in BD
 Oct 2026). `sw/tools/capstat.sh [-w ms]` decodes them + capture DMASR + a
 frame-content checksum. Requires FCLK3 = 200 MHz
@@ -327,6 +342,39 @@ dout5→g_bg, dout6→g_rb, dout7→g_gb, dout8→g_bb.
 (dout7 ctrl[6]-vs-ctrl[7] copy-paste bug: FIXED and verified Aug 2026.)
 Multiply path is unregistered single-pixel-clock — a likely timing
 limiter at higher pixel clocks.
+
+**Colour matrix math (traced from the BD, Oct 26 2026; confirmed on the board
+by `/fx/matrix` readback):** the matrix multiplies **HDMI_0's own video**; the
+mixer (fed from HDMI_1's pixel) only supplies the 9 gains.
+out = (Σ in·gain) >> 16, so gain 0x10000 = 1.0; mode-4 K is 16 bits, max 0xFFFF
+= 0.99998. xbip_multadd A/B are UNSIGNED (no negative coefficients) and the
+24-bit sums do NOT saturate: a row sum > 1.0 wraps bright pixels to dark.
+Channel per entry (true R/G/B, out row × in column): out R ← R ch0, G ch2,
+B ch1; out G ← R ch6, G ch7, B ch8; out B ← R ch3, G ch4, B ch5 (the boot
+setup's diagonal = chans 0/7/5). `sw/debazd/fx.c` (`/fx/hue`, `/fx/matrix`,
+`/fx/map`, `/fx/identity`, `/fx/wrap`) writes these as mode-4 constants; hue
+rotation clips the negative terms and normalises rows (exact at 0/120/240°,
+less saturated between).
+
+**Colour key + register-file slim-down (mixer coreRevision 22, Oct 26 2026 —
+simulated, NOT yet tested on hardware):** per channel CTRL_1 [1] KEY = this
+channel's lo..hi band joins the key mask (AND of all joined bands; lo > hi =
+outside hi..lo), CTRL_1 [2] SRC = compare HDMI_0's video (vid_in) instead of
+HDMI_1 — also for modes 3/0x1x/0x2x. Globals in channel 0 CTRL_0 [15:8]: [8]
+invert mask, [9] fill from stream B. Key on = any KEY bit. Keyed pixel = HDMI_1's
+pixel instead of the matrix result. The box for a 24-bit colour = ch0 (R lane),
+ch3 (B lane), ch6 (G lane); KEY is independent of the channel's mode, but a
+joined channel's clip mode uses the same lo/hi. New ports bg_in (matrix
+result) / vid_in (HDMI_0 vid_data) / pix_out; mixerMatrix/dout = pix_out,
+registered ALWAYS (1 px later than before, also with the key off; it also cuts
+the HDMI_0 → HDMI_1 feedback cone after the matrix). All new bits 0 = old
+behaviour (old bitstreams store and ignore them). The duplicate output-register
+stage of `mixer_v1_0_S00_AXI.v` (63 × 32-bit copies on the same AXI clock) is
+now continuous assigns (measured −311 FF, slices 4302 → 4209: synthesis had merged most copies already). `hw/sim/run_mixer_tb.sh`: the new mixer equals the
+4e2d1820 mixer on 12,000 random pixel clocks × 9 channels (all modes, random
+gains/thresholds/streams), plus directed key tests. OSC: `/mixer/<c>/key`,
+`/mixer/<c>/src`, `/key/invert`, `/key/stream`, `/fx/key/color 0xRRGGBB [tol]`,
+`/fx/key/range lo hi`, `/fx/key/source i`, `/fx/key/off`.
 
 **dds_axi_interface** (`hw/rtl/dds_axi_inteface.vhd` — note
 filename typo): single 32-bit reg at +0. Bit31 = TVALID enable, bits[30:0] = phase
@@ -673,7 +721,7 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
    build (be careful re-attempting)
 4. **Resource budget** (impl_2, Jan 2026): slices 94% (binding), DSP 69/80, LUT 65%,
    FF 54% (19.2k: v_tc ×2 ≈ 6.5k, mixer reg file ≈ 4k incl. a redundant duplicate
-   output-register stage on the same clock, VDMA ×2 ≈ 2.8k), BRAM 55%. Savings queue:
+   output-register stage on the same clock — REMOVED Oct 26 2026, VDMA ×2 ≈ 2.8k), BRAM 55%. Savings queue:
    shared VTC (above); delete dead SDR clock tree (`PS/clk_wiz_128M` PLL,
    `proc_sys_reset_128M`, `DivideBy2_50MHz`, `rst_ps7_0_64M` — outputs unconsumed at top;
    KEEP `DivideBy4_25MHz` = ethernet PHY clock on U18); slim mixer register file;

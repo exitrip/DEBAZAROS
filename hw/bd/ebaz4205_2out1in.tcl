@@ -1201,9 +1201,10 @@ proc create_hier_cell_mixerMatrix { parentCell nameHier } {
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins S_AXI_LITE_MIXER_0] [get_bd_intf_pins mixer_0/S00_AXI]
 
   # Create port connections
-  connect_bd_net -net Din_1 [get_bd_pins pixIn0] [get_bd_pins colorGainMatrix/Din]
+  connect_bd_net -net Din_1 [get_bd_pins pixIn0] [get_bd_pins colorGainMatrix/Din] [get_bd_pins mixer_0/vid_in]
   connect_bd_net -net PixelClk_1 [get_bd_pins PixelClk] [get_bd_pins mixer_0/pix_clk]
-  connect_bd_net -net colorGainMatrix_dout [get_bd_pins dout] [get_bd_pins colorGainMatrix/dout]
+  connect_bd_net -net colorGainMatrix_dout [get_bd_pins colorGainMatrix/dout] [get_bd_pins mixer_0/bg_in]
+  connect_bd_net -net mixer_0_pix_out [get_bd_pins dout] [get_bd_pins mixer_0/pix_out]
   connect_bd_net -net din0_1 [get_bd_pins din0] [get_bd_pins xlslice_0/Din] [get_bd_pins xlslice_1/Din] [get_bd_pins xlslice_2/Din]
   connect_bd_net -net din1_1 [get_bd_pins din1] [get_bd_pins mixer_0/din3]
   connect_bd_net -net din3_1 [get_bd_pins din3] [get_bd_pins xlslice_3/Din] [get_bd_pins xlslice_5/Din] [get_bd_pins xlslice_6/Din]

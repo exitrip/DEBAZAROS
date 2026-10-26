@@ -23,6 +23,8 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DESIGN (2026-10-24) |
 | 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | PLAN (2026-10-25) |
 | 12 | Audio (HDMI out/in, I2S), PL_KEY I2C/SPI/UART, fan-port I/O, PL resource recovery, 1080p buffers (section 11) | 2 | ANALYSIS (2026-10-26) |
+| 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |
+| 14 | HDMI audio out: `hw/rtl/hdmi_tx` replaces rgb2dvi (section 11) | 2 | RTL + simulation DONE 2026-10-26; BD integration next |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -41,8 +43,8 @@ Facts (PCB v2 `pcb/3xHDMI`, 2026-09-22, and the XDC):
   are two GPIO lines, FPGA K17 and E19 (the only non-HDMI0 pins in that
   XDC group). An old PCB label called them audio L/R; the v2 layout makes
   them GPIO. The BD/XDC ports still have the old names `AUDIO_L`/`AUDIO_R`.
-  Which pin is SW5 and which is SW6: TO VERIFY on a v2 board (press
-  SW5/SW6, read 0x4120_0000).
+  From the netlists (2026-10-26): PL_KEY4 = K17 = SW6, PL_KEY5 = E19 =
+  SW5. Still confirm on a v2 board (press SW5/SW6, read 0x4120_0000).
 - Readback today: GPIO 0x4120_0000 ch1. `PL_KEY[3:0]` = bits [3:0].
   K17/E19 = bits [7:6] in the live bitstream, bits [5:4] in the
   Tcl-built bitstream.
@@ -88,7 +90,8 @@ Rules:
   (R2336): a button from U65 pin 1 to GND = full board reset (debounced by
   the supervisor). PS_SRST_B (B10): 100 kOhm pull-up only. WDI (watchdog)
   unconnected.
-- Fan connectors J3/J5 (opto-isolated): U12 -> J3 pin 4 (PWM out, PC817
+- Fan connectors J3/J5 (optocouplers, but NOT isolated: see section 11):
+  U12 -> J3 pin 4 (PWM out, PC817
   U69), V13 <- J3 pin 3 (tach in, EL817 U67), V12 -> J5 pin 4 (U70),
   V15 <- J5 pin 3 (U68). Bank 34, LVCMOS33.
 
@@ -713,23 +716,58 @@ compare. Group the changes so one build checks many.
 
 ### HDMI audio out (8 ch LPCM possible; start with 2 ch on one output)
 
-- What it needs per output: data-island periods in the blanking (TERC4
-  coding, guard bands, preambles), packets (Audio Clock Regeneration N/CTS,
-  AVI InfoFrame, Audio InfoFrame, Audio Sample packets; BCH ECC). 8 ch =
-  "layout 1" sample packets; at 720p60 and 1080p the blanking has room for
-  8 ch at 48 kHz. Open-source starting point: hdl-util/hdmi (2-ch LPCM;
-  extend for 8 ch). Estimate 600-1000 LUT per output, in the pixel domain
-  (see the X1Y1 note), replacing the TMDS encoder of rgb2dvi (keep its
-  OSERDES part).
+**Block written and simulated (2026-10-26): `hw/rtl/hdmi_tx/`** (Verilog-2001,
+BD module reference), a replacement for rgb2dvi with the same ports plus
+`ctrl`, `fs_inc`, `aud_l/aud_r/aud_valid`. Ported from hdl-util/hdmi (MIT,
+https://github.com/hdl-util/hdmi): data islands, ACR, Audio Sample (2 ch, 24
+bit L-PCM), AVI / Audio / SPD InfoFrames, BCH ECC. Changes: the island
+position comes from the incoming VTC timing (line length measured between
+HSYNC edges, active width from DE, a 10-pixel look-ahead delay for the video
+preamble), so every mode hdmi2 sets works; VIC and sample rate are run-time
+inputs; Digilent's 3-stage TMDS encoder pipeline; a 1 kHz test tone on an
+internal sample-clock NCO.
+- `ctrl = 0` = DVI: the TMDS words are the same as rgb2dvi's on every clock
+  (simulated against a copy of TMDS_Encoder.vhd); latency +10 clocks for
+  sync and data together.
+- `sh hw/sim/run_hdmi_tx_tb.sh`: 4 modes (DVI, HDMI, HDMI + audio, test
+  tone), a receiver-side decoder checks pixels, syncs, preambles, guard
+  bands, TERC4, ECC of every packet, audio samples in order, parity, B flags,
+  channel status, ACR N/CTS; AVI and Audio InfoFrame == the upstream modules.
+  Two RTL bugs found and fixed by it (sample-buffer flag cleared one clock
+  late; line length measured across the vertical blanking).
+- ONE audio format (decision 2026-10-26: all media is pre-rendered):
+  48 kHz, 2 ch, 16 bit. One sample per Audio Sample packet, 4-deep LUTRAM
+  FIFO, one BCH engine; AVI (VIC select 4/34/16/none) and Audio InfoFrame
+  are a generated constant ROM (`gen_rom.py` -> `hdmi_tx_rom.v`, ECC
+  included, like the EDID ROM); SPD dropped. ctrl: [0] HDMI, [1] audio,
+  [2] tone, [9:8] AVI VIC select.
+- Out-of-context synthesis: 630 LUT, 441 FF, no BRAM/DSP (first version
+  927 / 1005; rgb2dvi about 100 LUT/FF); 720p60 +3.4 ns, 1080p60 -3.4 ns.
+- Audio IN (next): EDID needs an Audio Data Block (LPCM 2 ch 48 kHz 16 bit
+  only) + HDMI VSDB + basic-audio flag (today: video block only -> the
+  laptop sends DVI, no audio); dvi2rgb fork exports the aligned 10-bit
+  symbols; a receiver parses Audio Sample + ACR packets (~250-350 LUT, on
+  HDMI_2's BUFG clock). Output with audio on HDMI_1 (HDMI_0 keeps the VTC
+  and may become an input in a 1out2in variant).
+- NOT in the BD yet. Integration needs: which output (HDMI_0 or HDMI_1),
+  where `ctrl`/`fs_inc` come from (an AXI-Lite register in the block is the
+  clean way; GPIO channels are all used), and the audio source (Xilinx Audio
+  Formatter MM2S -> AXIS -> a CDC FIFO into `aud_*`; the test tone first).
+  EDID: the sink decides; DVI sinks ignore islands only if `ctrl[0]` = 0.
+
+Background (still valid): data-island periods in the blanking (TERC4,
+guard bands, preambles), packets (ACR N/CTS, AVI, Audio InfoFrame, Audio
+Sample; BCH ECC). 8 ch = "layout 1" sample packets; at 720p60 and 1080p the
+blanking has room for 8 ch at 48 kHz (the block does 2 ch).
 - Linux side: the kernel ALREADY has ALSA + SND_SOC_XILINX_AUDIO_FORMATTER +
   SND_SOC_XILINX_PL_SND_CARD (built in, 2026-10-26 image; /dev/snd only has
   "timer" now). Path: Xilinx Audio Formatter (MM2S, DMA from DDR) -> AXIS
   audio -> async FIFO (LUTRAM) -> HDMI packetizer. The PL sound-card driver
   expects a codec-side IP; with the Xilinx I2S Transmitter (enable
   SND_SOC_XILINX_I2S in the kernel) the same stream ALSO goes out as real
-  I2S on PL_KEY pins (external DAC). Sample clock: an NCO from FCLK0 or the
-  pixel clock is enough for HDMI (the N/CTS packets carry the ratio); two
-  PLLE2 are free if an exact 12.288 / 11.2896 MHz is wanted.
+  I2S on PL_KEY pins (external DAC). Sample clock: an NCO from the pixel
+  clock is enough for HDMI (the N/CTS packets carry the ratio); two PLLE2
+  are free if an exact 12.288 / 11.2896 MHz is wanted.
 - One output with audio is enough (as wanted); doing both later is a copy.
 
 ### HDMI audio in (2 ch) on HDMI_2
@@ -804,4 +842,71 @@ compare. Group the changes so one build checks many.
   only a few surfaces can be active at once (transforms double that).
 - Video timing at 1080p60 (148.5 MHz) is a separate gateware item: the
   effects chain needs a register after each multiplier/adder (section 8).
+
+## 12. Mixer video functions (2026-10-26)
+
+What the hardware gives (CLAUDE.md "Colour matrix math"): HDMI_0's video goes
+through a 3x3 matrix of UNSIGNED gains (1.0 = 0x10000, no saturation); the
+9 mixer channels make the gains, per pixel, from HDMI_1's pixel. HDMI_1's
+pixel itself never reached HDMI_0's output before the key.
+
+### Colour matrix: hue shift and colour map (software, done)
+
+`sw/debazd/fx.c`, works on every bitstream (mode 4 = constant K on all 9
+channels; it replaces the boot setup's band-clip channels until the next
+mixer setup):
+
+- `/fx/hue deg [gain]` - rotation about the grey axis. Without negative
+  gains, the negative terms are clipped and each row is scaled to 1.0:
+  exact at 0/120/240 deg (permutations), darker and less saturated between
+  (60 deg: pure red -> half-bright yellow).
+- `/fx/map 0xRRGGBB 0xRRGGBB 0xRRGGBB` - where input red, green and blue
+  go (the matrix columns). `/fx/matrix` 9 values, `/fx/identity`.
+- `/fx/wrap 1` - allow row sums > 1.0 (bright colours wrap: an effect).
+- Next: an LFO target (`/fx/hue $0`) for a hue cycle; a UI card in dzweb.
+  For full-saturation hue rotation, the gateware needs signed gains
+  (xbip_multadd c_a/c_b type signed + a clamp after the sum, ~30 LUT/lane).
+
+### RGB colour key (gateware, simulated 2026-10-26, test on hardware next)
+
+In the mixer IP (coreRevision 22), in spare control bits, no new register:
+per channel CTRL_1 [1] KEY (the channel's lo..hi band joins the mask, AND)
+and [2] SRC (compare HDMI_0's video instead of HDMI_1); channel 0 CTRL_0 [8]
+invert and [9] fill from stream B. A 24-bit colour box = ch0 R, ch3 B, ch6 G.
+In the box (XOR invert), HDMI_1's pixel replaces HDMI_0's matrix result,
+before colorGainMain; a registered 2:1 pixel mux, no DSP. Default test =
+HDMI_1's pixel; `/key/invert 1` = classic green screen (HDMI_1's green parts
+show HDMI_0); `/fx/key/source 1` = test HDMI_0 ("HDMI_0's blue sky becomes
+HDMI_1"). The same rework removed the mixer's duplicate output-register stage
+(measured: FF 17411 -> 17100, slices 4302 -> 4209; Vivado had already merged most of the copies); an equivalence simulation against the old mixer passes
+(`hw/sim/run_mixer_tb.sh`).
+
+Deployed 2026-10-26 with fpga_manager (`sw/tools/plreload.sh`, capture
+soft-reset first; the network stayed up): both display VDMAs run, vsync 60.03
+Hz, capture re-armed, all key fields read back. Picture NOT yet checked (the
+user was away). `sw/tools/keytest.sh` sets up the test below; after a reboot,
+first `cp /home/ebaz/ebaz4205_2out1in_20261026_key.bit.bin /tmp/` + plreload.
+
+Test plan on the board (`artifacts/ebaz4205_2out1in_20261026_key.bit`; stop
+capture first):
+1. Key off: the picture is unchanged (only 1 px later). Run the boot mixer
+   setup and the usual effects: same look as before.
+2. Solid colours: `/draw/0/solid 0 255 0` on display 0's slot, a movie on
+   display 1; `/fx/key/source 1` + `/fx/key/color 0x00ff00 30` -> display 0
+   shows HDMI_1. Then `/fx/key/source 0`: key on HDMI_1's own colours.
+3. Movie on both; key a colour range of the movie; check `/key/invert`.
+
+Timing (routed, 2026-10-26, PXL_CLK constrained at 10 ns): pixel WNS -7.14
+ns (20261025 build: -7.59), TNS -1262 (was -1519); worst path is still the
+dormant mode-1 MAC (stream-B BRAM -> dout_r). Into the new mux register:
+13.8 ns (the 3-DSP matrix chain; passes at 720p30, 0.3 ns over at 720p60);
+after it: +3.6 ns slack into colorGainMain. HDMI_1 encoder paths meet (+3.5).
+
+Next steps for the key:
+- Soft edge: a per-pixel alpha from the distance to the box (one 8x8
+  multiply per lane = 3 DSP, or 2-bit steps in LUTs).
+- Key in YCbCr/hue space (chroma key independent of brightness): an RGB ->
+  hue/chroma stage in LUTs before the comparators.
+- Key mask as a matrix gain source (a mixer mode "K if keyed"), so the
+  matrix effects apply only inside or outside the key.
 

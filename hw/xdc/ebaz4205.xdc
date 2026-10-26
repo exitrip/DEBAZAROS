@@ -55,11 +55,11 @@ set_property PACKAGE_PIN W13 [get_ports {LED_GREEN[0]}]
 #set_property IOSTANDARD LVCMOS33 [get_ports {LED_RED[0]}]
 #set_property PACKAGE_PIN W14 [get_ports {LED_RED[0]}]
 
-#OPTOISOLATED J3 4pin fan connector
+#J3 4-pin fan connector: 12 V optocoupler level shift, NOT isolated (GND3 = GND via L36); ROADMAP.md section 11
 # set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports {J3P4_OUTPUT}]
 # set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {J3P3_INPUT}]
 
-#OPTOISOLATED J5 4pin fan connector
+#J5 4-pin fan connector: same circuit as J3
 # set_property -dict {PACKAGE_PIN V12 IOSTANDARD LVCMOS33} [get_ports {J5P4_OUTPUT}]
 # set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {J5P3_INPUT}]
 
