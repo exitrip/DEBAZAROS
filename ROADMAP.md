@@ -618,8 +618,24 @@ FAT partition (writable). Software updates then need a remount
 ### Status (2026-10-25)
 
 PetaLinux builds pass with the Tcl XSA (FCLK3 = 200 MHz in the FSBL), the
-new dtsi (no PL nodes, NAND enabled) and the trimmed rootfs (3.46 GB ->
-361 MB). Not yet on a card: the next step is a test card from these
-images (BOOT.BIN, uImage, system.dtb, boot.scr, rootfs) - check boot,
-ethernet + uEnv.txt MAC, /dev/fb0, /dev/mtd0, then the sw.
+new dtsi (no PL nodes, NAND enabled) and the trimmed rootfs (200 MB).
+
+TEST CARD (2026-10-26, `petalinux-package --wic`, default 2 partitions:
+2 GB FAT32 + 4 GB ext4; image `debazaros-20261026-build8.wic.xz`, 51 MB):
+PASS - boots; 96 MB hole in /proc/iomem; /dev/fb0 1280x2160; FCLK3 =
+0x00200400 from the FSBL (no SLCR poke); Tcl bitstream from BOOT.BIN
+(GPIO K17/E19 at [5:4]); no PL drivers bound; ethernet + DHCP; NAND as mtd0
+(Winbond W29N01HV, 128 MiB SLC); ffmpeg, Python 3.9, libjpeg-turbo, pixman,
+exFAT; our sw via `make install`: debazd + hdmi2 + dzweb up, vsync 60.03 Hz,
+capture locked, 117/117 register fields, movie playback (clip encoded on
+the board by ffmpeg in 19 s). Bring-up on this image = debazd, mixer setup,
+hdmi2, dzweb (no bitstream load, no FCLK poke).
+Found and fixed in the repo (next build): nfs-utils removed (3 NFS server
+units failed: no nfsd in the kernel); LuaJIT installs only
+`luajit-2.1.0-beta3` -> `luajit` link added.
+Notes: the userland is BusyBox (no GNU dd/od/head options); `ebaz` PATH has
+no /sbin; debazd reports a display as slot -1 until it sets it itself.
+The NAND holds the original Ebang "Ebit" miner firmware: a Zynq boot image
+with U-Boot 2015.07 (2017) at offset 0, and JFFS2/rootfs partitions
+(`nand-rootfs`, `nand-jffs2`, `nand-allrootfs`); read only.
 

@@ -14,3 +14,9 @@ S = "${WORKDIR}/git"
 # as a target ("No rule to make target 'CCOPT:x86='"). It only cleared x86
 # options; drop it.
 EXTRA_OEMAKE:remove = "CCOPT:x86="
+
+# A 2.1 beta installs only "luajit-2.1.0-beta3" (seen on the test card,
+# 2026-10-26). Add the plain name.
+do_install:append() {
+    ln -sf luajit-${PV} ${D}${bindir}/luajit
+}
