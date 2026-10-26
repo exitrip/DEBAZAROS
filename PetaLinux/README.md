@@ -5,6 +5,19 @@ device tree and root file system. Only `project-spec/` and the small files
 are tracked; `build/` (about 80 GB) and `images/` exist only on the build
 machine (Ubuntu 22.04; PetaLinux 2022.2 does not work well on 24.04).
 
+## Scripts (`scripts/`)
+
+| Script | What it does |
+| --- | --- |
+| `build.sh` | silentconfig, build, BOOT.BIN (with the bitstream), WIC + `.wic.xz` |
+| `cache-backup.sh` | copy downloads + sstate to `$PLNX_CACHE` (default `~/petalinux-2022.2-cache`) |
+| `fetch-all.sh` | download the source of every recipe in the image (network on) |
+| `offline-test.sh [--no-sstate]` | build a copy with only the backup and no network, compare with `images/linux` |
+| `bitbake-env.sh` | source it for plain `bitbake` with PetaLinux's environment |
+
+Settings in `scripts/common.sh` (`PLNX_SETTINGS`, `PLNX_PROJECT`,
+`PLNX_CACHE`). The steps the scripts run are below.
+
 ## Build
 
 ```sh

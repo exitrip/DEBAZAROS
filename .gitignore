@@ -57,3 +57,6 @@ build-*/
 /.Xil/
 # Vivado PS7 summary (NA/ps7_summary.html) when Vivado runs from the repo root
 /NA/
+
+# KiCad editor locks
+*.lck
