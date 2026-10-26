@@ -55,7 +55,13 @@ set_property PACKAGE_PIN W13 [get_ports {LED_GREEN[0]}]
 #set_property IOSTANDARD LVCMOS33 [get_ports {LED_RED[0]}]
 #set_property PACKAGE_PIN W14 [get_ports {LED_RED[0]}]
 
+#OPTOISOLATED J3 4pin fan connector
+# set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports {J3P4_OUTPUT}]
+# set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {J3P3_INPUT}]
 
+#OPTOISOLATED J5 4pin fan connector
+# set_property -dict {PACKAGE_PIN V12 IOSTANDARD LVCMOS33} [get_ports {J5P4_OUTPUT}]
+# set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {J5P3_INPUT}]
 
 ##MOD for LCDHaving extBoard
 set_property -dict {PACKAGE_PIN A20 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_n_0[2]}]
