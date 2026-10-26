@@ -60,3 +60,8 @@ build-*/
 
 # KiCad editor locks
 *.lck
+
+# original NAND dump and its parts: binaries stay local (README + script tracked)
+/original_flash/*.bin
+/original_flash/parts/
+/original_flash/extracted/

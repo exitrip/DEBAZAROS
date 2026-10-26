@@ -635,7 +635,8 @@ units failed: no nfsd in the kernel); LuaJIT installs only
 `luajit-2.1.0-beta3` -> `luajit` link added.
 Notes: the userland is BusyBox (no GNU dd/od/head options); `ebaz` PATH has
 no /sbin; debazd reports a display as slot -1 until it sets it itself.
-The NAND holds the original Ebang "Ebit" miner firmware: a Zynq boot image
-with U-Boot 2015.07 (2017) at offset 0, and JFFS2/rootfs partitions
-(`nand-rootfs`, `nand-jffs2`, `nand-allrootfs`); read only.
+The NAND holds the original Ebang "Ebit" miner firmware, dumped and split
+2026-10-26: `original_flash/README.md`. It stores each board's FACTORY MAC
+(`eth0_mac.conf`, this board 8C:C7:D0:0F:4F:C1): debaz-firstboot can read it
+from /dev/mtd0 for uEnv.txt instead of a CID-derived MAC.
 
