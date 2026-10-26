@@ -22,6 +22,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: runs on the board, tested with live registers 2026-10-24; media upload/download/delete tested 2026-10-24; not in the boot script yet |
 | 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DESIGN (2026-10-24) |
 | 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | PLAN (2026-10-25) |
+| 12 | Audio (HDMI out/in, I2S), PL_KEY I2C/SPI/UART, fan-port I/O, PL resource recovery, 1080p buffers (section 11) | 2 | ANALYSIS (2026-10-26) |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -68,6 +69,28 @@ Rules:
   costs approx. 0.3-1 us per read. If a sampled stream (kHz-MHz) is
   necessary later: a small PL sampler that writes to DDR. Do not use
   HP1/HP3 for it (third-port rule); use the ACP or GP port.
+
+### PS buttons and reset (from the traced EBAZ4205 schematic, 2026-10-26)
+
+- S2 = **MIO 20**, S3 (not fitted) = **MIO 32**: PS GPIO, NOT PL pins (no
+  XDC lines). Active HIGH: the button connects VCC; 10 kOhm to GND
+  (R9999 / R2648) + 1 uF debounce (C73 / C2410).
+- TODO: the PS7 setup enables the internal PULL-UP on MIO 20/32
+  (`PCW_MIO_20_PULLUP {enabled}`), which fights the external pull-down.
+  Turn it off in the BD (changes the FSBL: XSA re-import), or at run time:
+  clear bit 12 of SLCR `MIO_PIN_20` / `MIO_PIN_32` (0xF8000750 / 0xF8000780).
+- TODO: on the new image, `/sys/class/gpio/export` of a zynq-gpio line
+  (base 906: MIO 20 = 926) fails with EIO and the GPIO clock (APER_CLK_CTRL
+  bit 22) stays off. Find out why (runtime PM / clock in the DT) before
+  software reads S2.
+- Reset: U65 SGM706 supervisor drives PS_POR_B (C7) AND the IP101GA PHY
+  RESET_N. Its manual-reset input ~MR (pin 1) has only a 10 kOhm pull-up
+  (R2336): a button from U65 pin 1 to GND = full board reset (debounced by
+  the supervisor). PS_SRST_B (B10): 100 kOhm pull-up only. WDI (watchdog)
+  unconnected.
+- Fan connectors J3/J5 (opto-isolated): U12 -> J3 pin 4 (PWM out, PC817
+  U69), V13 <- J3 pin 3 (tach in, EL817 U67), V12 -> J5 pin 4 (U70),
+  V15 <- J5 pin 3 (U68). Bank 34, LVCMOS33.
 
 ## Fleet (2-12+ units on a LAN; 50 boards + 20 expanders bought 2026-10)
 
@@ -639,4 +662,146 @@ The NAND holds the original Ebang "Ebit" miner firmware, dumped and split
 2026-10-26: `original_flash/README.md`. It stores each board's FACTORY MAC
 (`eth0_mac.conf`, this board 8C:C7:D0:0F:4F:C1): debaz-firstboot can read it
 from /dev/mtd0 for uEnv.txt instead of a CID-derived MAC.
+
+## 11. Audio, extra I/O, PL resources, 1080p (analysis, 2026-10-26)
+
+### Where the PL is now (Tcl build 20261025, routed)
+
+LUT 10237/17600 (58%), FF 17411/35200 (49%), Slice 4302/4400 (98%),
+BRAM36 57.5/60 (96%), DSP 73/80. 824 control sets, 1453 unused register
+places in used slices.
+
+- The slice figure overstates the fullness: LUTs need >= 2560 slices, FFs
+  >= 2177; Vivado spreads the logic when it has room and packs tighter when
+  it must. The real limits are BRAM (96%), DSP (91%) and the **pixel clock
+  region**: the regional BUFR pixel clock keeps all pixel-domain logic in
+  clock region X1Y1 (about 1/4 of the die). New pixel-domain logic (an
+  HDMI audio encoder, the view scaler) competes there. The dual-BUFG
+  axi_dynclk change (CLAUDE.md "Regional pixel-clock architecture") removes
+  that limit and is also needed for 3out0in; do it first.
+- Biggest blocks: HDMI_0 mixerMatrix 1901 LUT / 2679 FF / 54 DSP; v_tc
+  951 LUT / **2597 FF**; VDMAs 907 / 905 / 1375 LUT (1355-2083 FF each);
+  three AXI interconnects (VDMA -> HP, packet FIFO + regslices) 252-364 LUT,
+  627-767 FF each; ps7_axi_periph 776 LUT (crossbar already "minimize
+  area"); 5 AXI GPIOs 63-160 LUT, 222-453 FF each.
+- BRAM36: dds_compiler 7 + 7 (+1 B18 each: 16-bit output at full 16-bit
+  accuracy), mixer delay line 11, VDMAs 5 x 3, v_vid_in FIFO 7 (8192 deep),
+  vid_out FIFOs 3 + 3 (4096 deep), interconnect FIFOs 1 x 3.
+
+### Resource recovery, cheapest first (ONE build tests a whole group)
+
+A full build of this design takes about 15 min on the laptop (not an
+hour). The build machine (8 cores, 62 GB) can run 3-4 implementation
+strategies in parallel from one synthesis: `launch_runs impl_1 impl_2
+impl_3 ...` with Area_Explore / Area_ExploreSequential / default, then
+compare. Group the changes so one build checks many.
+
+1. BD parameters only (no RTL, no software change):
+   - DDS: keep Output_Width 16 but lower the accuracy (Spurious Free
+     Dynamic Range ~60-66 dB) -> about 6 BRAM36 free per DDS (~12 total).
+     A video oscillator does not need 96 dB.
+   - v_vid_in FIFO 8192 -> 4096 (still > 2 lines of 1080p): ~3 BRAM36.
+   - VTC: switch off the generator features we do not use (chroma, field
+     id, interlace, unused polarity/ blank options): fewer of its 2597 FFs.
+2. RTL, small: mixer register file has a duplicate output-register stage on
+   the same clock (CLAUDE.md): ~1-2k FF.
+3. Bigger: replace v_tc with a small AXI-Lite timing generator (~100 LUT,
+   ~200 FF instead of 951 / 2597); needs hdmi2 + debazd vsync changes.
+   GPIO consolidation (5 AXI GPIO -> 1-2) after the address-map freeze.
+4. Placement/packing: opt_design -control_set_merge, synth
+   AreaOptimized_high in a parallel run; only if 1-3 are not enough.
+
+### HDMI audio out (8 ch LPCM possible; start with 2 ch on one output)
+
+- What it needs per output: data-island periods in the blanking (TERC4
+  coding, guard bands, preambles), packets (Audio Clock Regeneration N/CTS,
+  AVI InfoFrame, Audio InfoFrame, Audio Sample packets; BCH ECC). 8 ch =
+  "layout 1" sample packets; at 720p60 and 1080p the blanking has room for
+  8 ch at 48 kHz. Open-source starting point: hdl-util/hdmi (2-ch LPCM;
+  extend for 8 ch). Estimate 600-1000 LUT per output, in the pixel domain
+  (see the X1Y1 note), replacing the TMDS encoder of rgb2dvi (keep its
+  OSERDES part).
+- Linux side: the kernel ALREADY has ALSA + SND_SOC_XILINX_AUDIO_FORMATTER +
+  SND_SOC_XILINX_PL_SND_CARD (built in, 2026-10-26 image; /dev/snd only has
+  "timer" now). Path: Xilinx Audio Formatter (MM2S, DMA from DDR) -> AXIS
+  audio -> async FIFO (LUTRAM) -> HDMI packetizer. The PL sound-card driver
+  expects a codec-side IP; with the Xilinx I2S Transmitter (enable
+  SND_SOC_XILINX_I2S in the kernel) the same stream ALSO goes out as real
+  I2S on PL_KEY pins (external DAC). Sample clock: an NCO from FCLK0 or the
+  pixel clock is enough for HDMI (the N/CTS packets carry the ratio); two
+  PLLE2 are free if an exact 12.288 / 11.2896 MHz is wanted.
+- One output with audio is enough (as wanted); doing both later is a copy.
+
+### HDMI audio in (2 ch) on HDMI_2
+
+- dvi2rgb decodes only video/control periods. Needed: TERC4 decode of the
+  data islands (dvi2rgb fork: export the 10-bit symbols), packet assembly +
+  BCH check, Audio Sample + ACR parsing -> AXIS -> Audio Formatter S2MM ->
+  ALSA capture. Estimate 500-800 LUT.
+- EDID must change, or no source sends audio: add an HDMI Vendor-Specific
+  Data Block + Audio Data Block (2-ch LPCM 32/44.1/48 kHz); do NOT
+  advertise YCbCr (keep RGB, so the video path is unchanged).
+- For audio-reactive use, exact sample-rate recovery is not needed (analyse
+  at the nominal rate).
+
+### PL_KEY0-5 as I2C / SPI / UART / I2S (no new pins, little logic)
+
+- Pins (3xHDMI v2, verified against the EBAZ netlist, header numbering is
+  mirrored between the two KiCad projects): PL_KEY0 U19 (SW1), PL_KEY1
+  V20 (SW2), PL_KEY2 T19 (SW3), PL_KEY3 U20 (SW4) - bank 34; PL_KEY4 **K17**
+  (SW6, clock-capable MRCC: external word/bit clock input possible), PL_KEY5
+  **E19** (SW5) - bank 35. Each line: 10 kOhm pull-up to 3V3 + button to
+  GND, NO capacitor -> fit for MHz signals.
+- Best route: the PS's own controllers through EMIO, with an IOBUF per pin
+  in the PL: I2C0/1 (cdns-i2c), SPI0/1 (spi-cadence; add spidev), UART0
+  (xuartps; UART1 is the console), CAN0/1. Standard Linux drivers, almost
+  no PL logic. A small per-pin "function select" register (like the MIO
+  mux) lets ONE bitstream offer GPIO / I2C / SPI / UART / I2S per pin.
+- EMIO for these controllers is a PS7 change -> part of the PS contract
+  (section 8): enable them ONCE for all variants (FSBL rebuild once).
+- I2C: the 10 kOhm pull-ups are already there (fine for 100 kHz).
+- I2S out: from the audio path above (BCLK, LRCLK, SDATA, optional MCLK).
+- MIDI: UART0 at 31250 baud + a standard MIDI opto circuit (6N138 /
+  H11L1) on a small add-on board. DMX512 / RS485: UART0 at 250 kbaud 8N2
+  + a MAX485 module (driver enable on a GPIO). Not through the fan optos.
+- Caution: a button pressed while its line is a driven-high output shorts
+  the output; use series resistors on add-on boards or do not press.
+
+### Fan connectors J3/J5 as I/O (measured from the netlist, 2026-10-26)
+
+- NOT galvanically isolated: fan ground GND3 is tied to logic GND by L36
+  (0.33 uH, a filter). The optos are 12 V <-> 3.3 V level shifters.
+- Pin 4 output: FPGA low -> PC817 on -> pin 4 pulled to ground; 10 kOhm
+  pull-up to 12 V (VCC8). Inverted, open collector, 12 V level. Another
+  output level: replace the pull-up (R2350 / R2556) and pull up externally.
+- Pin 3 input: external device pulls pin 3 low -> ~1 mA through the EL817
+  LED (10 kOhm from 12 V) -> FPGA reads low. Active low; contacts or open
+  collector outputs.
+- Speed: PC817/EL817 with 10 kOhm loads and 1-3 mA LED current -> edges of
+  tens of microseconds -> reliable up to a few kHz (measure).
+- Good uses: low-frequency PWM for motor controllers, LED drivers, RC servos
+  (50 Hz, 1-2 ms), 12 V relay/SSR/camera/strobe triggers; contact closures,
+  PIR, limit switches, tach/encoders at low rates; and a **frame-sync pulse
+  between units** (vsync out on one unit's pin 4 -> other units' pin 3:
+  hardware sync within tens of microseconds, well inside one frame -
+  better than network sync for FLEET.md level A).
+- Not suitable: MIDI (31.25 kbaud needs fast optos), DMX512 / RS485 (250
+  kbaud, differential), I2C, SPI. Slow UART (<= ~2400 baud) is possible.
+
+### 1080p: memory and buffers
+
+- DDR: OK. Slot pitch is already 1920x1080x4 (8,294,400 B); 12 slots =
+  94.9 MiB, inside the 96 MiB reservation.
+- PL buffers: OK for 1080p (VDMA line buffers 4096 px, v_vid_in 8192 px,
+  vid_out 4096 px; mixer delay 16384 px = 8.5 lines).
+- Software: NOT yet. dz_hw.h fixes DZ_WIDTH/HEIGHT 1280x720 and stride =
+  width x 4; hdmi2 CAPTURE_W/H 1280x720; fb0 (simplefb) is 1280x2160, so it
+  spans slot 0 and part of slot 1. Plan: ONE fixed stride of 1920 px (7680
+  B) in every slot and every mode; width/height at run time from the video
+  mode; fb0 = 1920x1080 = exactly slot 0. Then any mode up to 1080p uses
+  the same buffers, and a 720p mode shows the top-left 1280x720.
+- RAM: a dz_draw shadow buffer at 1080p is 8.3 MB; Linux has ~150 MB, so
+  only a few surfaces can be active at once (transforms double that).
+- Video timing at 1080p60 (148.5 MHz) is a separate gateware item: the
+  effects chain needs a register after each multiplier/adder (section 8).
 
