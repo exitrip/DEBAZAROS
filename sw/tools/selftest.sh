@@ -64,6 +64,13 @@ q /key/invert 1 >/dev/null
 check key-invert  "/value \"/mixer/0/mode\" 4"      q /mixer/0/mode
 q /fx/key/off >/dev/null
 check key-off     "/value \"/mixer/6/key\" 0"       q /mixer/6/key
+# --- user I/O line functions (io.c) ---
+check io-pin-name "/io/pin 2 \"mosi\""            q /io/pin 2 mosi
+check io-pin-code "/value \"/io/func/2\" 5"       q /io/func/2
+check io-pin-bad  "unknown function"               q /io/pin 2 nonsense
+check io-pins     "/io/pins \"in\" \"in\" \"mosi\"" q /io/pins
+q /io/pin 2 in >/dev/null
+check io-pin-in   "/io/pins \"in\" \"in\" \"in\""   q /io/pins
 check disp-show   "/disp/0 4 0 0"                  q /disp/0/show 4
 check disp-blank  "/disp/0 4 1 0"                  q /disp/0/blank 1
 check disp-toggle "/disp/0 4 0 0"                  q /disp/0/blank

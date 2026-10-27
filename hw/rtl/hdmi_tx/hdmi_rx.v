@@ -41,6 +41,11 @@ module hdmi_rx (
     output reg  [19:0] rx_acr_n = 0,
     output reg  [19:0] rx_acr_cts = 0,
 
+    output wire [15:0] rx_l,           // received samples in this clock domain
+    output wire [15:0] rx_r,           // (pl_io: I2S output), one per rx_valid
+    output wire        rx_valid,
+    output wire        rx_clk_out,     // = clk, for blocks outside HDMI_2
+
     input  wire        tx_clk,         // hdmi_tx PixelClk
     output reg  [15:0] tx_aud_l = 0,
     output reg  [15:0] tx_aud_r = 0,
@@ -215,6 +220,11 @@ module hdmi_rx (
         end
         if (rst) pend <= 0;
     end
+
+    assign rx_l = smp_l;
+    assign rx_r = smp_r;
+    assign rx_valid = smp_valid;
+    assign rx_clk_out = clk;
 
     // ---- status: live values, published every 2^16 clocks ---------------------------
     wire [15:0] al = smp_l[15] ? -smp_l : smp_l, ar = smp_r[15] ? -smp_r : smp_r;

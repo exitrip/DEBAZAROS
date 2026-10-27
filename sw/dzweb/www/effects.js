@@ -13,6 +13,8 @@ const GROUPS = [ // title, path prefix
   ["HDMI_1 output", "/hdmi/1/"],
   ["DDS oscillators (PL)", "/dds/"],
   ["HDMI audio (out HDMI_1, in HDMI_2)", "/audio/"],
+  ["User I/O lines PL_KEY0-5 (function 0 = input)", "/io/"],
+  ["I2S (on the user I/O lines)", "/i2s/"],
 ];
 
 let root;

@@ -249,8 +249,21 @@ U19/V20/T19/U20 (J7/DATA3). The other two GPIO lines = J9/DATA1 pins 19/17 =
 FPGA K17/E19. They are GPIO, not audio: the BD/XDC ports are still named
 `AUDIO_L/R` from an old PCB label. From the netlists (Oct 26): PL_KEY4 = K17
 (SW6, MRCC clock-capable), PL_KEY5 = E19 (SW5); 10 kΩ pull-ups, no capacitors
-(fit for MHz I2C/SPI/UART/I2S via EMIO). Not yet checked by pressing. Plan: one port
-`PL_GPIO[5:0]`. Keep all 6 live in every variant —
+(fit for MHz I2C/SPI/UART/I2S via EMIO). Not yet checked by pressing.
+**Function select (Oct 27 2026, branch hdmi-audio, simulated — NOT yet on
+hardware):** `hw/rtl/pl_io/` (module ref `pl_io_0`, IOBUFs; the BD ports
+PL_KEY/AUDIO_L/AUDIO_R are now inout, names unchanged) gives each line one of:
+in (reset default = as before), out, PS I2C0 SCL/SDA (open drain), PS SPI0
+SCLK/MOSI/MISO/CS0/CS1, PS UART0 TXD/RXD, PL I2S master BCLK/LRCLK/DOUT/DIN
+(16 in 32, 48 kHz, NCO on FCLK0 steered by the TX FIFO level; DOUT = HDMI_2
+audio, DIN can replace the loop as HDMI_1 audio). PS7: I2C0/SPI0/UART0 on
+EMIO (XSA change; no FSBL change needed for EMIO routing). Registers
+0x43C6_0040-54 (in hdmi_audio_regs, address bits 7). GPIO 0x4120_0000 ch1
+[5:0] still reads the line levels. debazd: `/io/pin <n> <name>`, `/io/pins`,
+fields `/io/func|out/<n>`, `/io/level`, `/i2s/...`. Linux (needs a PetaLinux
+rebuild): i2c0, spi0 (spidev 0.0/0.1), uart0 = ttyPS1 nodes + kernel fragment
+`user_2026-10-27-plio.cfg` + i2c-tools. Sim: `sh hw/sim/run_pl_io_tb.sh`.
+Lines 0-3 = PL_KEY[3:0], 4 = AUDIO_L (K17), 5 = AUDIO_R (E19). Keep all 6 live in every variant —
 see ROADMAP.md "User I/O". Fleet use (2-12+ units, network control first)
 is in ROADMAP.md "Fleet".
 **Other board I/O (traced EBAZ4205 schematic, Oct 26; details ROADMAP.md

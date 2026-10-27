@@ -34,4 +34,7 @@ void dzd_send_template(const char *tpl);
 /* ---- fx.c: colour matrix (hue, map) and colour key on the HDMI_0 mixer ---- */
 int  fx_dispatch(const dz_msg *m);	/* 0 = not an /fx address */
 
+/* ---- io.c: user I/O line functions by name ---- */
+int  io_dispatch(const dz_msg *m);	/* 0 = not /io/pin or /io/pins */
+
 #endif /* DEBAZD_H */

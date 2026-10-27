@@ -798,6 +798,22 @@ blanking has room for 8 ch at 48 kHz (the block does 2 ch).
 
 ### PL_KEY0-5 as I2C / SPI / UART / I2S (no new pins, little logic)
 
+**Built 2026-10-27 (branch hdmi-audio), simulated, NOT yet on hardware:**
+`hw/rtl/pl_io/` = per-line function select (4 bits per line: in, out, I2C0
+SCL/SDA, SPI0 SCLK/MOSI/MISO/CS0/CS1, UART0 TXD/RXD, I2S BCLK/LRCLK/DOUT/DIN)
++ an I2S master (dz_i2s.v) + two async FIFOs (dz_async_fifo.v). PS I2C0/SPI0/
+UART0 on EMIO (standard Linux drivers). Registers 0x43C6_0040: IO_FUNC,
+IO_OUT, IO_IN, I2S_CTRL, I2S_INC, I2S_STATUS. Test
+(`sh hw/sim/run_pl_io_tb.sh`): reset = all inputs, every function on the pins
+with 10k pull-ups, I2S pin format decoded independently, HDMI_2 audio -> DOUT
+-> wire -> DIN -> HDMI_1 sample for sample with the source 200 ppm fast (FIFO
+pre-fill + level steering: no underrun, no lost sample). Linux side in
+PetaLinux/ (dtsi nodes, kernel fragment, i2c-tools); needs a PetaLinux build
+with the new XSA. Hardware test plan: `/io/pin 0 scl; /io/pin 1 sda;
+i2cdetect -y 0` with a sensor; `/io/pin 2 txd; /io/pin 3 rxd` + a loop wire,
+`cat /dev/ttyPS1`; I2S: a PCM5102 board on bclk/lrclk/dout.
+
+
 - Pins (3xHDMI v2, verified against the EBAZ netlist, header numbering is
   mirrored between the two KiCad projects): PL_KEY0 U19 (SW1), PL_KEY1
   V20 (SW2), PL_KEY2 T19 (SW3), PL_KEY3 U20 (SW4) - bank 34; PL_KEY4 **K17**

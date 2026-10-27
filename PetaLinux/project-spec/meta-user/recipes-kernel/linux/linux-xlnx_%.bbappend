@@ -11,5 +11,6 @@ SRC_URI += "file://user_2023-03-11-14-56-00.cfg \
             file://user_2023-07-15-16-36-00.cfg \
             file://user_2026-08-23-17-12-00.cfg \
             file://user_2026-10-25-debaz.cfg \
+            file://user_2026-10-27-plio.cfg \
             "
 

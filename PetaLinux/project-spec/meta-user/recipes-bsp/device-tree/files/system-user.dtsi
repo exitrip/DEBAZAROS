@@ -47,6 +47,13 @@
 		status = "okay";
 	};
 
+	/* Keep the console on ttyPS0 (UART1, MIO 24/25) when UART0 is enabled
+	 * for the user I/O lines; UART0 = ttyPS1. */
+	aliases {
+		serial0 = &uart1;
+		serial1 = &uart0;
+	};
+
 	/* Target region for bitstream + overlay loads (fpgautil). PL-DTB removal
 	 * also removes the generated one. devcfg = the Zynq FPGA manager. */
 	fpga-full {
@@ -74,3 +81,37 @@
 		nand-bus-width = <8>;
 	};
 };
+
+/* User I/O lines PL_KEY0-5 / header P1 (2026-10-27): the PS controllers I2C0,
+ * SPI0 and UART0 reach them through EMIO and the pin function select in the
+ * PL (hw/rtl/pl_io, registers 0x43C6_0040). Pins are inputs until debazd
+ * selects a function (/io/pin/<n> <name>); with an older bitstream the EMIO
+ * signals go nowhere (no harm: I2C transfers time out). 10 kOhm pull-ups on
+ * the board: I2C 100 kHz. */
+&i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&spi0 {
+	status = "okay";
+	num-cs = <3>;
+	is-decoded-cs = <0>;
+	/* /dev/spidev0.0 and 0.1 ("rohm,dh2228fv" = the spidev match that the
+	 * kernel accepts in a device tree) */
+	spidev@0 {
+		compatible = "rohm,dh2228fv";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+	};
+	spidev@1 {
+		compatible = "rohm,dh2228fv";
+		reg = <1>;
+		spi-max-frequency = <10000000>;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+

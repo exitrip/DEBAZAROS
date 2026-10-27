@@ -52,16 +52,16 @@ set_property IOSTANDARD LVCMOS33 [get_ports {LED_GREEN[0]}]
 set_property PACKAGE_PIN W13 [get_ports {LED_GREEN[0]}]
 
 # Red LED
-#set_property IOSTANDARD LVCMOS33 [get_ports {LED_RED[0]}]
-#set_property PACKAGE_PIN W14 [get_ports {LED_RED[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {LED_RED[0]}]
+set_property PACKAGE_PIN W14 [get_ports {LED_RED[0]}]
 
 #J3 4-pin fan connector: 12 V optocoupler level shift, NOT isolated (GND3 = GND via L36); ROADMAP.md section 11
-# set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports {J3P4_OUTPUT}]
-# set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {J3P3_INPUT}]
+set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports {J3P4_OUTPUT}]
+set_property -dict {PACKAGE_PIN V13 IOSTANDARD LVCMOS33} [get_ports {J3P3_INPUT}]
 
 #J5 4-pin fan connector: same circuit as J3
-# set_property -dict {PACKAGE_PIN V12 IOSTANDARD LVCMOS33} [get_ports {J5P4_OUTPUT}]
-# set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {J5P3_INPUT}]
+set_property -dict {PACKAGE_PIN V12 IOSTANDARD LVCMOS33} [get_ports {J5P4_OUTPUT}]
+set_property -dict {PACKAGE_PIN V15 IOSTANDARD LVCMOS33} [get_ports {J5P3_INPUT}]
 
 ##MOD for LCDHaving extBoard
 set_property -dict {PACKAGE_PIN A20 IOSTANDARD TMDS_33} [get_ports {TMDS_Data_n_0[2]}]
@@ -133,13 +133,22 @@ add_cells_to_pblock [get_pblocks pblock_ebaz4205_i] [get_cells -quiet [list ebaz
 resize_pblock [get_pblocks pblock_ebaz4205_i] -add {SLR0}
 
 ## HDMI audio (hw/rtl/hdmi_tx, 2026-10-26): clock-domain crossings by design.
+## (gray pointers: Vivado merges the gray MSB into the binary MSB register, so
+## the -from lists name both wg/wp and rg/rp)
 ## hdmi_rx: HDMI_2 input clock -> output pixel clock (gray-pointer FIFO),
 ## FCLK0 -> input clock (rx_ctrl synchronizers); hdmi_audio_regs samples the
 ## receiver's hold registers after a toggle handshake.
-set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/wg_reg[*]}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/wg_s1_reg[*]}]
-set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rg_reg[*]}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rg_s1_reg[*]}]
+set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/wg_reg[*] || NAME =~ *hdmi_rx_0/inst/wp_reg[*]}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/wg_s1_reg[*]}]
+set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rg_reg[*] || NAME =~ *hdmi_rx_0/inst/rp_reg[*]}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rg_s1_reg[*]}]
 set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/fifo_reg*}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/tx_aud_*_reg[*]}]
 set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/clr_s_reg[0] || NAME =~ *hdmi_rx_0/inst/loop_s_reg[0]}]
 set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/pub_sync_reg[0]}]
 set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rx_*_reg*}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/*}]
+
+## pl_io (hw/rtl/pl_io, 2026-10-27): two dz_async_fifo (HDMI_2 clock -> FCLK0
+## for I2S out, FCLK0 -> HDMI_1 pixel clock for I2S in) + synchronizers
+set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */wg_reg[*] || NAME =~ */wp_reg[*])}] -to [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && NAME =~ */wg_s1_reg[*]}]
+set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */rg_reg[*] || NAME =~ */rp_reg[*])}] -to [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && NAME =~ */rg_s1_reg[*]}]
+set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && NAME =~ */mem_reg*}]
+set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */txsrc_s_reg[0] || NAME =~ */rxsrc_s_reg[0] || NAME =~ */in_s1_reg[*] || NAME =~ */din_s_reg[0])}]
 

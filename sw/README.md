@@ -284,6 +284,28 @@ dzctl /fx/key/off
 Green screen on HDMI_1 over HDMI_0: `/key/invert 1`,
 `/fx/key/color 0x00ff00 40`.
 
+## User I/O lines: GPIO, I2C, SPI, UART, I2S
+
+The 6 user I/O lines (PCB PL_KEY0-5, header P1) take one function each
+(bitstream 2026-10-27 or later; older bitstreams: the fields return an
+error). At power-up every line is an input, as before.
+
+```sh
+dzctl /io/pin 0 scl; dzctl /io/pin 1 sda      # PS I2C0 -> /dev/i2c-0 (i2cdetect -y 0)
+dzctl /io/pin 2 sclk; dzctl /io/pin 3 mosi    # PS SPI0 -> /dev/spidev0.0
+dzctl /io/pin 4 miso; dzctl /io/pin 5 cs0
+dzctl /io/pin 2 txd; dzctl /io/pin 3 rxd      # PS UART0 -> /dev/ttyPS1
+dzctl /io/pin 0 bclk; dzctl /io/pin 1 lrclk; dzctl /io/pin 2 dout   # I2S DAC
+dzctl /i2s/on 1; dzctl /i2s/play 1; dzctl /i2s/steer 1  # play the HDMI_2 audio
+dzctl /io/pin 5 out; dzctl /io/out/5 1        # plain output
+dzctl /io/pins                                # all six functions
+```
+
+Names: in out scl sda sclk mosi miso cs0 cs1 txd rxd bclk lrclk dout din.
+The Linux devices need the PetaLinux image with the 2026-10-27 device tree.
+Do not press a button whose line is an output driving high (it shorts the
+output); use series resistors on add-on boards.
+
 ## Buttons and GPIO actions
 
 `/io/press/<bit> "template"` and `/io/release/<bit> "template"` bind a

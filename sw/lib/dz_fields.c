@@ -107,6 +107,28 @@ static const dz_field static_fields[] = {
 	{ "/audio/rx/peak/r", AUD, 0x18, 16, 16, DZ_RAW, DZ_F_RO, "HDMI_2 input: peak |right| since the last clear" },
 	{ "/audio/rx/n",      AUD, 0x1C, 0, 20, DZ_RAW,  DZ_F_RO, "HDMI_2 input: ACR N (48 kHz = 6144)" },
 	{ "/audio/rx/cts",    AUD, 0x20, 0, 20, DZ_RAW,  DZ_F_RO, "HDMI_2 input: ACR CTS (720p60 = 74250)" },
+	/* user I/O lines PL_KEY0-5 (hw/rtl/pl_io, 2026-10-27): names for
+	 * /io/func/<n> in debazd/io.c (/io/pin <n> <name>) */
+	{ "/io/func/0",       AUD, 0x40, 0, 4,   DZ_RAW,  0, "line 0 function: 0 in 1 out 2 scl 3 sda 4 sclk 5 mosi 6 miso 7 cs0 8 txd 9 rxd 10 bclk 11 lrclk 12 dout 13 din 14 cs1" },
+	{ "/io/func/1",       AUD, 0x40, 4, 4,   DZ_RAW,  0, "line 1 function (see /io/func/0)" },
+	{ "/io/func/2",       AUD, 0x40, 8, 4,   DZ_RAW,  0, "line 2 function (see /io/func/0)" },
+	{ "/io/func/3",       AUD, 0x40, 12, 4,  DZ_RAW,  0, "line 3 function (see /io/func/0)" },
+	{ "/io/func/4",       AUD, 0x40, 16, 4,  DZ_RAW,  0, "line 4 (K17) function (see /io/func/0)" },
+	{ "/io/func/5",       AUD, 0x40, 20, 4,  DZ_RAW,  0, "line 5 (E19) function (see /io/func/0)" },
+	{ "/io/out/0",        AUD, 0x44, 0, 1,   DZ_BOOL, 0, "line 0 output value (function 1)" },
+	{ "/io/out/1",        AUD, 0x44, 1, 1,   DZ_BOOL, 0, "line 1 output value (function 1)" },
+	{ "/io/out/2",        AUD, 0x44, 2, 1,   DZ_BOOL, 0, "line 2 output value (function 1)" },
+	{ "/io/out/3",        AUD, 0x44, 3, 1,   DZ_BOOL, 0, "line 3 output value (function 1)" },
+	{ "/io/out/4",        AUD, 0x44, 4, 1,   DZ_BOOL, 0, "line 4 output value (function 1)" },
+	{ "/io/out/5",        AUD, 0x44, 5, 1,   DZ_BOOL, 0, "line 5 output value (function 1)" },
+	{ "/io/level",        AUD, 0x48, 0, 6,   DZ_RAW,  DZ_F_RO, "levels of lines 0-5 (same as /io/raw [5:0])" },
+	{ "/i2s/on",          AUD, 0x4C, 0, 1,   DZ_BOOL, 0, "I2S master on (BCLK 3.072 MHz, LRCLK 48 kHz)" },
+	{ "/i2s/play",        AUD, 0x4C, 1, 1,   DZ_BOOL, 0, "I2S DOUT plays the HDMI_2 input audio (else silence)" },
+	{ "/i2s/to_hdmi1",    AUD, 0x4C, 2, 1,   DZ_BOOL, 0, "HDMI_1 audio = I2S DIN (else the HDMI_2 loop)" },
+	{ "/i2s/steer",       AUD, 0x4C, 3, 1,   DZ_BOOL, 0, "follow the HDMI_2 source clock (FIFO-level steering)" },
+	{ "/i2s/inc",         AUD, 0x50, 0, 32,  DZ_RAW,  0, "bit clock NCO: 2*64*fs*2^32/100 MHz (48 kHz: 263882791)" },
+	{ "/i2s/level",       AUD, 0x54, 0, 4,   DZ_RAW,  DZ_F_RO, "I2S TX FIFO level (0-8)" },
+	{ "/i2s/underruns",   AUD, 0x54, 8, 8,   DZ_RAW,  DZ_F_RO, "I2S TX frames without a sample (incl. pre-fill)" },
 #endif
 
 	/* colour key (mixer coreRevision 22, 2026-10-26): the global bits are
