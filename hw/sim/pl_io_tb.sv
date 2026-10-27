@@ -38,6 +38,7 @@ module tb;
 
   reg [15:0] rl = 0, rr = 0; reg rv = 0;
   wire [15:0] al, ar; wire av;
+  wire [15:0] al0, ar0; wire av0;
   reg [15:0] ll = 16'h1111, lr = 16'h2222; reg lv = 0;
 
   pl_io_core dut (
@@ -52,7 +53,8 @@ module tb;
     .uart0_tx(utx), .uart0_rx(urx),
     .rx_clk(rx_clk), .rx_l(rl), .rx_r(rr), .rx_valid(rv),
     .tx_clk(tx_clk), .loop_l(ll), .loop_r(lr), .loop_valid(lv),
-    .aud_l(al), .aud_r(ar), .aud_valid(av));
+    .aud_l(al), .aud_r(ar), .aud_valid(av),
+    .aud0_l(al0), .aud0_r(ar0), .aud0_valid(av0));
 
   integer fails = 0;
   task automatic chk(input bit c, input string m);
@@ -113,6 +115,12 @@ module tb;
   // ---- HDMI_1 side: samples coming out of the mux --------------------------
   reg [31:0] got [$];
   always @(posedge tx_clk) if (av) got.push_back({ar, al});
+  // HDMI_0 stays on the loop (independent of HDMI_1 = I2S): count loop words
+  integer n0_loop = 0, n0_bad = 0;
+  always @(posedge tx_clk) if (av0) begin
+    if ({ar0, al0} === {lr, ll}) n0_loop++; else n0_bad++;
+  end
+  always @(posedge tx_clk) lv <= ($random & 63) == 0;   // loop source: a sample now and then
 
   integer i, j, base, ok_dec, ok_loop, und0, und1, n0, lvl, s0, l0;
   realtime t0, per;
@@ -181,6 +189,21 @@ module tb;
       else begin chk(0, $sformatf("HDMI_1 word %0d %08x want %08x", i, got[i], sent[i])); break; end
     chk(ok_loop > nsent - 20, $sformatf("looped %0d of %0d samples in order", ok_loop, nsent));
     chk(und0 < 8, "few underruns at the start");
+    chk(n0_loop > 1000 && n0_bad == 0, $sformatf("HDMI_0 independent: %0d loop words, %0d others", n0_loop, n0_bad));
+    // then HDMI_0 also on I2S: the same samples on both outputs
+    begin
+      integer both = 0, diff = 0;
+      i2s_ctrl[4] = 1'b1; src_on = 1;
+      fork
+        begin #5ms; end
+        forever @(posedge tx_clk) if (av || av0) begin
+          if (av && av0 && {ar, al} === {ar0, al0}) both++; else diff++;
+        end
+      join_any
+      disable fork;
+      src_on = 0;
+      chk(both > 100 && diff == 0, $sformatf("mirrored: %0d same words, %0d different", both, diff));
+    end
 
     // I2S off: pins back to inputs
     i2s_ctrl = 0; io_func = 0; #1;

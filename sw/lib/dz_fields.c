@@ -93,11 +93,15 @@ static const dz_field static_fields[] = {
 	/* HDMI audio (hw/rtl/hdmi_tx/hdmi_audio_regs.v): output on HDMI_1, input
 	 * on HDMI_2, ONE format 48 kHz 16-bit stereo. On a bitstream without the
 	 * block these fields return an error (dz_map probes its ID). */
-	{ "/audio/tx/hdmi",   AUD, 0x00, 0, 1,  DZ_BOOL, 0, "HDMI_1 output: 0 = DVI (as rgb2dvi), 1 = HDMI (InfoFrames)" },
+	{ "/audio/tx/hdmi",   AUD, 0x00, 0, 1,  DZ_BOOL, 0, "HDMI_1 output: 0 = DVI (as rgb2dvi), 1 = HDMI (InfoFrames); HDMI_0: /audio/tx0/..." },
 	{ "/audio/tx/enable", AUD, 0x00, 1, 1,  DZ_BOOL, 0, "HDMI_1 audio packets (needs /audio/tx/hdmi)" },
 	{ "/audio/tx/tone",   AUD, 0x00, 2, 1,  DZ_BOOL, 0, "1 kHz test tone (needs /audio/tx/fs_inc)" },
 	{ "/audio/tx/avi",    AUD, 0x00, 8, 2,  DZ_RAW,  0, "AVI VIC: 0 = 720p60, 1 = 1080p30, 2 = 1080p60, 3 = none" },
-	{ "/audio/tx/fs_inc", AUD, 0x04, 0, 32, DZ_RAW,  0, "internal 48 kHz clock: 48000 * 2^32 / f_pixel (720p60: 2776544)" },
+	{ "/audio/tx/fs_inc", AUD, 0x04, 0, 32, DZ_RAW,  0, "internal 48 kHz clock: 48000 * 2^32 / f_pixel (720p60: 2776544); both outputs" },
+	{ "/audio/tx0/hdmi",  AUD, 0x0C, 0, 1,  DZ_BOOL, 0, "HDMI_0 output: 0 = DVI (as rgb2dvi), 1 = HDMI (InfoFrames)" },
+	{ "/audio/tx0/enable",AUD, 0x0C, 1, 1,  DZ_BOOL, 0, "HDMI_0 audio packets (needs /audio/tx0/hdmi)" },
+	{ "/audio/tx0/tone",  AUD, 0x0C, 2, 1,  DZ_BOOL, 0, "HDMI_0 1 kHz test tone (uses /audio/tx/fs_inc)" },
+	{ "/audio/tx0/avi",   AUD, 0x0C, 8, 2,  DZ_RAW,  0, "HDMI_0 AVI VIC: 0 = 720p60, 1 = 1080p30, 2 = 1080p60, 3 = none" },
 	{ "/audio/rx/loop",   AUD, 0x08, 0, 1,  DZ_BOOL, 0, "send the HDMI_2 input audio to the HDMI_1 output" },
 	{ "/audio/rx/clear",  AUD, 0x08, 1, 1,  DZ_BOOL, 0, "toggle: clear the input peak meters" },
 	{ "/audio/rx/islands",AUD, 0x10, 0, 1,  DZ_BOOL, DZ_F_RO, "HDMI_2 input: good data-island packets (last ~1 ms window)" },
@@ -126,6 +130,7 @@ static const dz_field static_fields[] = {
 	{ "/i2s/play",        AUD, 0x4C, 1, 1,   DZ_BOOL, 0, "I2S DOUT plays the HDMI_2 input audio (else silence)" },
 	{ "/i2s/to_hdmi1",    AUD, 0x4C, 2, 1,   DZ_BOOL, 0, "HDMI_1 audio = I2S DIN (else the HDMI_2 loop)" },
 	{ "/i2s/steer",       AUD, 0x4C, 3, 1,   DZ_BOOL, 0, "follow the HDMI_2 source clock (FIFO-level steering)" },
+	{ "/i2s/to_hdmi0",    AUD, 0x4C, 4, 1,   DZ_BOOL, 0, "HDMI_0 audio = I2S DIN (else the HDMI_2 loop)" },
 	{ "/i2s/inc",         AUD, 0x50, 0, 32,  DZ_RAW,  0, "bit clock NCO: 2*64*fs*2^32/100 MHz (48 kHz: 263882791)" },
 	{ "/i2s/level",       AUD, 0x54, 0, 4,   DZ_RAW,  DZ_F_RO, "I2S TX FIFO level (0-8)" },
 	{ "/i2s/underruns",   AUD, 0x54, 8, 8,   DZ_RAW,  DZ_F_RO, "I2S TX frames without a sample (incl. pre-fill)" },

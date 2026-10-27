@@ -393,8 +393,13 @@ gains/thresholds/streams), plus directed key tests. OSC: `/mixer/<c>/key`,
 **HDMI audio (branch `hdmi-audio`, Oct 26 2026 — WORKS on hardware: out, in,
 loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling); details ROADMAP.md §11 "HDMI audio out"):** ONE format, 48 kHz
 2-ch 16-bit L-PCM (media is pre-rendered).
-- Output: HDMI_1's rgb2dvi is replaced by `hw/rtl/hdmi_tx/hdmi_tx.v`
-  (module ref). ctrl = 0 → DVI, symbol-identical to rgb2dvi (simulated against
+- Output: BOTH rgb2dvi are replaced by `hw/rtl/hdmi_tx/hdmi_tx.v` (module
+  refs HDMI_1/hdmi_tx_0 Oct 26, HDMI_0/hdmi_tx_0 Oct 27; rgb2dvi is no longer
+  used). Each has its own ctrl (HDMI_1 TX_CTRL 0x00, HDMI_0 TX0_CTRL 0x0C) and
+  audio source (pl_io: HDMI_2 loop or I2S DIN, i2s_ctrl[2] HDMI_1 / [4]
+  HDMI_0); TX_FS_INC is shared (one pixel clock). The island scheduler has a
+  register stage (Oct 27): worst hdmi_tx path 10.05 ns routed, +3.4 ns at
+  720p60 (was 12.58 ns); latency LOOK + 5 = 15 px. ctrl = 0 → DVI, symbol-identical to rgb2dvi (simulated against
   a copy of TMDS_Encoder.vhd), latency +10 px for sync and data together.
   HDMI: data islands placed from the incoming VTC timing (line length from
   HSYNC edges, active width from DE, 10-px look-ahead); AVI + Audio InfoFrame
@@ -410,9 +415,9 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   hdmi_tx aud_* (rx_ctrl[0]). EDID (`hw/edid_audio.py`): + basic audio,
   Audio Data Block (only 48 kHz 16 bit 2 ch), HDMI VSDB — without the VSDB a
   source sends DVI.
-- Registers 0x43C6_0000: 0x00 TX_CTRL ([0] HDMI, [1] audio, [2] tone, [9:8]
-  AVI VIC 4/34/16/none), 0x04 TX_FS_INC (720p60: 2776544), 0x08 RX_CTRL ([0]
-  loop, [1] clear peaks), 0x10 RX_STATUS, 0x14 samples, 0x18 peak R|L, 0x1C N,
+- Registers 0x43C6_0000: 0x00 TX_CTRL (HDMI_1: [0] HDMI, [1] audio, [2] tone,
+  [9:8] AVI VIC 4/34/16/none), 0x04 TX_FS_INC (720p60: 2776544, both outputs),
+  0x08 RX_CTRL ([0] loop, [1] clear peaks), 0x0C TX0_CTRL (HDMI_0, as TX_CTRL), 0x10 RX_STATUS, 0x14 samples, 0x18 peak R|L, 0x1C N,
   0x20 CTS, 0x3C ID. OSC fields `/audio/...` (`sw/lib/dz_fields.c`).
 - Sims: `sh hw/sim/run_hdmi_tx_tb.sh` (7 × ALL PASS: TX 4 modes, regs, RX
   loop DVI + HDMI). ⚠️ `hw/repackage_ip.tcl <ip> ports <top>` DROPS non-HDL

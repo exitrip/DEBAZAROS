@@ -33,7 +33,9 @@ module pl_io (
     input  wire [15:0] loop_l, loop_r,
     input  wire        loop_valid,
     output wire [15:0] aud_l, aud_r,
-    output wire        aud_valid
+    output wire        aud_valid,
+    output wire [15:0] aud0_l, aud0_r,
+    output wire        aud0_valid
 );
     wire [5:0] po, pt, pi;
     pl_io_core core (
@@ -49,7 +51,8 @@ module pl_io (
         .uart0_tx(UART0_TX), .uart0_rx(UART0_RX),
         .rx_clk(rx_clk), .rx_l(rx_l), .rx_r(rx_r), .rx_valid(rx_valid),
         .tx_clk(tx_clk), .loop_l(loop_l), .loop_r(loop_r), .loop_valid(loop_valid),
-        .aud_l(aud_l), .aud_r(aud_r), .aud_valid(aud_valid));
+        .aud_l(aud_l), .aud_r(aud_r), .aud_valid(aud_valid),
+        .aud0_l(aud0_l), .aud0_r(aud0_r), .aud0_valid(aud0_valid));
 
     assign key_in = pi[3:0];
     assign k4_in = pi[4];

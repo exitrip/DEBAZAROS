@@ -84,7 +84,7 @@ module tb;
     .tx_clk(tclk), .tx_aud_l(lo_l), .tx_aud_r(lo_r), .tx_aud_valid(lo_v));
 
   // ---- checks ---------------------------------------------------------------------
-  localparam LAT = 14 + 1 + 1;          // tx + decoder model + hdmi_rx
+  localparam LAT = 15 + 1 + 1;          // tx (LOOK + 5) + decoder model + hdmi_rx
   reg [26:0] hist [0:NCYC];
   reg [26:0] mhist [0:NCYC];
   integer cyc = 0, fails = 0, nvid = 0, nsync = 0;

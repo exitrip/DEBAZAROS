@@ -3,7 +3,7 @@
 // kRstActiveHigh = false, no lane swaps). BD module reference.
 //
 // ctrl = 0: DVI. The TMDS output is the same as rgb2dvi's (same encoder, same
-//   channel mapping, same serializer); only the latency is LOOK clocks longer
+//   channel mapping, same serializer); only the latency is LOOK + 1 clocks longer
 //   (sync and data together, so the picture does not move).
 // ctrl[0] = 1: HDMI. Data islands in the horizontal blanking of every line:
 //   the AVI InfoFrame (every field), and with ctrl[1] audio in ONE format,
@@ -135,14 +135,28 @@ module hdmi_tx #(
     always @(posedge PixelClk) vs_d_q <= vs_d;
     wire field_end = vs_d ^ vs_d_q;
 
+    // ---- stage q: register the scheduler decisions (2026-10-27) ----------------
+    // The position compares (line length -> hc -> p -> island windows -> packet
+    // start) reached the packet picker in one clock (12.6 ns). This stage cuts
+    // it; data and syncs get the same extra clock, so nothing moves.
+    reg vid_pre_q = 0, vid_guard_q = 0, di_pre_q = 0, di_guard_q = 0, di_period_q = 0;
+    reg pkt_en_q = 0, field_end_q = 0, de_q = 0, hs_q = 0, vs_q = 0;
+    reg [23:0] rgb_q = 0;
+    always @(posedge PixelClk) begin
+        vid_pre_q <= vid_pre_0;  vid_guard_q <= vid_guard_0;
+        di_pre_q <= di_pre_0;    di_guard_q <= di_guard_0;  di_period_q <= di_period_0;
+        pkt_en_q <= pkt_en;      field_end_q <= field_end;
+        de_q <= de_d;  hs_q <= hs_d;  vs_q <= vs_d;  rgb_q <= rgb_d;
+    end
+
     // ---- stage 1 -------------------------------------------------------------
     reg vid_pre_1 = 0, vid_guard_1 = 0, di_pre_1 = 0, di_guard_1 = 0, di_period_1 = 0;
     reg de_1 = 0, hs_1 = 0, vs_1 = 0;
     reg [23:0] rgb_1 = 0;
     always @(posedge PixelClk) begin
-        vid_pre_1 <= vid_pre_0;  vid_guard_1 <= vid_guard_0;
-        di_pre_1 <= di_pre_0;    di_guard_1 <= di_guard_0;  di_period_1 <= di_period_0;
-        de_1 <= de_d;  hs_1 <= hs_d;  vs_1 <= vs_d;  rgb_1 <= rgb_d;
+        vid_pre_1 <= vid_pre_q;  vid_guard_1 <= vid_guard_q;
+        di_pre_1 <= di_pre_q;    di_guard_1 <= di_guard_q;  di_period_1 <= di_period_q;
+        de_1 <= de_q;  hs_1 <= hs_q;  vs_1 <= vs_q;  rgb_1 <= rgb_q;
     end
 
     // ---- audio source ----------------------------------------------------------
@@ -165,7 +179,7 @@ module hdmi_tx #(
     wire [8:0]  packet_data;
     hdmi_tx_packets packets (
         .clk(PixelClk), .rst(rst), .audio_en(audio_en), .avi_sel(avi_sel),
-        .field_end(field_end), .pkt_en(pkt_en), .period(di_period_1),
+        .field_end(field_end_q), .pkt_en(pkt_en_q), .period(di_period_1),
         .smp_valid(smp_valid), .smp_l(smp_l), .smp_r(smp_r),
         .packet_data(packet_data));
 

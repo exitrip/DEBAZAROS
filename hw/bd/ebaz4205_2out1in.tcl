@@ -148,7 +148,6 @@ xilinx.com:ip:blk_mem_gen:8.4\
 xilinx.com:ip:c_addsub:12.0\
 xilinx.com:ip:c_counter_binary:12.0\
 xilinx.com:ip:dds_compiler:6.0\
-digilentinc.com:ip:rgb2dvi:1.4\
 xilinx.com:ip:v_axi4s_vid_out:4.0\
 xilinx.com:ip:v_tc:6.2\
 digilentinc.com:ip:dvi2rgb:2.0\
@@ -2845,6 +2844,11 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   create_bd_pin -dir I -from 0 -to 0 -type intr In4
   create_bd_pin -dir I -type intr In5
   create_bd_pin -dir I -type clk PixelClk
+  create_bd_pin -dir I -from 31 -to 0 audio_ctrl
+  create_bd_pin -dir I -from 31 -to 0 audio_fs_inc
+  create_bd_pin -dir I -from 15 -to 0 aud_l
+  create_bd_pin -dir I -from 15 -to 0 aud_r
+  create_bd_pin -dir I aud_valid
   create_bd_pin -dir I SerialClk
   create_bd_pin -dir O TMDS_Clk_n_0
   create_bd_pin -dir O TMDS_Clk_p_0
@@ -3017,12 +3021,17 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   # Create instance: mixerMatrix
   create_hier_cell_mixerMatrix $hier_obj mixerMatrix
 
-  # Create instance: rgb2dvi_0, and set properties
-  set rgb2dvi_0 [ create_bd_cell -type ip -vlnv digilentinc.com:ip:rgb2dvi:1.4 rgb2dvi_0 ]
-  set_property -dict [list \
-    CONFIG.kGenerateSerialClk {false} \
-    CONFIG.kRstActiveHigh {false} \
-  ] $rgb2dvi_0
+  # Create instance: hdmi_tx_0 (replaces rgb2dvi_0, 2026-10-27: DVI when ctrl
+  # = 0, HDMI + audio otherwise; hw/rtl/hdmi_tx)
+  set block_name hdmi_tx
+  set block_cell_name hdmi_tx_0
+  if { [catch {set hdmi_tx_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   } elseif { $hdmi_tx_0 eq "" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   }
 
 
   # Create instance: v_axi4s_vid_out_0, and set properties
@@ -3095,7 +3104,6 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_intf_net -intf_net axis_subset_converter_0_M_AXIS [get_bd_intf_pins axis_subset_converter_0/M_AXIS] [get_bd_intf_pins v_axi4s_vid_out_0/video_in]
   connect_bd_intf_net -intf_net dds_stream_s_1 [get_bd_intf_pins dds_stream_s] [get_bd_intf_pins dds_compiler_0/S_AXIS_CONFIG]
   connect_bd_intf_net -intf_net gain_1 [get_bd_intf_pins mainG_shift_memdelay] [get_bd_intf_pins axi_gpio_mainG_shift_memdelay/S_AXI]
-  connect_bd_intf_net -intf_net v_axi4s_vid_out_0_vid_io_out [get_bd_intf_pins rgb2dvi_0/RGB] [get_bd_intf_pins v_axi4s_vid_out_0/vid_io_out]
 
   # Create port connections
   connect_bd_net -net Din_1 [get_bd_pins colorGainMain/Din] [get_bd_pins mixerMatrix/dout]
@@ -3106,16 +3114,22 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net Net [get_bd_pins m_axis_mm2s_aclk] [get_bd_pins axi_interconnect_1/ACLK] [get_bd_pins axi_interconnect_1/M00_ACLK] [get_bd_pins axi_interconnect_1/S00_ACLK] [get_bd_pins axi_vdma_0/m_axi_mm2s_aclk] [get_bd_pins axi_vdma_0/m_axis_mm2s_aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins v_axi4s_vid_out_0/aclk]
   connect_bd_net -net PS_ARESETN [get_bd_pins s_axi_aresetn] [get_bd_pins axi_gpio_mainG_shift_memdelay/s_axi_aresetn] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins dds_compiler_0/aresetn] [get_bd_pins mixerMatrix/s_axi_aresetn] [get_bd_pins v_tc_0/s_axi_aresetn]
   connect_bd_net -net PS_FCLK_CLK0 [get_bd_pins s_axi_aclk] [get_bd_pins axi_gpio_mainG_shift_memdelay/s_axi_aclk] [get_bd_pins axi_vdma_0/s_axi_lite_aclk] [get_bd_pins dds_compiler_0/aclk] [get_bd_pins div16_8_recip_0/clk] [get_bd_pins div16_8_recip_1/clk] [get_bd_pins mixerMatrix/s_axi_aclk] [get_bd_pins v_tc_0/s_axi_aclk]
-  connect_bd_net -net SerialClk_1 [get_bd_pins SerialClk] [get_bd_pins rgb2dvi_0/SerialClk]
-  connect_bd_net -net aRst_n_1 [get_bd_pins aRst_n] [get_bd_pins blk_mem_gen_0/wea] [get_bd_pins rgb2dvi_0/aRst_n] [get_bd_pins v_axi4s_vid_out_0/aresetn]
-  connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins PixelClk] [get_bd_pins blk_mem_gen_0/clka] [get_bd_pins blk_mem_gen_0/clkb] [get_bd_pins c_addsub_0/CLK] [get_bd_pins c_counter_binary_0/CLK] [get_bd_pins colorGainMain/pixClk_in] [get_bd_pins mixerMatrix/PixelClk] [get_bd_pins rgb2dvi_0/PixelClk] [get_bd_pins v_axi4s_vid_out_0/vid_io_out_clk] [get_bd_pins v_tc_0/clk]
+  connect_bd_net -net SerialClk_1 [get_bd_pins SerialClk] [get_bd_pins hdmi_tx_0/SerialClk]
+  connect_bd_net -net v_axi4s_vid_out_0_vid_active_video [get_bd_pins hdmi_tx_0/vid_pVDE] [get_bd_pins v_axi4s_vid_out_0/vid_active_video]
+  connect_bd_net -net audio_ctrl_1 [get_bd_pins audio_ctrl] [get_bd_pins hdmi_tx_0/ctrl]
+  connect_bd_net -net audio_fs_inc_1 [get_bd_pins audio_fs_inc] [get_bd_pins hdmi_tx_0/fs_inc]
+  connect_bd_net -net aud_l_1 [get_bd_pins aud_l] [get_bd_pins hdmi_tx_0/aud_l]
+  connect_bd_net -net aud_r_1 [get_bd_pins aud_r] [get_bd_pins hdmi_tx_0/aud_r]
+  connect_bd_net -net aud_valid_1 [get_bd_pins aud_valid] [get_bd_pins hdmi_tx_0/aud_valid]
+  connect_bd_net -net aRst_n_1 [get_bd_pins aRst_n] [get_bd_pins blk_mem_gen_0/wea] [get_bd_pins hdmi_tx_0/aRst_n] [get_bd_pins v_axi4s_vid_out_0/aresetn]
+  connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins PixelClk] [get_bd_pins blk_mem_gen_0/clka] [get_bd_pins blk_mem_gen_0/clkb] [get_bd_pins c_addsub_0/CLK] [get_bd_pins c_counter_binary_0/CLK] [get_bd_pins colorGainMain/pixClk_in] [get_bd_pins mixerMatrix/PixelClk] [get_bd_pins hdmi_tx_0/PixelClk] [get_bd_pins v_axi4s_vid_out_0/vid_io_out_clk] [get_bd_pins v_tc_0/clk]
   connect_bd_net -net axi_gpio_0_gpio_io_o [get_bd_pins axi_gpio_mainG_shift_memdelay/gpio_io_o] [get_bd_pins xlslice_0/Din] [get_bd_pins xlslice_1/Din]
   connect_bd_net -net axi_gpio_mainG_shift_memdelay_gpio2_io_o [get_bd_pins axi_gpio_mainG_shift_memdelay/gpio2_io_o] [get_bd_pins xlslice_2/Din] [get_bd_pins xlslice_3/Din]
   connect_bd_net -net axi_vdma_0_mm2s_introut [get_bd_pins axi_vdma_0/mm2s_introut] [get_bd_pins xlconcat_IRQ/In1]
   connect_bd_net -net blk_mem_gen_0_doutb [get_bd_pins blk_mem_gen_0/doutb] [get_bd_pins mixerMatrix/din3]
   connect_bd_net -net c_addsub_0_S [get_bd_pins c_addsub_0/S] [get_bd_pins mixerMatrix/din1]
   connect_bd_net -net c_addsub_1_S [get_bd_pins blk_mem_gen_0/addrb] [get_bd_pins c_addsub_1/S]
-  connect_bd_net -net colorGain_dout [get_bd_pins pixData] [get_bd_pins colorGainMain/dout] [get_bd_pins rgb2dvi_0/vid_pData]
+  connect_bd_net -net colorGain_dout [get_bd_pins pixData] [get_bd_pins colorGainMain/dout] [get_bd_pins hdmi_tx_0/vid_pData]
   connect_bd_net -net counter26_0_count [get_bd_pins blk_mem_gen_0/addra] [get_bd_pins c_addsub_1/A] [get_bd_pins c_counter_binary_0/Q]
   connect_bd_net -net dds_compiler_0_m_axis_data_tdata [get_bd_pins dds_compiler_0/m_axis_data_tdata] [get_bd_pins div16_8_recip_0/num]
   connect_bd_net -net dds_compiler_0_m_axis_data_tvalid [get_bd_pins dds_compiler_0/m_axis_data_tvalid] [get_bd_pins div16_8_recip_0/ce]
@@ -3125,14 +3139,14 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net div16_8_recip_0_quot [get_bd_pins c_addsub_0/A] [get_bd_pins div16_8_recip_0/quot]
   connect_bd_net -net div16_8_recip_1_quot [get_bd_pins div16_8_recip_1/quot] [get_bd_pins mixerMatrix/din4]
   connect_bd_net -net pixIn_1 [get_bd_pins pixIn] [get_bd_pins blk_mem_gen_0/dina] [get_bd_pins mixerMatrix/din0]
-  connect_bd_net -net rgb2dvi_0_TMDS_Clk_n [get_bd_pins TMDS_Clk_n_0] [get_bd_pins rgb2dvi_0/TMDS_Clk_n]
-  connect_bd_net -net rgb2dvi_0_TMDS_Clk_p [get_bd_pins TMDS_Clk_p_0] [get_bd_pins rgb2dvi_0/TMDS_Clk_p]
-  connect_bd_net -net rgb2dvi_0_TMDS_Data_n [get_bd_pins TMDS_Data_n_0] [get_bd_pins rgb2dvi_0/TMDS_Data_n]
-  connect_bd_net -net rgb2dvi_0_TMDS_Data_p [get_bd_pins TMDS_Data_p_0] [get_bd_pins rgb2dvi_0/TMDS_Data_p]
+  connect_bd_net -net rgb2dvi_0_TMDS_Clk_n [get_bd_pins TMDS_Clk_n_0] [get_bd_pins hdmi_tx_0/TMDS_Clk_n]
+  connect_bd_net -net rgb2dvi_0_TMDS_Clk_p [get_bd_pins TMDS_Clk_p_0] [get_bd_pins hdmi_tx_0/TMDS_Clk_p]
+  connect_bd_net -net rgb2dvi_0_TMDS_Data_n [get_bd_pins TMDS_Data_n_0] [get_bd_pins hdmi_tx_0/TMDS_Data_n]
+  connect_bd_net -net rgb2dvi_0_TMDS_Data_p [get_bd_pins TMDS_Data_p_0] [get_bd_pins hdmi_tx_0/TMDS_Data_p]
   connect_bd_net -net rst_ps7_0_140M_peripheral_aresetn [get_bd_pins ARESETN] [get_bd_pins axi_interconnect_1/ARESETN] [get_bd_pins axi_interconnect_1/M00_ARESETN] [get_bd_pins axi_interconnect_1/S00_ARESETN] [get_bd_pins axis_subset_converter_0/aresetn]
   connect_bd_net -net v_axi4s_vid_out_0_vid_data [get_bd_pins mixerMatrix/pixIn0] [get_bd_pins v_axi4s_vid_out_0/vid_data]
-  connect_bd_net -net v_axi4s_vid_out_0_vid_hsync [get_bd_pins rgb2dvi_0/vid_pHSync] [get_bd_pins v_axi4s_vid_out_0/vid_hsync]
-  connect_bd_net -net v_axi4s_vid_out_0_vid_vsync [get_bd_pins rgb2dvi_0/vid_pVSync] [get_bd_pins v_axi4s_vid_out_0/vid_vsync]
+  connect_bd_net -net v_axi4s_vid_out_0_vid_hsync [get_bd_pins hdmi_tx_0/vid_pHSync] [get_bd_pins v_axi4s_vid_out_0/vid_hsync]
+  connect_bd_net -net v_axi4s_vid_out_0_vid_vsync [get_bd_pins hdmi_tx_0/vid_pVSync] [get_bd_pins v_axi4s_vid_out_0/vid_vsync]
   connect_bd_net -net v_tc_0_active_video_out [get_bd_pins active_video_out] [get_bd_pins v_axi4s_vid_out_0/vtg_active_video] [get_bd_pins v_tc_0/active_video_out]
   connect_bd_net -net v_tc_0_hblank_out [get_bd_pins hblank_out] [get_bd_pins v_axi4s_vid_out_0/vtg_hblank] [get_bd_pins v_tc_0/hblank_out]
   connect_bd_net -net v_tc_0_hsync_out [get_bd_pins hsync_out] [get_bd_pins v_axi4s_vid_out_0/vtg_hsync] [get_bd_pins v_tc_0/hsync_out]
@@ -3449,7 +3463,11 @@ proc create_root_design { parentCell } {
   connect_bd_net -net pl_io_0_SPI0_SS_I [get_bd_pins pl_io_0/SPI0_SS_I] [get_bd_pins PS/SPI0_SS_I]
   connect_bd_net -net pl_io_0_UART0_RX [get_bd_pins pl_io_0/UART0_RX] [get_bd_pins PS/UART0_RX]
   connect_bd_net -net hdmi_audio_regs_0_tx_ctrl [get_bd_pins hdmi_audio_regs_0/tx_ctrl] [get_bd_pins HDMI_1/audio_ctrl]
-  connect_bd_net -net hdmi_audio_regs_0_tx_fs_inc [get_bd_pins hdmi_audio_regs_0/tx_fs_inc] [get_bd_pins HDMI_1/audio_fs_inc]
+  connect_bd_net -net hdmi_audio_regs_0_tx_fs_inc [get_bd_pins hdmi_audio_regs_0/tx_fs_inc] [get_bd_pins HDMI_1/audio_fs_inc] [get_bd_pins HDMI_0/audio_fs_inc]
+  connect_bd_net -net hdmi_audio_regs_0_tx0_ctrl [get_bd_pins hdmi_audio_regs_0/tx0_ctrl] [get_bd_pins HDMI_0/audio_ctrl]
+  connect_bd_net -net pl_io_0_aud0_l [get_bd_pins pl_io_0/aud0_l] [get_bd_pins HDMI_0/aud_l]
+  connect_bd_net -net pl_io_0_aud0_r [get_bd_pins pl_io_0/aud0_r] [get_bd_pins HDMI_0/aud_r]
+  connect_bd_net -net pl_io_0_aud0_valid [get_bd_pins pl_io_0/aud0_valid] [get_bd_pins HDMI_0/aud_valid]
   connect_bd_net -net PS_ARESETN [get_bd_pins HDMI_0/s_axi_aresetn] [get_bd_pins HDMI_1/s_axi_aresetn] [get_bd_pins PS/ARESETN] [get_bd_pins axi_dynclk_0/s_axi_lite_aresetn] [get_bd_pins axi_gpio_hdmi_in_phase0_div_gPhase1/s_axi_aresetn] [get_bd_pins dds_axi_interface_0/ctrl_m_axis_aresetn] [get_bd_pins dds_axi_interface_0/ctrl_s_axi_aresetn] [get_bd_pins dds_axi_interface_1/ctrl_m_axis_aresetn] [get_bd_pins dds_axi_interface_1/ctrl_s_axi_aresetn] [get_bd_pins ps7_axi_periph/ARESETN] [get_bd_pins ps7_axi_periph/M00_ARESETN] [get_bd_pins ps7_axi_periph/M01_ARESETN] [get_bd_pins ps7_axi_periph/M02_ARESETN] [get_bd_pins ps7_axi_periph/M03_ARESETN] [get_bd_pins ps7_axi_periph/M04_ARESETN] [get_bd_pins ps7_axi_periph/M05_ARESETN] [get_bd_pins ps7_axi_periph/M06_ARESETN] [get_bd_pins ps7_axi_periph/M07_ARESETN] [get_bd_pins ps7_axi_periph/M08_ARESETN] [get_bd_pins ps7_axi_periph/M09_ARESETN] [get_bd_pins ps7_axi_periph/M10_ARESETN] [get_bd_pins ps7_axi_periph/M11_ARESETN] [get_bd_pins ps7_axi_periph/M12_ARESETN] [get_bd_pins ps7_axi_periph/S00_ARESETN] [get_bd_pins hdmi_audio_regs_0/s_axi_aresetn] [get_bd_pins pl_io_0/rstn]
   connect_bd_net -net PS_FCLK_CLK0 [get_bd_pins HDMI_0/s_axi_aclk] [get_bd_pins HDMI_1/s_axi_aclk] [get_bd_pins HDMI_2/s_axi_lite_aclk_0] [get_bd_pins PS/FCLK_CLK0_100M] [get_bd_pins axi_dynclk_0/REF_CLK_I] [get_bd_pins axi_dynclk_0/s_axi_lite_aclk] [get_bd_pins axi_gpio_hdmi_in_phase0_div_gPhase1/s_axi_aclk] [get_bd_pins dds_axi_interface_0/ctrl_m_axis_aclk] [get_bd_pins dds_axi_interface_0/ctrl_s_axi_aclk] [get_bd_pins dds_axi_interface_1/ctrl_m_axis_aclk] [get_bd_pins dds_axi_interface_1/ctrl_s_axi_aclk] [get_bd_pins ps7_axi_periph/ACLK] [get_bd_pins ps7_axi_periph/M00_ACLK] [get_bd_pins ps7_axi_periph/M01_ACLK] [get_bd_pins ps7_axi_periph/M02_ACLK] [get_bd_pins ps7_axi_periph/M03_ACLK] [get_bd_pins ps7_axi_periph/M04_ACLK] [get_bd_pins ps7_axi_periph/M05_ACLK] [get_bd_pins ps7_axi_periph/M06_ACLK] [get_bd_pins ps7_axi_periph/M07_ACLK] [get_bd_pins ps7_axi_periph/M08_ACLK] [get_bd_pins ps7_axi_periph/M09_ACLK] [get_bd_pins ps7_axi_periph/M10_ACLK] [get_bd_pins ps7_axi_periph/M11_ACLK] [get_bd_pins ps7_axi_periph/M12_ACLK] [get_bd_pins ps7_axi_periph/S00_ACLK] [get_bd_pins hdmi_audio_regs_0/s_axi_aclk] [get_bd_pins pl_io_0/clk]
   connect_bd_net -net PS_FCLK_CLK0_200M [get_bd_pins HDMI_2/RefClk] [get_bd_pins PS/FCLK_CLK0_200M]

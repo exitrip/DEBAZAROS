@@ -17,7 +17,9 @@
 //
 // i2s_ctrl: [0] I2S on, [1] DOUT plays the HDMI_2 input audio (else silence),
 // [2] HDMI_1 audio = I2S DIN (else the HDMI_2 loop), [3] steer the bit clock
-// by the TX FIFO level (follows the HDMI_2 source clock).
+// by the TX FIFO level (follows the HDMI_2 source clock), [4] HDMI_0 audio =
+// I2S DIN (else the HDMI_2 loop). Same source on both outputs = the same
+// samples on both; each hdmi_tx has its own test tone (TX_CTRL / TX0_CTRL).
 // Clock domains: clk = FCLK0 (registers, I2S), rx_clk = HDMI_2 pixel clock,
 // tx_clk = HDMI_1 pixel clock.
 `timescale 1ns / 1ps
@@ -49,8 +51,10 @@ module pl_io_core (
     input  wire        tx_clk,
     input  wire [15:0] loop_l, loop_r,  // hdmi_rx loop FIFO output (tx_clk)
     input  wire        loop_valid,
-    output reg  [15:0] aud_l = 0, aud_r = 0,   // to hdmi_tx (tx_clk)
-    output reg         aud_valid = 0
+    output reg  [15:0] aud_l = 0, aud_r = 0,   // to HDMI_1's hdmi_tx (tx_clk)
+    output reg         aud_valid = 0,
+    output reg  [15:0] aud0_l = 0, aud0_r = 0, // to HDMI_0's hdmi_tx (tx_clk)
+    output reg         aud0_valid = 0
 );
     wire rst = ~rstn;
     wire bclk, lrclk, dout;
@@ -149,14 +153,15 @@ module pl_io_core (
     // ---- I2S RX -> FIFO -> HDMI_1 audio (tx_clk) ------------------------------
     wire [31:0] rxf_data;
     wire        rxf_empty;
-    (* ASYNC_REG = "TRUE" *) reg [1:0] rxsrc_s = 0;
-    wire use_i2s = rxsrc_s[1];
+    (* ASYNC_REG = "TRUE" *) reg [1:0] rxsrc_s = 0, rxsrc0_s = 0;
+    wire use_i2s = rxsrc_s[1], use_i2s0 = rxsrc0_s[1];
     dz_async_fifo #(.W(32), .AW(3)) rxf (
         .wr_clk(clk), .wr_en(rx_word_valid), .wr_data(rx_word), .wr_full(),
-        .rd_clk(tx_clk), .rd_en(use_i2s), .rd_data(rxf_data), .rd_empty(rxf_empty),
+        .rd_clk(tx_clk), .rd_en(use_i2s | use_i2s0), .rd_data(rxf_data), .rd_empty(rxf_empty),
         .rd_level());
     always @(posedge tx_clk) begin
         rxsrc_s <= {rxsrc_s[0], i2s_ctrl[2]};
+        rxsrc0_s <= {rxsrc0_s[0], i2s_ctrl[4]};
         if (use_i2s) begin
             aud_valid <= !rxf_empty;
             {aud_r, aud_l} <= rxf_data;
@@ -164,6 +169,14 @@ module pl_io_core (
             aud_valid <= loop_valid;
             aud_l <= loop_l;
             aud_r <= loop_r;
+        end
+        if (use_i2s0) begin
+            aud0_valid <= !rxf_empty;
+            {aud0_r, aud0_l} <= rxf_data;
+        end else begin
+            aud0_valid <= loop_valid;
+            aud0_l <= loop_l;
+            aud0_r <= loop_r;
         end
     end
 endmodule

@@ -5,6 +5,8 @@
 //   0x00 RW TX_CTRL     -> hdmi_tx ctrl ([0] HDMI, [1] audio, [2] tone, [9:8] AVI VIC)
 //   0x04 RW TX_FS_INC   -> hdmi_tx fs_inc (internal 48 kHz NCO)
 //   0x08 RW RX_CTRL     [0] loop received audio into hdmi_tx, [1] clear peaks
+//   0x0C RW TX0_CTRL    HDMI_0's hdmi_tx ctrl (bits as TX_CTRL, which is HDMI_1);
+//                       both outputs share TX_FS_INC (same pixel clock)
 //   0x10 RO RX_STATUS   [0] data islands seen, [1] audio samples seen (last update)
 //   0x14 RO RX_SAMPLES  stereo samples received (wraps)
 //   0x18 RO RX_PEAK     [31:16] R, [15:0] L: peak |sample| since the last clear
@@ -48,6 +50,7 @@ module hdmi_audio_regs #(
     input  wire        s_axi_rready,
 
     output reg  [31:0] tx_ctrl = 0,
+    output reg  [31:0] tx0_ctrl = 0,
     output reg  [31:0] tx_fs_inc = 0,
     output reg  [31:0] rx_ctrl = 0,
     output reg  [23:0] io_func = 0,
@@ -89,7 +92,7 @@ module hdmi_audio_regs #(
     always @(posedge s_axi_aclk) begin
         if (!s_axi_aresetn) begin
             s_axi_awready <= 0; s_axi_wready <= 0; s_axi_bvalid <= 0;
-            tx_ctrl <= 0; tx_fs_inc <= 0; rx_ctrl <= 0;
+            tx_ctrl <= 0; tx0_ctrl <= 0; tx_fs_inc <= 0; rx_ctrl <= 0;
             io_func <= 0; io_out <= 0; i2s_ctrl <= 0; i2s_inc <= 32'd263882791;
         end else begin
             s_axi_awready <= wr;
@@ -101,6 +104,7 @@ module hdmi_audio_regs #(
                             5'h00: tx_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             5'h01: tx_fs_inc[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             5'h02: rx_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
+                            5'h03: tx0_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             5'h10: if (b < 3) io_func[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             5'h11: if (b == 0) io_out <= s_axi_wdata[5:0];
                             5'h13: i2s_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
@@ -124,6 +128,7 @@ module hdmi_audio_regs #(
                     5'h00: s_axi_rdata <= tx_ctrl;
                     5'h01: s_axi_rdata <= tx_fs_inc;
                     5'h02: s_axi_rdata <= rx_ctrl;
+                    5'h03: s_axi_rdata <= tx0_ctrl;
                     5'h04: s_axi_rdata <= {30'd0, st};
                     5'h05: s_axi_rdata <= samples;
                     5'h06: s_axi_rdata <= peak;

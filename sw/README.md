@@ -297,6 +297,8 @@ dzctl /io/pin 4 miso; dzctl /io/pin 5 cs0
 dzctl /io/pin 2 txd; dzctl /io/pin 3 rxd      # PS UART0 -> /dev/ttyPS1
 dzctl /io/pin 0 bclk; dzctl /io/pin 1 lrclk; dzctl /io/pin 2 dout   # I2S DAC
 dzctl /i2s/on 1; dzctl /i2s/play 1; dzctl /i2s/steer 1  # play the HDMI_2 audio
+dzctl /audio/tx0/hdmi 1; dzctl /audio/tx0/enable 1   # HDMI_0 audio too (own switches)
+dzctl /i2s/to_hdmi0 1                         # HDMI_0 audio = I2S in (else HDMI_2 loop)
 dzctl /io/pin 5 out; dzctl /io/out/5 1        # plain output
 dzctl /io/pins                                # all six functions
 ```
