@@ -24,7 +24,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | PLAN (2026-10-25) |
 | 12 | Audio (HDMI out/in, I2S), PL_KEY I2C/SPI/UART, fan-port I/O, PL resource recovery, 1080p buffers (section 11) | 2 | ANALYSIS (2026-10-26) |
 | 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |
-| 14 | HDMI audio out: `hw/rtl/hdmi_tx` replaces rgb2dvi (section 11) | 2 | RTL + simulation DONE 2026-10-26; BD integration next |
+| 14 | HDMI audio out (HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | WORKS on hardware 2026-10-26 (branch hdmi-audio, artifacts/..._20261026_audio): out, in, loop; open: rebuild with the CDC constraints, hdmi_tx scheduler pipeline for 1080p60, software HPD |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -743,17 +743,31 @@ internal sample-clock NCO.
   [2] tone, [9:8] AVI VIC select.
 - Out-of-context synthesis: 630 LUT, 441 FF, no BRAM/DSP (first version
   927 / 1005; rgb2dvi about 100 LUT/FF); 720p60 +3.4 ns, 1080p60 -3.4 ns.
-- Audio IN (next): EDID needs an Audio Data Block (LPCM 2 ch 48 kHz 16 bit
-  only) + HDMI VSDB + basic-audio flag (today: video block only -> the
-  laptop sends DVI, no audio); dvi2rgb fork exports the aligned 10-bit
-  symbols; a receiver parses Audio Sample + ACR packets (~250-350 LUT, on
-  HDMI_2's BUFG clock). Output with audio on HDMI_1 (HDMI_0 keeps the VTC
-  and may become an input in a 1out2in variant).
-- NOT in the BD yet. Integration needs: which output (HDMI_0 or HDMI_1),
-  where `ctrl`/`fs_inc` come from (an AXI-Lite register in the block is the
-  clean way; GPIO channels are all used), and the audio source (Xilinx Audio
-  Formatter MM2S -> AXIS -> a CDC FIFO into `aud_*`; the test tone first).
-  EDID: the sink decides; DVI sinks ignore islands only if `ctrl[0]` = 0.
+- Audio IN (built 2026-10-26, branch hdmi-audio): EDID with only L-PCM
+  2 ch 48 kHz 16 bit + HDMI VSDB (`hw/edid_audio.py`); dvi2rgb fork exports
+  `pRawSym`; `hw/rtl/hdmi_tx/hdmi_rx.v` between dvi2rgb and v_vid_in fixes
+  DE/syncs for HDMI sources (dvi2rgb alone would capture islands as video)
+  and extracts the audio; loop into hdmi_tx on HDMI_1 by `/audio/rx/loop`.
+  Output with audio on HDMI_1 (HDMI_0 keeps the VTC and may become an input
+  in a 1out2in variant).
+- HARDWARE RESULT 2026-10-26: output tone on a scope behind an HDMI audio
+  extractor; laptop -> HDMI_2: ELD "DGL 720P CEA" LPCM 2 ch 48 kHz 16 bit,
+  islands + audio flags, N 6144, CTS 74250 (exact), a left-only 4096 sine
+  read back as peak L 4096 / R 0 at 100 % laptop volume; capture DMA error
+  bits stay clear with an HDMI source (DE/sync fix works); /audio/rx/loop 1
+  plays the laptop audio on HDMI_1 (heard). Gotchas: (1) every PL reload
+  bounces HPD_2; the laptop's i915 then switched that port to polling ("HPD
+  interrupt storm") and did not redo the mode set: unplug the cable >= 15 s
+  so it switches to HDMI audio. Software HPD control would avoid it. (2) the
+  laptop's HDMI 1 sink was at 153 % volume (+11 dB): peaks read 3.55x high.
+- Test plan (board): load the build with plreload.sh; `/audio/tx/hdmi 1`,
+  `/audio/tx/enable 1`, `/audio/tx/fs_inc 2776544`, `/audio/tx/tone 1` ->
+  the HDMI audio extractor on HDMI_1 plays 1 kHz. Laptop -> HDMI_2: the
+  laptop must now offer "HDMI audio" for that output (EDID); play a tone,
+  read `/audio/rx/{islands,active,n,cts,samples,peak/l}` (N 6144, CTS 74250
+  at 720p60), check the capture picture is still clean (DE fix), then
+  `/audio/rx/loop 1` with tone off -> laptop audio on HDMI_1.
+
 
 Background (still valid): data-island periods in the blanking (TERC4,
 guard bands, preambles), packets (ACR N/CTS, AVI, Audio InfoFrame, Audio

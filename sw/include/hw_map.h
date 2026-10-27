@@ -14,6 +14,7 @@
 #define HW_HDMI_0_V_TC_0_BASE                             0x43C20000  /* range 0x10000, /HDMI_0/v_tc_0/ctrl/Reg */
 #define HW_AXI_DYNCLK_0_BASE                              0x43C40000  /* range 0x10000, /axi_dynclk_0/S_AXI_LITE/S_AXI_LITE_reg */
 #define HW_HDMI_0_MIXERMATRIX_MIXER_0_BASE                0x43C50000  /* range 0x10000, /HDMI_0/mixerMatrix/mixer_0/S00_AXI/S00_AXI_reg */
+#define HW_HDMI_AUDIO_REGS_0_BASE                         0x43C60000  /* range 0x10000, /hdmi_audio_regs_0/s_axi/reg0 */
 #define HW_DDS_AXI_INTERFACE_0_BASE                       0x43D00000  /* range 0x1000, /dds_axi_interface_0/ctrl_s_axi/reg0 */
 #define HW_DDS_AXI_INTERFACE_1_BASE                       0x44D00000  /* range 0x1000, /dds_axi_interface_1/ctrl_s_axi/reg0 */
 

@@ -6,7 +6,9 @@
 #   <ipdir>  an IP repo folder with component.xml, relative to the repo root:
 #            IP_dvi2rgb, IP_rgb2dvi, IP_axi_dynclk, ip_repo/mixer_1_0
 #   ports <top>  the RTL edit added, removed or resized ports of module <top>
-#            (e.g. ports mixer_v1_0): read <ipdir>/hdl/*.v and merge the port
+#            (e.g. ports mixer_v1_0, ports dvi2rgb): read <ipdir>/hdl/*.v,
+#            src/*.v and src/*.vhd and merge the port (only for IPs whose
+#            package is HDL files only, e.g. the mixer; see the check below)
 #            list into component.xml (file groups stay as they are)
 #
 # It changes only <ipdir>/component.xml: new file checksums and core_revision
@@ -27,15 +29,28 @@ if {[lindex $argv 1] eq "ports"} { set top [lindex $argv 2] }
 if {$top ne ""} {
   # merge_project_changes reads the ports from the current project's top
   create_project -in_memory -part xc7z010clg400-1
-  add_files [glob $ipdir/hdl/*.v]
+  add_files [glob -nocomplain $ipdir/hdl/*.v $ipdir/src/*.v $ipdir/src/*.vhd]
   set_property top $top [current_fileset]
   update_compile_order -fileset sources_1
 }
 ipx::open_core $ipdir/component.xml
 set core [ipx::current_core]
 if {$top ne ""} {
+  # merge_project_changes also drops every packaged file that is not in the
+  # in-memory project (EDID .data, .xdc, .xci of dvi2rgb: 2026-10-26). Stop
+  # if the file count falls; then add the port element by hand instead.
+  proc nfiles {core} {
+    set n 0
+    foreach fg [ipx::get_file_groups -of_objects $core] { incr n [llength [ipx::get_files -of_objects $fg]] }
+    return $n
+  }
   set n [llength [ipx::get_ports -of_objects $core]]
+  set f [nfiles $core]
   ipx::merge_project_changes ports $core
+  if {[nfiles $core] < $f} {
+    ipx::unload_core $core
+    error "merge_project_changes dropped packaged files ($f -> fewer); component.xml NOT saved. Add the <spirit:port> element by hand, then run without 'ports'."
+  }
   puts "INFO: ports $n -> [llength [ipx::get_ports -of_objects $core]]"
 }
 set rev  [get_property core_revision $core]

@@ -80,6 +80,10 @@ entity TMDS_Decoder is
       pC0 : out std_logic;
       pC1 : out std_logic;
       pVde : out std_logic;
+      -- HDMI (DEBAZAROS, 2026-10-26): the bonded 10-bit symbol, same timing as
+      -- the outputs above (control token 0 while not aligned); data islands and
+      -- guard bands decode as "data" above, hdmi_rx tells them apart
+      pDataRaw : out std_logic_vector(9 downto 0);
       
       -- Channel bonding (three data channels in total)
       pOtherChVld : in std_logic_vector(1 downto 0);
@@ -261,6 +265,7 @@ begin
    if Rising_Edge(PixelClk) then
       if (pMeRdy_int = '1' and pOtherChRdy = "11") then
          pDataIn <= x"00"; --added for VGA-compatibility (blank pixel needed during blanking)
+         pDataRaw <= pDataInBnd;
          
          case (pDataInBnd) is
             --Control tokens decode straight to C0, C1 values
@@ -297,6 +302,7 @@ begin
          pC1 <= '0';
          pVde <= '0';
          pDataIn <= x"00";
+         pDataRaw <= kCtlTkn0;
       end if;
    end if;
 end process;

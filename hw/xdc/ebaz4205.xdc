@@ -132,3 +132,14 @@ create_pblock pblock_ebaz4205_i
 add_cells_to_pblock [get_pblocks pblock_ebaz4205_i] [get_cells -quiet [list ebaz4205_i]]
 resize_pblock [get_pblocks pblock_ebaz4205_i] -add {SLR0}
 
+## HDMI audio (hw/rtl/hdmi_tx, 2026-10-26): clock-domain crossings by design.
+## hdmi_rx: HDMI_2 input clock -> output pixel clock (gray-pointer FIFO),
+## FCLK0 -> input clock (rx_ctrl synchronizers); hdmi_audio_regs samples the
+## receiver's hold registers after a toggle handshake.
+set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/wg_reg[*]}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/wg_s1_reg[*]}]
+set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rg_reg[*]}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rg_s1_reg[*]}]
+set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/fifo_reg*}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/tx_aud_*_reg[*]}]
+set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/clr_s_reg[0] || NAME =~ *hdmi_rx_0/inst/loop_s_reg[0]}]
+set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/pub_sync_reg[0]}]
+set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *hdmi_rx_0/inst/rx_*_reg*}] -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/*}]
+

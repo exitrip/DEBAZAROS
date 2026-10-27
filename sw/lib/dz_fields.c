@@ -36,6 +36,9 @@
 #define G1OSC	HW_HDMI_1_AXI_GPIO_DIVOSC_GOSC_SHIFTPHASEOSC_BASE
 #define G1MAIN	HW_HDMI_1_AXI_GPIO_DIVPHASE_GMAIN_SHIFTPHASE_GFEEDBACK_BASE
 #define MIX	HW_HDMI_0_MIXERMATRIX_MIXER_0_BASE
+#ifdef HW_HDMI_AUDIO_REGS_0_BASE
+#define AUD	HW_HDMI_AUDIO_REGS_0_BASE
+#endif
 #define DDS0	HW_DDS_AXI_INTERFACE_0_BASE
 #define DDS1	HW_DDS_AXI_INTERFACE_1_BASE
 #define CH1	0x0u
@@ -85,6 +88,26 @@ static const dz_field static_fields[] = {
 	{ "/capture/overflow",  IO, CH1, 12, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s FIFO overflow" },
 	{ "/capture/underflow", IO, CH1, 13, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s FIFO underflow" },
 	{ "/capture/fid",       IO, CH1, 14, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s field id" },
+
+#ifdef HW_HDMI_AUDIO_REGS_0_BASE
+	/* HDMI audio (hw/rtl/hdmi_tx/hdmi_audio_regs.v): output on HDMI_1, input
+	 * on HDMI_2, ONE format 48 kHz 16-bit stereo. On a bitstream without the
+	 * block these fields return an error (dz_map probes its ID). */
+	{ "/audio/tx/hdmi",   AUD, 0x00, 0, 1,  DZ_BOOL, 0, "HDMI_1 output: 0 = DVI (as rgb2dvi), 1 = HDMI (InfoFrames)" },
+	{ "/audio/tx/enable", AUD, 0x00, 1, 1,  DZ_BOOL, 0, "HDMI_1 audio packets (needs /audio/tx/hdmi)" },
+	{ "/audio/tx/tone",   AUD, 0x00, 2, 1,  DZ_BOOL, 0, "1 kHz test tone (needs /audio/tx/fs_inc)" },
+	{ "/audio/tx/avi",    AUD, 0x00, 8, 2,  DZ_RAW,  0, "AVI VIC: 0 = 720p60, 1 = 1080p30, 2 = 1080p60, 3 = none" },
+	{ "/audio/tx/fs_inc", AUD, 0x04, 0, 32, DZ_RAW,  0, "internal 48 kHz clock: 48000 * 2^32 / f_pixel (720p60: 2776544)" },
+	{ "/audio/rx/loop",   AUD, 0x08, 0, 1,  DZ_BOOL, 0, "send the HDMI_2 input audio to the HDMI_1 output" },
+	{ "/audio/rx/clear",  AUD, 0x08, 1, 1,  DZ_BOOL, 0, "toggle: clear the input peak meters" },
+	{ "/audio/rx/islands",AUD, 0x10, 0, 1,  DZ_BOOL, DZ_F_RO, "HDMI_2 input: good data-island packets (last ~1 ms window)" },
+	{ "/audio/rx/active", AUD, 0x10, 1, 1,  DZ_BOOL, DZ_F_RO, "HDMI_2 input: audio samples arrive" },
+	{ "/audio/rx/samples",AUD, 0x14, 0, 32, DZ_RAW,  DZ_F_RO, "HDMI_2 input: stereo samples received (wraps)" },
+	{ "/audio/rx/peak/l", AUD, 0x18, 0, 16, DZ_RAW,  DZ_F_RO, "HDMI_2 input: peak |left| since the last clear" },
+	{ "/audio/rx/peak/r", AUD, 0x18, 16, 16, DZ_RAW, DZ_F_RO, "HDMI_2 input: peak |right| since the last clear" },
+	{ "/audio/rx/n",      AUD, 0x1C, 0, 20, DZ_RAW,  DZ_F_RO, "HDMI_2 input: ACR N (48 kHz = 6144)" },
+	{ "/audio/rx/cts",    AUD, 0x20, 0, 20, DZ_RAW,  DZ_F_RO, "HDMI_2 input: ACR CTS (720p60 = 74250)" },
+#endif
 
 	/* colour key (mixer coreRevision 22, 2026-10-26): the global bits are
 	 * in channel 0 CTRL_0 [15:8]; per channel /mixer/<c>/key and /src */

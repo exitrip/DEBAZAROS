@@ -311,6 +311,7 @@ removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
 | 0x43C5_0000 | HDMI_0 mixer_0 (the "nuMixer") |
 | 0x43D0_0000 | dds_axi_interface_0 → HDMI_0 DDS phase increment |
 | 0x44D0_0000 | dds_axi_interface_1 → HDMI_1 DDS phase increment |
+| 0x43C6_0000 | hdmi_audio_regs_0 (Oct 26 2026, branch hdmi-audio; ps7_axi_periph M12, NUM_MI 12→13): HDMI audio TX ctrl / RX status, ID 0x3C = "HAUD". Not in bitstreams before it: dz_map probes the ID under a SIGBUS guard |
 
 REMOVED (do not touch): 0x4122_0000, 0x4124_0000 (old LED GPIO — LED is
 xlconstant-driven now), 0x43C3_0000 (HDMI_1 VTC), 0x43D1_0000, 0x44D1_0000.
@@ -375,6 +376,35 @@ now continuous assigns (measured −311 FF, slices 4302 → 4209: synthesis had 
 gains/thresholds/streams), plus directed key tests. OSC: `/mixer/<c>/key`,
 `/mixer/<c>/src`, `/key/invert`, `/key/stream`, `/fx/key/color 0xRRGGBB [tol]`,
 `/fx/key/range lo hi`, `/fx/key/source i`, `/fx/key/off`.
+
+**HDMI audio (branch `hdmi-audio`, Oct 26 2026 — WORKS on hardware: out, in,
+loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling); details ROADMAP.md §11 "HDMI audio out"):** ONE format, 48 kHz
+2-ch 16-bit L-PCM (media is pre-rendered).
+- Output: HDMI_1's rgb2dvi is replaced by `hw/rtl/hdmi_tx/hdmi_tx.v`
+  (module ref). ctrl = 0 → DVI, symbol-identical to rgb2dvi (simulated against
+  a copy of TMDS_Encoder.vhd), latency +10 px for sync and data together.
+  HDMI: data islands placed from the incoming VTC timing (line length from
+  HSYNC edges, active width from DE, 10-px look-ahead); AVI + Audio InfoFrame
+  from a generated ROM (`gen_rom.py` → `hdmi_tx_rom.v`, ECC included); ACR
+  (CTS measured) + 1-sample Audio Sample packets; test tone on an NCO.
+- Input: dvi2rgb fork rev 13 exports `pRawSym[29:0]` (bonded 10-bit
+  symbols). ⚠️ dvi2rgb calls every non-control symbol video (DE = 1 in data
+  islands and guard bands) and keeps stale syncs inside islands (HSYNC lies
+  inside the island at 720p): `hw/rtl/hdmi_tx/hdmi_rx.v` sits between
+  dvi2rgb and v_vid_in_axi4s, classifies periods from the preambles (DVI
+  source = unchanged), takes syncs from TERC4 in islands, extracts Audio
+  Sample + ACR packets (BCH checked), status → regs, loop → async FIFO →
+  hdmi_tx aud_* (rx_ctrl[0]). EDID (`hw/edid_audio.py`): + basic audio,
+  Audio Data Block (only 48 kHz 16 bit 2 ch), HDMI VSDB — without the VSDB a
+  source sends DVI.
+- Registers 0x43C6_0000: 0x00 TX_CTRL ([0] HDMI, [1] audio, [2] tone, [9:8]
+  AVI VIC 4/34/16/none), 0x04 TX_FS_INC (720p60: 2776544), 0x08 RX_CTRL ([0]
+  loop, [1] clear peaks), 0x10 RX_STATUS, 0x14 samples, 0x18 peak R|L, 0x1C N,
+  0x20 CTS, 0x3C ID. OSC fields `/audio/...` (`sw/lib/dz_fields.c`).
+- Sims: `sh hw/sim/run_hdmi_tx_tb.sh` (7 × ALL PASS: TX 4 modes, regs, RX
+  loop DVI + HDMI). ⚠️ `hw/repackage_ip.tcl <ip> ports <top>` DROPS non-HDL
+  files of an IP (dvi2rgb's EDID/xdc/xci): the script now refuses; add the
+  port element by hand for such IPs.
 
 **dds_axi_interface** (`hw/rtl/dds_axi_inteface.vhd` — note
 filename typo): single 32-bit reg at +0. Bit31 = TVALID enable, bits[30:0] = phase

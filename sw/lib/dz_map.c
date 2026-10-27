@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fb.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +58,19 @@ static const uint32_t known_bases[] = {
 #ifdef HW_DDS_AXI_INTERFACE_1_BASE
 	HW_DDS_AXI_INTERFACE_1_BASE,
 #endif
+#ifdef HW_HDMI_AUDIO_REGS_0_BASE
+	HW_HDMI_AUDIO_REGS_0_BASE,
+#endif
+};
+
+/* Blocks that an older bitstream may not have (same hw_map.h, other .bit):
+ * their ID register is read once under a SIGBUS guard (a missing AXI slave
+ * gives a bus error, not a value). Wrong ID or SIGBUS = absent. */
+static const struct { uint32_t base, off, id; } probed[] = {
+#ifdef HW_HDMI_AUDIO_REGS_0_BASE
+	{ HW_HDMI_AUDIO_REGS_0_BASE, 0x3C, 0x48415544 },	/* "HAUD" */
+#endif
+	{ 0, 0, 0 }
 };
 #define N_KNOWN	((int)(sizeof(known_bases) / sizeof(known_bases[0])))
 
@@ -63,8 +78,45 @@ typedef struct {
 	uint32_t           base;
 	volatile uint32_t *map;
 	int                fd;	/* UIO fd, -1 for /dev/mem */
+	int                absent;	/* probe failed: not in the loaded bitstream */
 	char               via[16];
 } block;
+
+static sigjmp_buf probe_jmp;
+
+static void probe_sigbus(int sig)
+{
+	(void)sig;
+	siglongjmp(probe_jmp, 1);
+}
+
+/* 0 = present (or no probe for this block), -1 = absent */
+static int probe(block *b)
+{
+	struct sigaction sa, old;
+	volatile uint32_t v = 0;
+	int k, bad = 0;
+
+	for (k = 0; probed[k].base; k++)
+		if (probed[k].base == b->base)
+			break;
+	if (!probed[k].base)
+		return 0;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = probe_sigbus;
+	sigaction(SIGBUS, &sa, &old);
+	if (sigsetjmp(probe_jmp, 1) == 0)
+		v = b->map[probed[k].off / 4];
+	else
+		bad = 1;
+	sigaction(SIGBUS, &old, NULL);
+	if (bad || v != probed[k].id) {
+		fprintf(stderr, "dz_map: block 0x%08X not in this bitstream (%s)\n",
+			(unsigned)b->base, bad ? "bus error" : "wrong ID");
+		return -1;
+	}
+	return 0;
+}
 
 static block blocks[N_KNOWN];
 static int   sim;
@@ -138,7 +190,7 @@ volatile uint32_t *dz_regs(uint32_t base)
 	block *b = find_block(base);
 	void *m;
 
-	if (!b)
+	if (!b || b->absent)
 		return NULL;		/* not in this bitstream: refuse */
 	if (b->map)
 		return b->map;
@@ -148,6 +200,9 @@ volatile uint32_t *dz_regs(uint32_t base)
 	if (sim) {
 		b->map = calloc(BLOCK_MAP / 4, sizeof(uint32_t));
 		snprintf(b->via, sizeof(b->via), "sim");
+		for (int k = 0; b->map && probed[k].base; k++)
+			if (probed[k].base == base)
+				b->map[probed[k].off / 4] = probed[k].id;
 		return b->map;
 	}
 
@@ -156,6 +211,13 @@ volatile uint32_t *dz_regs(uint32_t base)
 		m = mmap(NULL, BLOCK_MAP, PROT_READ | PROT_WRITE, MAP_SHARED, b->fd, 0);
 		if (m != MAP_FAILED) {
 			b->map = m;
+			if (probe(b) < 0) {
+				munmap(m, BLOCK_MAP);
+				close(b->fd);
+				b->fd = -1;
+				b->map = NULL;
+				b->absent = 1;
+			}
 			return b->map;
 		}
 		close(b->fd);
@@ -173,6 +235,11 @@ volatile uint32_t *dz_regs(uint32_t base)
 	}
 	b->map = m;
 	snprintf(b->via, sizeof(b->via), "mem");
+	if (probe(b) < 0) {
+		munmap(m, BLOCK_MAP);
+		b->map = NULL;
+		b->absent = 1;
+	}
 	return b->map;
 }
 

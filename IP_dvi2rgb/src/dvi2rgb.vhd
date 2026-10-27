@@ -89,6 +89,9 @@ entity dvi2rgb is
       vid_pVDE : out std_logic;
       vid_pHSync : out std_logic;
       vid_pVSync : out std_logic;
+      -- HDMI (DEBAZAROS): aligned 10-bit symbols {ch2, ch1, ch0}, same timing
+      -- as vid_* when kAddBUFG = false (ResyncToBUFG delays only vid_*)
+      pRawSym : out std_logic_vector(29 downto 0);
       
       PixelClk : out std_logic; --pixel-clock recovered from the DVI interface
       
@@ -250,6 +253,7 @@ DataDecoders: for iCh in 2 downto 0 generate
          pMeVld                  => pVld(iCh),                
          pVde                    => pDE(iCh),                  
          pDataIn(7 downto 0)     => pDataIn(iCh),   
+         pDataRaw                => pRawSym(iCh*10+9 downto iCh*10),
          dbg_pEyeSize            => dbg_pEyeSize(iCh),
          dbg_pAlignErr           => dbg_pAlignErr(iCh),       
          dbg_pBitslip            => dbg_pBitslip(iCh)

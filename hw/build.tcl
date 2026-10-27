@@ -33,13 +33,20 @@ set ip_repos [list \
     $repo/IP_dvi2rgb \
     $repo/IP_rgb2dvi]
 # RTL used by BD module references (DivideBy2N, div16_8_recip,
-# dds_axi_interface).
+# dds_axi_interface, hdmi_tx + hdmi_audio_regs).
 set rtl_dir $repo/hw/rtl
 set rtl [list \
     $rtl_dir/DivideBy2N.v \
     $rtl_dir/div16_8_recip.v \
     $rtl_dir/dds_axi_interface_logic.vhd \
-    $rtl_dir/dds_axi_inteface.vhd]
+    $rtl_dir/dds_axi_inteface.vhd \
+    $rtl_dir/hdmi_tx/hdmi_tx.v \
+    $rtl_dir/hdmi_tx/hdmi_tx_encoder.v \
+    $rtl_dir/hdmi_tx/hdmi_tx_packets.v \
+    $rtl_dir/hdmi_tx/hdmi_tx_rom.v \
+    $rtl_dir/hdmi_tx/hdmi_tx_serdes.v \
+    $rtl_dir/hdmi_tx/hdmi_audio_regs.v \
+    $rtl_dir/hdmi_tx/hdmi_rx.v]
 set xdc [list $repo/hw/xdc/ebaz4205.xdc]
 
 # --- project -------------------------------------------------------------------

@@ -10,10 +10,19 @@ what hw/build.tcl uses); this patch is the record of what differs and why.
    (fixed 2026-10-19, ROADMAP.md section 1).
 3. dgl_720p_cea.data: EDID ROM advertises 720p60 native + 1080p30 (VIC 34,
    74.25 MHz DTDs); 1080p60 removed (1.485 Gbps is too fast for this silicon).
+   2026-10-26 (hw/edid_audio.py): + basic audio, Audio Data Block (L-PCM 2 ch
+   48 kHz 16 bit only), HDMI Vendor-Specific Data Block (else sources send DVI).
+4. TMDS_Decoder.vhd + dvi2rgb.vhd (2026-10-26): new output pRawSym[29:0], the
+   bonded 10-bit symbols {ch2, ch1, ch0} with the timing of vid_* (kAddBUFG =
+   false). The decoder calls every non-control symbol video and keeps stale
+   syncs in data islands; hw/rtl/hdmi_tx/hdmi_rx.v uses pRawSym to correct
+   that for HDMI sources and to extract the audio. coreRevision 13.
 
 Apply in a vivado-library clone:  git checkout f4613ff && git apply <this file>
 Then IP_dvi2rgb/component.xml also needs new checksums and coreRevision + 1:
   vivado -mode batch -source hw/repackage_ip.tcl -tclargs IP_dvi2rgb
+(after a port change: add the <spirit:port> element by hand first; the
+"ports" mode of repackage_ip.tcl drops this IP's non-HDL files)
 
 diff --git a/ip/dvi2rgb/src/DVI_Constants.vhd b/ip/dvi2rgb/src/DVI_Constants.vhd
 index 83a602e..312d274 100644
@@ -92,8 +101,39 @@ index 66a8541..59f1b64 100644
  rBUFR_Rst <= rMMCM_LckdRisingFlag; --pulse CLR on BUFR once the clock returns
  
  MMCM_Reset: process(rLockLostRst, RefClk)
+diff --git a/ip/dvi2rgb/src/TMDS_Decoder.vhd b/ip/dvi2rgb/src/TMDS_Decoder.vhd
+index 47f50b3..af6500b 100644
+--- a/ip/dvi2rgb/src/TMDS_Decoder.vhd
++++ b/ip/dvi2rgb/src/TMDS_Decoder.vhd
+@@ -80,6 +80,10 @@ entity TMDS_Decoder is
+       pC0 : out std_logic;
+       pC1 : out std_logic;
+       pVde : out std_logic;
++      -- HDMI (DEBAZAROS, 2026-10-26): the bonded 10-bit symbol, same timing as
++      -- the outputs above (control token 0 while not aligned); data islands and
++      -- guard bands decode as "data" above, hdmi_rx tells them apart
++      pDataRaw : out std_logic_vector(9 downto 0);
+       
+       -- Channel bonding (three data channels in total)
+       pOtherChVld : in std_logic_vector(1 downto 0);
+@@ -261,6 +265,7 @@ begin
+    if Rising_Edge(PixelClk) then
+       if (pMeRdy_int = '1' and pOtherChRdy = "11") then
+          pDataIn <= x"00"; --added for VGA-compatibility (blank pixel needed during blanking)
++         pDataRaw <= pDataInBnd;
+          
+          case (pDataInBnd) is
+             --Control tokens decode straight to C0, C1 values
+@@ -297,6 +302,7 @@ begin
+          pC1 <= '0';
+          pVde <= '0';
+          pDataIn <= x"00";
++         pDataRaw <= kCtlTkn0;
+       end if;
+    end if;
+ end process;
 diff --git a/ip/dvi2rgb/src/dgl_720p_cea.data b/ip/dvi2rgb/src/dgl_720p_cea.data
-index 8ee16d4..55de7bd 100644
+index 8ee16d4..9c99360 100644
 --- a/ip/dvi2rgb/src/dgl_720p_cea.data
 +++ b/ip/dvi2rgb/src/dgl_720p_cea.data
 @@ -70,8 +70,8 @@
@@ -107,7 +147,7 @@ index 8ee16d4..55de7bd 100644
  10000000
  00011000
  01110001
-@@ -125,14 +125,14 @@
+@@ -125,16 +125,26 @@
  00100000
  00100000
  00000001
@@ -115,16 +155,30 @@ index 8ee16d4..55de7bd 100644
 +00100010
  00000010
  00000011
- 00001001
- 00000001
+-00001001
+-00000001
++00010011
++01000001
  01000100
  10000100
 -00010000
 +00100010
  00000001
  00000010
++00100011
++00001001
++00000100
++00000001
++01100101
++00000011
++00001100
++00000000
++00010000
++00000000
  00000001
-@@ -153,8 +153,8 @@
+ 00011101
+ 00000000
+@@ -153,8 +163,8 @@
  00000000
  00000000
  00011110
@@ -135,9 +189,41 @@ index 8ee16d4..55de7bd 100644
  10000000
  00011000
  01110001
-@@ -253,4 +253,4 @@
+@@ -243,14 +253,4 @@
  00000000
  00000000
  00000000
+-00000000
+-00000000
+-00000000
+-00000000
+-00000000
+-00000000
+-00000000
+-00000000
+-00000000
+-00000000
 -00111100
-+01001000
++01001001
+diff --git a/ip/dvi2rgb/src/dvi2rgb.vhd b/ip/dvi2rgb/src/dvi2rgb.vhd
+index 756e45b..7702a8a 100644
+--- a/ip/dvi2rgb/src/dvi2rgb.vhd
++++ b/ip/dvi2rgb/src/dvi2rgb.vhd
+@@ -89,6 +89,9 @@ entity dvi2rgb is
+       vid_pVDE : out std_logic;
+       vid_pHSync : out std_logic;
+       vid_pVSync : out std_logic;
++      -- HDMI (DEBAZAROS): aligned 10-bit symbols {ch2, ch1, ch0}, same timing
++      -- as vid_* when kAddBUFG = false (ResyncToBUFG delays only vid_*)
++      pRawSym : out std_logic_vector(29 downto 0);
+       
+       PixelClk : out std_logic; --pixel-clock recovered from the DVI interface
+       
+@@ -250,6 +253,7 @@ DataDecoders: for iCh in 2 downto 0 generate
+          pMeVld                  => pVld(iCh),                
+          pVde                    => pDE(iCh),                  
+          pDataIn(7 downto 0)     => pDataIn(iCh),   
++         pDataRaw                => pRawSym(iCh*10+9 downto iCh*10),
+          dbg_pEyeSize            => dbg_pEyeSize(iCh),
+          dbg_pAlignErr           => dbg_pAlignErr(iCh),       
+          dbg_pBitslip            => dbg_pBitslip(iCh)
