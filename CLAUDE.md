@@ -426,6 +426,13 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   [9:8] AVI VIC 4/34/16/none), 0x04 TX_FS_INC (720p60: 2776544, both outputs),
   0x08 RX_CTRL ([0] loop, [1] clear peaks), 0x0C TX0_CTRL (HDMI_0, as TX_CTRL), 0x10 RX_STATUS, 0x14 samples, 0x18 peak R|L, 0x1C N,
   0x20 CTS, 0x3C ID. OSC fields `/audio/...` (`sw/lib/dz_fields.c`).
+  RX_CTRL [2] = HDMI_2 HPD low. 0x40-0x54 = pl_io (user I/O + I2S).
+- **Linux PCM for an ALSA card (2026-10-27, build `pcm`, simulated only):**
+  0x60-0x8C, 3 playback FIFOs (HDMI_0, HDMI_1, I2S DOUT) + 1 capture FIFO
+  (HDMI_2), BRAM 512 x 32 each, paced by a 48 kHz NCO on FCLK0; IRQ =
+  HDMI_0/In4 = GIC SPI 36 (`<0 36 4>`); routing I2S_CTRL [6]/[5]/[7].
+  Register table + driver sequence: ROADMAP.md §13. Sim: `sh
+  hw/sim/run_pl_io_tb.sh` (pl_io_tb + pcm_tb). Kernel driver not written yet.
 - Sims: `sh hw/sim/run_hdmi_tx_tb.sh` (7 × ALL PASS: TX 4 modes, regs, RX
   loop DVI + HDMI). ⚠️ `hw/repackage_ip.tcl <ip> ports <top>` DROPS non-HDL
   files of an IP (dvi2rgb's EDID/xdc/xci): the script now refuses; add the

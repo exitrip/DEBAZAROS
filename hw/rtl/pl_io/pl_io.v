@@ -35,7 +35,16 @@ module pl_io (
     output wire [15:0] aud_l, aud_r,
     output wire        aud_valid,
     output wire [15:0] aud0_l, aud0_r,
-    output wire        aud0_valid
+    output wire        aud0_valid,
+    input  wire [2:0]  pcm_wr,
+    input  wire [31:0] pcm_wdata,
+    input  wire [3:0]  pcm_run,
+    input  wire [3:0]  pcm_flush,
+    input  wire        cap_pop,
+    output wire [31:0] cap_head,
+    output wire [9:0]  pcm_level0, pcm_level1, pcm_level2, cap_level,
+    output wire [3:0]  pcm_xrun,
+    output wire [31:0] pcm_frames
 );
     wire [5:0] po, pt, pi;
     pl_io_core core (
@@ -52,7 +61,11 @@ module pl_io (
         .rx_clk(rx_clk), .rx_l(rx_l), .rx_r(rx_r), .rx_valid(rx_valid),
         .tx_clk(tx_clk), .loop_l(loop_l), .loop_r(loop_r), .loop_valid(loop_valid),
         .aud_l(aud_l), .aud_r(aud_r), .aud_valid(aud_valid),
-        .aud0_l(aud0_l), .aud0_r(aud0_r), .aud0_valid(aud0_valid));
+        .aud0_l(aud0_l), .aud0_r(aud0_r), .aud0_valid(aud0_valid),
+        .pcm_wr(pcm_wr), .pcm_wdata(pcm_wdata), .pcm_run(pcm_run), .pcm_flush(pcm_flush),
+        .cap_pop(cap_pop), .cap_head(cap_head), .pcm_level0(pcm_level0),
+        .pcm_level1(pcm_level1), .pcm_level2(pcm_level2), .cap_level(cap_level),
+        .pcm_xrun(pcm_xrun), .pcm_frames(pcm_frames));
 
     assign key_in = pi[3:0];
     assign k4_in = pi[4];

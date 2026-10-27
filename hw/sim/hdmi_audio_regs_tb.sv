@@ -3,7 +3,7 @@
 // receiver-status handshake (run by hw/sim/run_hdmi_tx_tb.sh).
 module tb;
   reg clk = 0, rclk = 0, rstn = 0; always #5 clk = ~clk; always #3 rclk = ~rclk;
-  reg [6:0] awaddr = 0, araddr = 0; reg awvalid = 0, wvalid = 0, arvalid = 0, rready = 0; reg [31:0] wdata = 0;
+  reg [7:0] awaddr = 0, araddr = 0; reg awvalid = 0, wvalid = 0, arvalid = 0, rready = 0; reg [31:0] wdata = 0;
   wire awready, wready, bvalid, arready, rvalid; wire [1:0] bresp, rresp; wire [31:0] rdata, txc, txf, rxc, i2c, i2i, t0c; wire [0:0] hpd; wire [23:0] iof; wire [5:0] ioo;
   reg pub = 0; reg [31:0] smp = 0, hold = 0;
   hdmi_audio_regs dut (.s_axi_aclk(clk), .s_axi_aresetn(rstn), .s_axi_awaddr(awaddr), .s_axi_awvalid(awvalid),
@@ -14,9 +14,9 @@ module tb;
     .rx_peak(32'h12345678), .rx_acr_n(20'd6144), .rx_acr_cts(20'd74250),
     .io_func(iof), .io_out(ioo), .io_in(6'b101010), .i2s_ctrl(i2c), .i2s_inc(i2i), .i2s_status(32'h0000_0A03));
   integer fails = 0;
-  task wr(input [6:0] a, input [31:0] d); begin @(posedge clk); awaddr <= a; wdata <= d; awvalid <= 1; wvalid <= 1;
+  task wr(input [7:0] a, input [31:0] d); begin @(posedge clk); awaddr <= a; wdata <= d; awvalid <= 1; wvalid <= 1;
     while (!awready) @(posedge clk); @(posedge clk); awvalid <= 0; wvalid <= 0; while (bvalid) @(posedge clk); end endtask
-  task rd(input [6:0] a, input [31:0] want); begin @(posedge clk); araddr <= a; arvalid <= 1;
+  task rd(input [7:0] a, input [31:0] want); begin @(posedge clk); araddr <= a; arvalid <= 1;
     while (!rvalid) @(posedge clk); arvalid <= 0; rready <= 1; @(posedge clk); rready <= 0;
     if (rdata !== want) begin fails++; $display("FAIL rd %02x = %08x want %08x", a, rdata, want); end
     @(posedge clk); end endtask

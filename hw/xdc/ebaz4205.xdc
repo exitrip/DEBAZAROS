@@ -151,4 +151,9 @@ set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ 
 set_max_delay -datapath_only 5.0 -from [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */rg_reg[*] || NAME =~ */rp_reg[*])}] -to [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && NAME =~ */rg_s1_reg[*]}]
 set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && NAME =~ */mem_reg*}]
 set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */txsrc_s_reg[0] || NAME =~ */rxsrc_s_reg[0] || NAME =~ */in_s1_reg[*] || NAME =~ */din_s_reg[0])}]
+## Linux PCM (2026-10-27): capture BRAM FIFO (HDMI_2 clock -> FCLK0, covered by
+## the wg/wp, rg/rp and mem_reg lines above); one word per 48 kHz frame FCLK0 ->
+## pixel clock (w0/w1 hold registers, stable for 20 us, toggle t0/t1)
+set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */t0_s_reg[0] || NAME =~ */t1_s_reg[0] || NAME =~ */caprun_s_reg[0] || NAME =~ */pcmsel_s_reg[0] || NAME =~ */pcmsel0_s_reg[0])}]
+set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~ *pl_io_0/* && (NAME =~ */w0_reg[*] || NAME =~ */w1_reg[*])}]
 

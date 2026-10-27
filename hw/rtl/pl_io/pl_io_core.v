@@ -20,6 +20,16 @@
 // by the TX FIFO level (follows the HDMI_2 source clock), [4] HDMI_0 audio =
 // I2S DIN (else the HDMI_2 loop). Same source on both outputs = the same
 // samples on both; each hdmi_tx has its own test tone (TX_CTRL / TX0_CTRL).
+// [5] HDMI_1 audio = Linux PCM 1, [6] HDMI_0 audio = Linux PCM 0, [7] I2S DOUT
+// = Linux PCM 2 (these win over [1]/[2]/[4]).
+//
+// Linux PCM (ALSA card, 2026-10-27; registers hdmi_audio_regs 0x60-0x84): a
+// 48 kHz pacer on clk (100 MHz crystal clock, independent of the video mode)
+// pops one stereo word per frame from the playback FIFOs of HDMI_0 and HDMI_1
+// (512 x 32 BRAM each, written by the driver); the I2S master pops PCM 2 at
+// its own LRCLK (also 48 kHz from clk). A stream that runs with an empty FIFO
+// sends silence and reports an underrun. Capture: HDMI_2 samples -> BRAM FIFO
+// -> the driver reads the head word (a read pops it).
 // Clock domains: clk = FCLK0 (registers, I2S), rx_clk = HDMI_2 pixel clock,
 // tx_clk = HDMI_1 pixel clock.
 `timescale 1ns / 1ps
@@ -54,7 +64,17 @@ module pl_io_core (
     output reg  [15:0] aud_l = 0, aud_r = 0,   // to HDMI_1's hdmi_tx (tx_clk)
     output reg         aud_valid = 0,
     output reg  [15:0] aud0_l = 0, aud0_r = 0, // to HDMI_0's hdmi_tx (tx_clk)
-    output reg         aud0_valid = 0
+    output reg         aud0_valid = 0,
+    // Linux PCM (all clk domain)
+    input  wire [2:0]  pcm_wr,          // write strobes: 0 HDMI_0, 1 HDMI_1, 2 I2S
+    input  wire [31:0] pcm_wdata,       // {R, L}
+    input  wire [3:0]  pcm_run,         // [2:0] playback streams, [3] capture
+    input  wire [3:0]  pcm_flush,       // pulses: empty a FIFO
+    input  wire        cap_pop,
+    output wire [31:0] cap_head,
+    output wire [9:0]  pcm_level0, pcm_level1, pcm_level2, cap_level,
+    output reg  [3:0]  pcm_xrun = 0,    // pulses: [2:0] playback underrun, [3] capture overrun
+    output reg  [31:0] pcm_frames = 0   // 48 kHz pacer frames
 );
     wire rst = ~rstn;
     wire bclk, lrclk, dout;
@@ -119,9 +139,10 @@ module pl_io_core (
     wire [31:0] txf_data;
     wire        txf_empty, tx_pop;
     wire [3:0]  txf_level;
+    wire        i2s_pcm = i2s_ctrl[7];
     dz_async_fifo #(.W(32), .AW(3)) txf (
         .wr_clk(rx_clk), .wr_en(rx_valid & txsrc_s[1]), .wr_data({rx_r, rx_l}), .wr_full(),
-        .rd_clk(clk), .rd_en(tx_pop), .rd_data(txf_data), .rd_empty(txf_empty),
+        .rd_clk(clk), .rd_en(tx_pop & ~i2s_pcm), .rd_data(txf_data), .rd_empty(txf_empty),
         .rd_level(txf_level));
 
     // pre-fill: after switching on or after an underrun, send silence until
@@ -146,9 +167,70 @@ module pl_io_core (
     dz_i2s i2s (
         .clk(clk), .rst(rst), .on(i2s_ctrl[0]), .inc(inc_q),
         .bclk(bclk), .lrclk(lrclk), .dout(dout), .din(din_s[1]),
-        .tx_data(txf_data), .tx_empty(txf_empty | prime), .tx_pop(tx_pop),
+        .tx_data(i2s_pcm ? p2_head : txf_data),
+        .tx_empty(i2s_pcm ? (!pcm_run[2] || p2_empty) : (txf_empty | prime)),
+        .tx_pop(tx_pop),
         .rx_data(rx_word), .rx_valid(rx_word_valid), .underruns(underruns));
     assign i2s_status = {16'd0, underruns, 4'd0, txf_level};
+
+    // ---- Linux PCM: pacer, playback and capture FIFOs (clk) ------------------
+    reg  [31:0] pace = 0;
+    reg         tick = 0;
+    always @(posedge clk) {tick, pace} <= {1'b0, pace} + 33'd2061584;   // 48 kHz at 100 MHz
+
+    wire [31:0] p0_head, p1_head, p2_head;
+    wire        p0_empty, p1_empty, p2_empty, c_full_w;
+    wire        p0_pop = tick & pcm_run[0], p1_pop = tick & pcm_run[1];
+    wire        p2_pop = i2s_pcm & tx_pop;
+    dz_bram_fifo #(.W(32), .AW(9)) pf0 (
+        .wr_clk(clk), .wr_en(pcm_wr[0]), .wr_data(pcm_wdata), .wr_full(),
+        .rd_clk(clk), .rd_pop(p0_pop), .rd_flush(pcm_flush[0]), .rd_head(p0_head),
+        .rd_empty(p0_empty), .rd_level(pcm_level0));
+    dz_bram_fifo #(.W(32), .AW(9)) pf1 (
+        .wr_clk(clk), .wr_en(pcm_wr[1]), .wr_data(pcm_wdata), .wr_full(),
+        .rd_clk(clk), .rd_pop(p1_pop), .rd_flush(pcm_flush[1]), .rd_head(p1_head),
+        .rd_empty(p1_empty), .rd_level(pcm_level1));
+    dz_bram_fifo #(.W(32), .AW(9)) pf2 (
+        .wr_clk(clk), .wr_en(pcm_wr[2]), .wr_data(pcm_wdata), .wr_full(),
+        .rd_clk(clk), .rd_pop(p2_pop), .rd_flush(pcm_flush[2]), .rd_head(p2_head),
+        .rd_empty(p2_empty), .rd_level(pcm_level2));
+
+    (* ASYNC_REG = "TRUE" *) reg [1:0] caprun_s = 0;
+    always @(posedge rx_clk) caprun_s <= {caprun_s[0], pcm_run[3]};
+    dz_bram_fifo #(.W(32), .AW(9)) cf (
+        .wr_clk(rx_clk), .wr_en(rx_valid & caprun_s[1]), .wr_data({rx_r, rx_l}), .wr_full(c_full_w),
+        .rd_clk(clk), .rd_pop(cap_pop), .rd_flush(pcm_flush[3]), .rd_head(cap_head),
+        .rd_empty(), .rd_level(cap_level));
+
+    // one word per frame to the pixel clock: hold register + toggle (the word
+    // stays stable for 20 us, far longer than the 3-FF synchronizer)
+    reg [31:0] w0 = 0, w1 = 0;
+    reg        t0 = 0, t1 = 0, cap_hi = 0;
+    always @(posedge clk) begin
+        pcm_xrun <= 4'd0;
+        if (tick) begin
+            pcm_frames <= pcm_frames + 32'd1;
+            w0 <= (pcm_run[0] && !p0_empty) ? p0_head : 32'd0;
+            w1 <= (pcm_run[1] && !p1_empty) ? p1_head : 32'd0;
+            t0 <= ~t0;
+            t1 <= ~t1;
+            pcm_xrun[0] <= pcm_run[0] & p0_empty;
+            pcm_xrun[1] <= pcm_run[1] & p1_empty;
+        end
+        if (i2s_pcm && pcm_run[2] && underruns != und_q) pcm_xrun[2] <= 1'b1;
+        // capture overrun: the FIFO reached full (511 words) while running
+        cap_hi <= cap_level >= 10'd511;
+        if (pcm_run[3] && cap_level >= 10'd511 && !cap_hi) pcm_xrun[3] <= 1'b1;
+    end
+    (* ASYNC_REG = "TRUE" *) reg [2:0] t0_s = 0, t1_s = 0;
+    (* ASYNC_REG = "TRUE" *) reg [1:0] pcmsel_s = 0, pcmsel0_s = 0;
+    wire pcm0_valid = t0_s[2] ^ t0_s[1], pcm1_valid = t1_s[2] ^ t1_s[1];
+    always @(posedge tx_clk) begin
+        t0_s <= {t0_s[1:0], t0};
+        t1_s <= {t1_s[1:0], t1};
+        pcmsel_s <= {pcmsel_s[0], i2s_ctrl[5]};
+        pcmsel0_s <= {pcmsel0_s[0], i2s_ctrl[6]};
+    end
 
     // ---- I2S RX -> FIFO -> HDMI_1 audio (tx_clk) ------------------------------
     wire [31:0] rxf_data;
@@ -162,7 +244,10 @@ module pl_io_core (
     always @(posedge tx_clk) begin
         rxsrc_s <= {rxsrc_s[0], i2s_ctrl[2]};
         rxsrc0_s <= {rxsrc0_s[0], i2s_ctrl[4]};
-        if (use_i2s) begin
+        if (pcmsel_s[1]) begin
+            aud_valid <= pcm1_valid;
+            {aud_r, aud_l} <= w1;
+        end else if (use_i2s) begin
             aud_valid <= !rxf_empty;
             {aud_r, aud_l} <= rxf_data;
         end else begin
@@ -170,7 +255,10 @@ module pl_io_core (
             aud_l <= loop_l;
             aud_r <= loop_r;
         end
-        if (use_i2s0) begin
+        if (pcmsel0_s[1]) begin
+            aud0_valid <= pcm0_valid;
+            {aud0_r, aud0_l} <= w0;
+        end else if (use_i2s0) begin
             aud0_valid <= !rxf_empty;
             {aud0_r, aud0_l} <= rxf_data;
         end else begin

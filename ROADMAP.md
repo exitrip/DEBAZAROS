@@ -989,6 +989,35 @@ Small, all in `pl_io` / `hdmi_audio_regs` (no DMA, no new AXI port):
 Estimate: 150-250 LUT. Slices are at 96.6 % (2026-10-27): it should fit; if
 not, do the resource savings of section 11 first.
 
+**DONE in RTL + simulation (2026-10-27, build `pcm`):** as above, but the
+FIFOs are block RAM, 512 x 32 each (4 of the 5 free BRAM18;
+`hw/rtl/pl_io/dz_bram_fifo.v`): 10.7 ms of audio per stream, so the driver
+can use periods of up to ~240 frames. Capture comes from the HDMI_2 receiver
+(`hdmi_rx`), I2S capture is not in it yet (the I2S input still goes only to
+the HDMI outputs). Interrupt = HDMI_0/In4 = IRQ_F2P[7] = GIC SPI 36 (DT
+`interrupts = <0 36 4>`, level high). Routing: I2S_CTRL [6] HDMI_0 = PCM 0,
+[5] HDMI_1 = PCM 1, [7] I2S DOUT = PCM 2 (these win over the other source
+bits). A running stream with an empty FIFO sends silence and latches an
+underrun. Registers (hdmi_audio_regs 0x43C6_0000):
+
+| Offset | Name | Content |
+| --- | --- | --- |
+| 0x60 | PCM_CTRL | [3:0] run (0 HDMI_0, 1 HDMI_1, 2 I2S, 3 capture), [11:8] write 1 = flush |
+| 0x64 / 0x68 / 0x70 | PCM0/1/2_DATA | write one frame {R[31:16], L[15:0]} |
+| 0x6C | CAP_DATA | read = oldest captured frame, and removes it |
+| 0x74 / 0x78 | LEVEL01 / LEVEL2C | FIFO levels {PCM1, PCM0} / {CAP, PCM2}, 10 bits at [25:16] / [9:0] |
+| 0x7C | IRQ_STATUS | [3:0] live level condition (playback level <= threshold, capture level >= threshold), [7:4] xrun latch, write 1 to clear |
+| 0x80 | IRQ_EN | mask for IRQ_STATUS [7:0] |
+| 0x84 | PCM_FRAMES | 48 kHz pacer count |
+| 0x88 / 0x8C | THRESH01 / THRESH2C | thresholds, 9 bits at [24:16] / [8:0] |
+
+Driver sequence per playback stream: flush, pre-fill up to 512 frames, set
+the threshold (e.g. 512 - period), set run, enable the level IRQ; in the
+IRQ, write frames until the level is above the threshold (or disable the
+bit when the ALSA buffer has no more data). Test: `sh
+hw/sim/run_pl_io_tb.sh` (`pcm_tb`: all four streams in order at 48 kHz,
+level IRQ, underrun IRQ + silence + clear, flush).
+
 ### Kernel driver (`debaz-audio`, out-of-tree module, PetaLinux recipe)
 
 - Platform driver, `compatible = "debaz,hdmi-audio-1.0"`, node in

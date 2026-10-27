@@ -135,6 +135,18 @@ static const dz_field static_fields[] = {
 	{ "/i2s/inc",         AUD, 0x50, 0, 32,  DZ_RAW,  0, "bit clock NCO: 2*64*fs*2^32/100 MHz (48 kHz: 263882791)" },
 	{ "/i2s/level",       AUD, 0x54, 0, 4,   DZ_RAW,  DZ_F_RO, "I2S TX FIFO level (0-8)" },
 	{ "/i2s/underruns",   AUD, 0x54, 8, 8,   DZ_RAW,  DZ_F_RO, "I2S TX frames without a sample (incl. pre-fill)" },
+	/* Linux PCM (ALSA card; gateware build pcm 2026-10-27): the kernel driver
+	 * owns run/data/IRQ; these are routing + read-only status for debugging */
+	{ "/pcm/to_hdmi1",    AUD, 0x4C, 5, 1,   DZ_BOOL, 0, "HDMI_1 audio = Linux PCM 1 (wins over the other sources)" },
+	{ "/pcm/to_hdmi0",    AUD, 0x4C, 6, 1,   DZ_BOOL, 0, "HDMI_0 audio = Linux PCM 0 (wins over the other sources)" },
+	{ "/pcm/to_i2s",      AUD, 0x4C, 7, 1,   DZ_BOOL, 0, "I2S DOUT = Linux PCM 2 (wins over /i2s/play)" },
+	{ "/pcm/run",         AUD, 0x60, 0, 4,   DZ_RAW,  DZ_F_RO, "streams running: [0] HDMI_0 [1] HDMI_1 [2] I2S [3] capture" },
+	{ "/pcm/level/0",     AUD, 0x74, 0, 10,  DZ_RAW,  DZ_F_RO, "HDMI_0 playback FIFO level (0-512 frames)" },
+	{ "/pcm/level/1",     AUD, 0x74, 16, 10, DZ_RAW,  DZ_F_RO, "HDMI_1 playback FIFO level" },
+	{ "/pcm/level/2",     AUD, 0x78, 0, 10,  DZ_RAW,  DZ_F_RO, "I2S playback FIFO level" },
+	{ "/pcm/level/cap",   AUD, 0x78, 16, 10, DZ_RAW,  DZ_F_RO, "HDMI_2 capture FIFO level" },
+	{ "/pcm/irq_status",  AUD, 0x7C, 0, 8,   DZ_RAW,  DZ_F_RO, "[3:0] level conditions, [7:4] xrun latches" },
+	{ "/pcm/frames",      AUD, 0x84, 0, 32,  DZ_RAW,  DZ_F_RO, "48 kHz pacer frames (wraps)" },
 #endif
 
 	/* colour key (mixer coreRevision 22, 2026-10-26): the global bits are
