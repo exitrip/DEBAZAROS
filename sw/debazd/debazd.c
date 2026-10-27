@@ -40,6 +40,7 @@
  *   /surface/<s>/peek i:x i:y     -> /pixel i:s i:x i:y i:r i:g i:b
  *   /fx/hue /fx/matrix /fx/map /fx/key/...   colour matrix and key (fx.c)
  *   /io/pin i:line s:name, /io/pins     user I/O line functions (io.c)
+ *   /audio/fs, /audio/fs/auto i, /capture/replug [f:s]   (audio.c)
  * Events to subscribers:
  *   /event/io i:raw               user I/O byte changed (active low)
  *   /event/hpd i:hpd0 i:hpd1
@@ -379,7 +380,8 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
-	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || io_dispatch(m))
+	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || io_dispatch(m) ||
+	    audio_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
 		int bit, n0 = 0, press = 0;
@@ -617,6 +619,7 @@ int main(int argc, char **argv)
 		}
 		if (now_ms() >= next) {
 			monitor();
+			audio_tick(now_ms());
 			for (int s = 0; s < DZ_SLOTS; s++)
 				dz_draw_movie_running(s);
 			next = now_ms() + interval;

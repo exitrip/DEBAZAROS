@@ -281,6 +281,14 @@ dzctl /mixer/2/key 1                 # add another band (here: a 2nd R range)
 dzctl /fx/key/off
 ```
 
+HDMI audio housekeeping (debazd audio.c):
+
+```sh
+dzctl /audio/fs              # pixel clock, the 48 kHz rate setting, auto on/off
+dzctl /audio/fs/auto 0       # stop debazd from setting /audio/tx/fs_inc
+dzctl /capture/replug 2      # HDMI_2 hot-plug low for 2 s: source re-reads the EDID
+```
+
 Green screen on HDMI_1 over HDMI_0: `/key/invert 1`,
 `/fx/key/color 0x00ff00 40`.
 

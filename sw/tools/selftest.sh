@@ -64,6 +64,10 @@ q /key/invert 1 >/dev/null
 check key-invert  "/value \"/mixer/0/mode\" 4"      q /mixer/0/mode
 q /fx/key/off >/dev/null
 check key-off     "/value \"/mixer/6/key\" 0"       q /mixer/6/key
+# --- HDMI_2 replug + 48 kHz rate setting (audio.c) ---
+check replug      "/ok \"/capture/replug\""         q /capture/replug 0.3
+check replug-low  "/value \"/hdmi/2/hpd_low\" 1"   q /hdmi/2/hpd_low
+check audio-fs    "/audio/fs"                      q /audio/fs
 # --- user I/O line functions (io.c) ---
 check io-pin-name "/io/pin 2 \"mosi\""            q /io/pin 2 mosi
 check io-pin-code "/value \"/io/func/2\" 5"       q /io/func/2

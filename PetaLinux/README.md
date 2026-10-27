@@ -95,7 +95,12 @@ new package still needs one networked build (then back up again).
   `project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`
   (96 MB frame memory, one simplefb, fpga-full region, soldered NAND).
 - Kernel fragments in `project-spec/meta-user/recipes-kernel/linux/linux-xlnx/`
-  (`user_2026-10-25-debaz.cfg`: exFAT, UBI/UBIFS).
+  (`user_2026-10-25-debaz.cfg`: exFAT, UBI/UBIFS; `user_2026-10-27-plio.cfg`:
+  Cadence I2C/SPI, i2c-dev, spidev for the user I/O lines). Removed
+  2026-10-27: `user_2023-05-08-18-39-00.cfg` (Xilinx I2S + Audio Formatter +
+  PL sound card + ADAU1761 codec, a 2023 test): the HDMI audio of this design
+  is all in the PL (hdmi_tx / hdmi_rx / pl_io I2S), there is no Audio
+  Formatter, I2S IP or codec, and with REMOVE_PL_DTB those drivers never probed.
 - rootfs: SDR-era packages removed (361 MB); ffmpeg, parted, dosfstools,
   exfat-utils, mtd-utils, rsync, python3 added. ffmpeg needs the
   `commercial` license flag (`meta-user/conf/petalinuxbsp.conf`).

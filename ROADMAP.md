@@ -940,3 +940,87 @@ Next steps for the key:
 - Key mask as a matrix gain source (a mixer mode "K if keyed"), so the
   matrix effects apply only inside or outside the key.
 
+## 13. Linux audio: an ALSA card for the HDMI and I2S audio (design, 2026-10-27)
+
+Why: with a real ALSA card, standard software works without our own daemon:
+aplay/arecord, amixer + alsactl (installation setup saved and restored at
+boot), ffmpeg `-f alsa`, synthesis software, network players (snapclient,
+shairport-sync, GStreamer, PipeWire). Today the audio paths are PL-only (HDMI_2
+loop, I2S in, test tone); Linux cannot play into them or record from them.
+
+### What the card looks like (proposal)
+
+Card `DEBAZ` (`/proc/asound/cards`), one PCM device per stream, so every
+application can name its output (`hw:DEBAZ,0` etc.):
+
+| PCM | Direction | Stream |
+| --- | --- | --- |
+| 0 "HDMI 0" | playback | HDMI_0 audio |
+| 1 "HDMI 1" | playback | HDMI_1 audio |
+| 2 "HDMI 2 In" | capture | audio from the HDMI_2 source |
+| 3 "I2S" | playback + capture | the user I/O lines (DAC / ADC) |
+
+All S16_LE, 2 channels, 48000 Hz only (the one format of the design; ALSA's
+plug layer converts other formats in software). One PCM per stream rather
+than subdevices of one PCM: clearer names for applications and amixer.
+
+amixer controls (all map onto registers that already exist, so installation
+routing is `amixer`/`alsactl` instead of debazd fields):
+- `HDMI 0 Source`, `HDMI 1 Source`: enum {Linux, HDMI 2 loop, I2S in, Test tone, Off}
+- `HDMI 0 Mode`, `HDMI 1 Mode`: enum {DVI, HDMI} (TX_CTRL/TX0_CTRL bit 0)
+- `I2S Out Source`: enum {Linux, HDMI 2 in, Off}; `I2S Clock Follow` switch (steering)
+- `HDMI 2 Hotplug` switch (RX_CTRL[2]), read-only `HDMI 2 Locked`, `HDMI 2 Peak L/R`
+- Volume: softvol in `/etc/asound.conf` per device (no multipliers in the PL:
+  DSP 91 % used); dmix per output so several programs can play at once.
+
+### Hardware (gateware) needed
+
+Small, all in `pl_io` / `hdmi_audio_regs` (no DMA, no new AXI port):
+1. A 48 kHz pacer on FCLK0 (fixed NCO from the 100 MHz crystal clock). It
+   takes the place of the pixel-clock NCO for everything that Linux feeds, so
+   the rate no longer depends on the video mode (`fs_inc` then only serves
+   the test tone).
+2. Per playback stream a FIFO (64 x 32 bit, LUTRAM) written through one
+   AXI-Lite data register; the pacer pops one word per sample and feeds the
+   existing source selectors (`Linux` = this FIFO).
+3. A capture FIFO from `hdmi_rx` samples (rx clock -> FCLK0).
+4. Level registers + one interrupt (FIFO half empty / half full) on a spare
+   IRQ_F2P input (HDMI_0's concat has spare inputs).
+Estimate: 150-250 LUT. Slices are at 96.6 % (2026-10-27): it should fit; if
+not, do the resource savings of section 11 first.
+
+### Kernel driver (`debaz-audio`, out-of-tree module, PetaLinux recipe)
+
+- Platform driver, `compatible = "debaz,hdmi-audio-1.0"`, node in
+  `system-user.dtsi` (REMOVE_PL_DTB: written by hand): reg 0x43c60000
+  0x10000, the interrupt above. Registers an ALSA card (no ASoC needed: a
+  plain `snd_card` + `snd_pcm` with vmalloc buffers).
+- Data transfer by CPU (PIO): the IRQ handler copies one period (e.g. 32
+  frames) between the PCM buffer and the FIFO data register and calls
+  `snd_pcm_period_elapsed`. Cost: one AXI-Lite access per stereo frame,
+  48k/s per stream, a few % CPU per stream. If that is too much later: an
+  AXI master that reads a DDR ring buffer (S_AXI_GP / ACP; HP3 stays free for
+  the third channel).
+- kcontrols for the routing above, written to the same registers.
+- Ownership: the driver owns 0x43C6_0000; debazd keeps reading the status
+  fields but leaves the routing to ALSA when `/proc/asound/DEBAZ` exists.
+
+### PetaLinux / rootfs
+
+- Recipe `meta-user/recipes-modules/debaz-audio` (module.bbclass), autoload.
+- rootfs: alsa-utils (aplay, arecord, amixer, alsactl), alsa-lib, an
+  `/etc/asound.conf` with dmix + softvol per HDMI output; `alsactl restore`
+  at boot (systemd `alsa-restore.service` comes with alsa-utils).
+- Kernel: CONFIG_SND and CONFIG_SND_PCM (already in the Xilinx defconfig);
+  the 2023 Xilinx I2S / Audio Formatter / ADAU1761 fragment was removed
+  2026-10-27 (no such hardware).
+- Later, by need: ffmpeg with ALSA output (PACKAGECONFIG alsa), shairport-sync
+  or snapclient (meta-multimedia), PipeWire.
+
+### Order and test
+
+Gateware 1-4 + simulation (a testbench with a model of the driver's FIFO
+writes) -> build -> driver + recipe -> `aplay -D hw:DEBAZ,0 tone.wav` on the
+HDMI audio extractor, `arecord -D hw:DEBAZ,2` from the laptop, `amixer -c
+DEBAZ` for the routing, `alsactl store`.
+

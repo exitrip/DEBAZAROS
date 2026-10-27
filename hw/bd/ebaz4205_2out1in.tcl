@@ -3342,8 +3342,6 @@ proc create_root_design { parentCell } {
   # Create instance: xlconcat_2, and set properties
   set xlconcat_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat:2.1 xlconcat_2 ]
 
-  # Create instance: xlconstant_0, and set properties
-  set xlconstant_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0 ]
 
   # Create instance: xlslice_0, and set properties
   set xlslice_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_0 ]
@@ -3491,7 +3489,7 @@ proc create_root_design { parentCell } {
   connect_bd_net -net xlconcat_1_dout [get_bd_pins xlconcat_1/dout] [get_bd_pins xlconcat_2/In1]
   connect_bd_net -net xlconcat_2_dout [get_bd_pins xlconcat_0/In0] [get_bd_pins xlconcat_2/dout]
   connect_bd_net -net xlconstant_0_dout [get_bd_ports HDMI_CEC_0] [get_bd_pins HDMI_0/HDMI_OEN]
-  connect_bd_net -net xlconstant_0_dout1 [get_bd_ports HDMI_HPD_2] [get_bd_pins xlconstant_0/dout]
+  connect_bd_net -net hdmi_audio_regs_0_hpd2 [get_bd_ports HDMI_HPD_2] [get_bd_pins hdmi_audio_regs_0/hpd2]
   connect_bd_net -net xlslice_0_Dout [get_bd_ports enet0_gmii_txd] [get_bd_pins PS/enet0_gmii_txd]
   connect_bd_net -net xlslice_0_Dout1 [get_bd_ports LED_GREEN] [get_bd_pins xlslice_0/Dout]
   connect_bd_net -net xlslice_1_Dout [get_bd_pins HDMI_0/dds_phase_div_den_0] [get_bd_pins xlslice_1/Dout]
@@ -3573,7 +3571,6 @@ preplace inst ps7_axi_periph -pg 1 -lvl 3 -x 1060 -y 1550 -defaultsOSRD
 preplace inst xlconcat_0 -pg 1 -lvl 4 -x 1770 -y 1710 -defaultsOSRD
 preplace inst xlconcat_1 -pg 1 -lvl 1 -x 130 -y 2030 -defaultsOSRD
 preplace inst xlconcat_2 -pg 1 -lvl 2 -x 450 -y 1970 -defaultsOSRD
-preplace inst xlconstant_0 -pg 1 -lvl 4 -x 1770 -y 2340 -defaultsOSRD
 preplace inst xlslice_0 -pg 1 -lvl 4 -x 1770 -y 1850 -defaultsOSRD
 preplace inst xlslice_1 -pg 1 -lvl 1 -x 130 -y 740 -defaultsOSRD
 preplace inst xlslice_2 -pg 1 -lvl 1 -x 130 -y 440 -defaultsOSRD
@@ -3625,7 +3622,6 @@ preplace netloc xlconcat_0_dout 1 4 1 2000 1200n
 preplace netloc xlconcat_1_dout 1 1 1 250 1980n
 preplace netloc xlconcat_2_dout 1 2 2 NJ 1970 1520
 preplace netloc xlconstant_0_dout 1 3 2 NJ 680 NJ
-preplace netloc xlconstant_0_dout1 1 4 1 NJ 2340
 preplace netloc xlslice_0_Dout 1 4 1 2080J 2140n
 preplace netloc xlslice_0_Dout1 1 4 1 NJ 1850
 preplace netloc xlslice_1_Dout 1 1 2 NJ 740 640J

@@ -4,13 +4,13 @@
 module tb;
   reg clk = 0, rclk = 0, rstn = 0; always #5 clk = ~clk; always #3 rclk = ~rclk;
   reg [6:0] awaddr = 0, araddr = 0; reg awvalid = 0, wvalid = 0, arvalid = 0, rready = 0; reg [31:0] wdata = 0;
-  wire awready, wready, bvalid, arready, rvalid; wire [1:0] bresp, rresp; wire [31:0] rdata, txc, txf, rxc, i2c, i2i, t0c; wire [23:0] iof; wire [5:0] ioo;
+  wire awready, wready, bvalid, arready, rvalid; wire [1:0] bresp, rresp; wire [31:0] rdata, txc, txf, rxc, i2c, i2i, t0c; wire [0:0] hpd; wire [23:0] iof; wire [5:0] ioo;
   reg pub = 0; reg [31:0] smp = 0, hold = 0;
   hdmi_audio_regs dut (.s_axi_aclk(clk), .s_axi_aresetn(rstn), .s_axi_awaddr(awaddr), .s_axi_awvalid(awvalid),
     .s_axi_awready(awready), .s_axi_wdata(wdata), .s_axi_wstrb(4'hf), .s_axi_wvalid(wvalid), .s_axi_wready(wready),
     .s_axi_bresp(bresp), .s_axi_bvalid(bvalid), .s_axi_bready(1'b1), .s_axi_araddr(araddr), .s_axi_arvalid(arvalid),
     .s_axi_arready(arready), .s_axi_rdata(rdata), .s_axi_rresp(rresp), .s_axi_rvalid(rvalid), .s_axi_rready(rready),
-    .tx_ctrl(txc), .tx0_ctrl(t0c), .tx_fs_inc(txf), .rx_ctrl(rxc), .rx_pub(pub), .rx_status(2'b11), .rx_samples(hold),
+    .tx_ctrl(txc), .tx0_ctrl(t0c), .hpd2(hpd), .tx_fs_inc(txf), .rx_ctrl(rxc), .rx_pub(pub), .rx_status(2'b11), .rx_samples(hold),
     .rx_peak(32'h12345678), .rx_acr_n(20'd6144), .rx_acr_cts(20'd74250),
     .io_func(iof), .io_out(ioo), .io_in(6'b101010), .i2s_ctrl(i2c), .i2s_inc(i2i), .i2s_status(32'h0000_0A03));
   integer fails = 0;
@@ -33,6 +33,10 @@ module tb;
     rd(7'h50, 32'd1234); rd(7'h54, 32'h0000_0A03);
     if (iof !== 24'hDCBA98 || ioo !== 6'h3F || i2c !== 7 || i2i !== 1234) begin fails++; $display("FAIL I/O outputs"); end
     rd(7'h00, 32'h0000_0107);                      // old registers unchanged
+    if (hpd !== 1'b0) begin end   // rx_ctrl = 1 here (loop): HPD still high
+    if (hpd !== 1'b1) begin fails++; $display("FAIL HPD not high with RX_CTRL[2] = 0"); end
+    wr(7'h08, 32'h5); if (hpd !== 1'b0) begin fails++; $display("FAIL HPD not low with RX_CTRL[2] = 1"); end
+    wr(7'h08, 32'h1); if (hpd !== 1'b1) begin fails++; $display("FAIL HPD not back high"); end
     wr(7'h0C, 32'h0000_0205); rd(7'h0C, 32'h0000_0205);   // TX0_CTRL (HDMI_0)
     if (t0c !== 32'h205) begin fails++; $display("FAIL TX0_CTRL output"); end
     repeat (600) @(posedge clk);

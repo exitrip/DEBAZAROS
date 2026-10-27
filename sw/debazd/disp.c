@@ -256,6 +256,7 @@ void disp_close(void)
 
 int disp_frame_fd(void) { return efd; }
 int disp_vsync_ok(void) { return vs_ok; }
+double disp_frame_hz(void) { return vs_ok ? 1.0 / period : 0.0; }
 
 /* ---- OSC ---------------------------------------------------------------------- */
 static int slot_of(uint32_t a)

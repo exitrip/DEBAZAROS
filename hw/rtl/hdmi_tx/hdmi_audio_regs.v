@@ -4,7 +4,9 @@
 //
 //   0x00 RW TX_CTRL     -> hdmi_tx ctrl ([0] HDMI, [1] audio, [2] tone, [9:8] AVI VIC)
 //   0x04 RW TX_FS_INC   -> hdmi_tx fs_inc (internal 48 kHz NCO)
-//   0x08 RW RX_CTRL     [0] loop received audio into hdmi_tx, [1] clear peaks
+//   0x08 RW RX_CTRL     [0] loop received audio into hdmi_tx, [1] clear peaks,
+//                       [2] force HDMI_2 hot-plug LOW (reset 0 = HPD high, as
+//                       before; a pulse makes the source re-read the EDID)
 //   0x0C RW TX0_CTRL    HDMI_0's hdmi_tx ctrl (bits as TX_CTRL, which is HDMI_1);
 //                       both outputs share TX_FS_INC (same pixel clock)
 //   0x10 RO RX_STATUS   [0] data islands seen, [1] audio samples seen (last update)
@@ -53,6 +55,7 @@ module hdmi_audio_regs #(
     output reg  [31:0] tx0_ctrl = 0,
     output reg  [31:0] tx_fs_inc = 0,
     output reg  [31:0] rx_ctrl = 0,
+    output wire [0:0]  hpd2,           // HDMI_2 hot-plug detect pin (HDMI_HPD_2)
     output reg  [23:0] io_func = 0,
     output reg  [5:0]  io_out = 0,
     input  wire [5:0]  io_in,
@@ -67,6 +70,7 @@ module hdmi_audio_regs #(
     input  wire [19:0] rx_acr_n,
     input  wire [19:0] rx_acr_cts
 );
+    assign hpd2 = ~rx_ctrl[2];
     assign s_axi_bresp = 2'b00;
     assign s_axi_rresp = 2'b00;
 

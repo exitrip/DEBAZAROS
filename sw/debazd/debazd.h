@@ -23,6 +23,7 @@ void disp_close(void);
 int  disp_dispatch(const dz_msg *m);	/* 0 = not a /disp or /vsync address */
 int  disp_frame_fd(void);	/* eventfd: readable once per frame (or -1) */
 int  disp_vsync_ok(void);	/* 1 while real vsync arrives */
+double disp_frame_hz(void);	/* measured frame rate, 0 without vsync */
 
 /* ---- lfo.c: oscillators, wave shapers, step sequences ---- */
 void lfo_init(void);
@@ -36,5 +37,9 @@ int  fx_dispatch(const dz_msg *m);	/* 0 = not an /fx address */
 
 /* ---- io.c: user I/O line functions by name ---- */
 int  io_dispatch(const dz_msg *m);	/* 0 = not /io/pin or /io/pins */
+
+/* ---- audio.c: 48 kHz rate setting from the video mode, HDMI_2 replug ---- */
+int  audio_dispatch(const dz_msg *m);	/* 0 = not an /audio/fs or /capture/replug address */
+void audio_tick(long ms);		/* from the monitor loop */
 
 #endif /* DEBAZD_H */

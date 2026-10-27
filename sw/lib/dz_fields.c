@@ -104,6 +104,7 @@ static const dz_field static_fields[] = {
 	{ "/audio/tx0/avi",   AUD, 0x0C, 8, 2,  DZ_RAW,  0, "HDMI_0 AVI VIC: 0 = 720p60, 1 = 1080p30, 2 = 1080p60, 3 = none" },
 	{ "/audio/rx/loop",   AUD, 0x08, 0, 1,  DZ_BOOL, 0, "send the HDMI_2 input audio to the HDMI_1 output" },
 	{ "/audio/rx/clear",  AUD, 0x08, 1, 1,  DZ_BOOL, 0, "toggle: clear the input peak meters" },
+	{ "/hdmi/2/hpd_low",  AUD, 0x08, 2, 1,  DZ_BOOL, 0, "force the HDMI_2 hot-plug line low (source sees an unplug; /capture/replug pulses it)" },
 	{ "/audio/rx/islands",AUD, 0x10, 0, 1,  DZ_BOOL, DZ_F_RO, "HDMI_2 input: good data-island packets (last ~1 ms window)" },
 	{ "/audio/rx/active", AUD, 0x10, 1, 1,  DZ_BOOL, DZ_F_RO, "HDMI_2 input: audio samples arrive" },
 	{ "/audio/rx/samples",AUD, 0x14, 0, 32, DZ_RAW,  DZ_F_RO, "HDMI_2 input: stereo samples received (wraps)" },

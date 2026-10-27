@@ -399,7 +399,14 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   audio source (pl_io: HDMI_2 loop or I2S DIN, i2s_ctrl[2] HDMI_1 / [4]
   HDMI_0); TX_FS_INC is shared (one pixel clock). The island scheduler has a
   register stage (Oct 27): worst hdmi_tx path 10.05 ns routed, +3.4 ns at
-  720p60 (was 12.58 ns); latency LOOK + 5 = 15 px. ctrl = 0 → DVI, symbol-identical to rgb2dvi (simulated against
+  720p60 (was 12.58 ns); latency LOOK + 5 = 15 px.
+- HDMI_2 hot-plug (Oct 27): HDMI_HPD_2 = ~RX_CTRL[2] (was an xlconstant 1;
+  reset = high as before). `/capture/replug [s]` pulses it low: the source
+  re-reads the EDID and redoes its mode set (use 12 s if the source fell back
+  to polling after an HPD storm). `/hdmi/2/hpd_low` = the raw bit.
+- 48 kHz rate setting: debazd (audio.c) sets `/audio/tx/fs_inc` from the
+  measured frame rate x VTC GHSIZE x GVSIZE once vsync runs (`/audio/fs`,
+  `/audio/fs/auto 0` = hands off). ALSA card design: ROADMAP.md section 13. ctrl = 0 → DVI, symbol-identical to rgb2dvi (simulated against
   a copy of TMDS_Encoder.vhd), latency +10 px for sync and data together.
   HDMI: data islands placed from the incoming VTC timing (line length from
   HSYNC edges, active width from DE, 10-px look-ahead); AVI + Audio InfoFrame
