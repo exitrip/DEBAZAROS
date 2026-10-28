@@ -141,6 +141,8 @@ mm_IP fb_mm_IP;
  * Every frame write and the capture address are checked against the
  * reserved-memory nodes of the running kernel. */
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/file.h>
 
 
 /*
@@ -518,6 +520,24 @@ static int capture_arm(u32 capPhys)
 
 static int capture_ready;	/* driver set up (CaptureInitialize ran) */
 
+/* debazd runs = debazd owns the capture (2026-10-28): it arms the channel at
+ * the measured INPUT size. hdmi2 then does not reset or arm it: twice, an
+ * hdmi2 arm at the display size (wrong line length -> errors -> reset +
+ * retry) followed by the debazd re-arm left the soft reset stuck (HP1 AFI
+ * wedged, reboot). debazd holds an flock on its lock file while it runs. */
+#define DEBAZD_LOCK "/tmp/debazd.lock"
+static int debazd_running(void)
+{
+	int fd = open(DEBAZD_LOCK, O_RDONLY), busy = 0;
+
+	if (fd < 0)
+		return 0;
+	if (flock(fd, LOCK_SH | LOCK_NB) < 0 && errno == EWOULDBLOCK)
+		busy = 1;
+	close(fd);				/* also drops our lock */
+	return busy;
+}
+
 int CaptureInitialize(void)
 {
 	int Status;
@@ -537,6 +557,10 @@ int CaptureInitialize(void)
 		return Status;
 	}
 	capture_ready = 1;
+	if (debazd_running()) {
+		xil_printf("Capture: debazd runs, it arms the capture (input size)\r\n");
+		return XST_SUCCESS;
+	}
 	return capture_arm(capPhys);
 }
 
@@ -551,6 +575,8 @@ int CaptureResize(u32 w, u32 h, u32 stride)
 	cap_stride = stride;
 	if (!capture_ready || !capPhys)
 		return XST_FAILURE;
+	if (debazd_running())
+		return XST_SUCCESS;		/* debazd follows the input */
 	if (capture_soft_reset(CAPTURE_VDMA_BASE + XAXIVDMA_RX_OFFSET) < 0)
 		return XST_FAILURE;
 	return capture_arm(capPhys);

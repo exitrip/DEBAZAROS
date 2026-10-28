@@ -95,6 +95,36 @@ static int cur_internal;
 
 static void on_signal(int sig) { (void)sig; stop = 1; }
 
+/* A read of the VTC while hdmi2 switches the pixel clock (menu mode change)
+ * gave a bus error (external abort at 0x43C2_0004, 2026-10-28) and SIGBUS
+ * killed debazd. Such a fault lasts only for the clock switch. On ARM the
+ * faulting load runs again when the handler returns: wait 1 ms and return.
+ * Faults for 2 s without a pause of 100 ms = a block that is really missing:
+ * default action (core dump). Async-signal-safe calls only. */
+static void on_sigbus(int sig, siginfo_t *si, void *uc)
+{
+	static long first, last;
+	struct timespec ts;
+	long t;
+
+	(void)si; (void)uc;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	t = ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+	if (t - last > 100) {
+		static const char msg[] = "debazd: bus error (pixel clock switch?), retrying\n";
+		first = t;
+		if (write(2, msg, sizeof(msg) - 1) < 0) {}
+	}
+	last = t;
+	if (t - first > 2000) {
+		static const char msg[] = "debazd: bus errors for 2 s, giving up\n";
+		if (write(2, msg, sizeof(msg) - 1) < 0) {}
+		signal(sig, SIG_DFL);
+		return;					/* the load faults again: dies */
+	}
+	nanosleep(&(struct timespec){ 0, 1000000 }, NULL);
+}
+
 /* ---- sending ---------------------------------------------------------------- */
 static void send_to(const struct sockaddr_in *to, const char *path, const char *tags, ...)
 {
@@ -547,20 +577,37 @@ static void video_watch(void)
  * the safe sequence (dz_capture_arm: soft reset first). An arm latches IntErr
  * once (the partial first frame) while the channel runs on: the latches are
  * cleared on the next poll, they are not a reason to arm again. At most one
- * try per 2 s; a stuck reset (HP1 AFI wedged) ends the watch.
+ * try per 2 s. The soft reset waits for the transfers in progress: at
+ * 1080p60 (HP ports starved) it took longer than the 100 ms of
+ * dz_capture_arm (2026-10-28) and completed later. So a reset that is not
+ * done yet only pauses the watch; it continues when the reset bit clears.
+ * After 10 s it is a wedged HP1 AFI (power cycle), reported once.
  * /capture/auto 0 = off. */
 int capture_auto = 1;
 static void capture_watch(void)
 {
-	static int last_w, last_h, stable, dead, clear_next, idle;
+	static int last_w, last_h, stable, pending, wedged, clear_next, idle;
 	static long last_try;
 	volatile uint32_t *a = dz_regs(HW_HDMI_AUDIO_REGS_0_BASE);
 	dz_vdma_regs r;
 	uint32_t sh, sv, addr;
 	int w, h, sick, rc;
 
-	if (!capture_auto || dead || !a || dz_map_simulating() || dz_capture_regs(&r) < 0)
+	if (!capture_auto || !a || dz_map_simulating() || dz_capture_regs(&r) < 0)
 		return;
+	if (pending) {					/* soft reset not done yet */
+		if (r.cr & 0x04) {
+			if (!wedged && now_ms() - last_try > 10000) {
+				wedged = 1;
+				dzd_log("debazd: capture soft reset stuck for 10 s - HP1 AFI wedged, power cycle\n");
+				event("/event/capture/armed", "iii", 0, 0, -2);
+			}
+			return;
+		}
+		dzd_log("debazd: capture soft reset done after %ld ms\n", now_ms() - last_try);
+		pending = wedged = 0;
+		last_try = 0;				/* arm again on this poll */
+	}
 	if (clear_next) {				/* the arm's own IntErr etc. */
 		dz_wr(DZ_CAPTURE_VDMA, 0x34, 0x0000F990);	/* S2MM_SR, W1C */
 		clear_next = 0;
@@ -587,9 +634,8 @@ static void capture_watch(void)
 	rc = dz_capture_arm(w, h, dz_geom_stride(), addr);
 	dzd_log("debazd: capture armed for the %dx%d input, stride %u -> 0x%08X%s\n", w, h,
 		(unsigned)dz_geom_stride(), (unsigned)addr,
-		rc == 0 ? "" : rc == -2 ? ": SOFT RESET STUCK - HP1 AFI wedged, power cycle; watch off" : ": refused");
-	if (rc == -2)
-		dead = 1;
+		rc == 0 ? "" : rc == -2 ? ": soft reset not done in 100 ms, waiting" : ": refused");
+	pending = (rc == -2);
 	clear_next = (rc == 0);
 	idle = 0;
 	event("/event/capture/armed", "iii", w, h, rc);
@@ -672,6 +718,10 @@ int main(int argc, char **argv)
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGTERM, &sa, NULL);
 	signal(SIGPIPE, SIG_IGN);
+	sa.sa_handler = NULL;
+	sa.sa_sigaction = on_sigbus;
+	sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+	sigaction(SIGBUS, &sa, NULL);
 
 	fprintf(stderr, "debazd: %s, %d fields, udp/%d%s\n", HW_VARIANT,
 		dz_fields_count(), port, sim ? " (simulated)" : "");

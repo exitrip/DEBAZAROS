@@ -20,7 +20,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 7 | Test the OSC drawing layer against the daemon | 6 | DONE: painter, sprites, text, transforms, LFOs, 60 fps flipbook/strobe (2026-10-24, `sw/README.md`) |
 | 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
 | 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: runs on the board, tested with live registers 2026-10-24; media upload/download/delete tested 2026-10-24; not in the boot script yet |
-| 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DESIGN (2026-10-24) |
+| 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DOING: crops in software (`/disp/<d>/crop`, fixed 7680-byte pitch), frame-synced display VDMAs (build fs); video wall from a 1600x1200@30 input (CVT-RB EDID, build edid2) with 800x600 quarters WORKS 2026-10-28 |
 | 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | PLAN (2026-10-25) |
 | 12 | Audio (HDMI out/in, I2S), PL_KEY I2C/SPI/UART, fan-port I/O, PL resource recovery, 1080p buffers (section 11) | 2 | ANALYSIS (2026-10-26) |
 | 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |

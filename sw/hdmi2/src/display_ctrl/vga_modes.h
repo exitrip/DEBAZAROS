@@ -75,7 +75,7 @@ static const VideoMode VMODE_800x600 = {
 	.vmax = 627,
 	.vpol = 1,
 	.freq = 40.0,
-	.clkConf = {40.0, 0x06, 0x03, 0x01} // 3 *5 is fine
+	.clkConf = {40.0, 0x0a, 0x05, 0x01} // VCO 1000 MHz, 5 *5 (was x6/3: VCO 600 = the minimum, monitor drop-outs 2026-10-28)
 };
 
 /* VESA DMT 1024x768@60 (XGA, 2026-10-28): 65.000 MHz = 100 x 13 / (2 x 2 x 5),

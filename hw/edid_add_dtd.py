@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""edid_add_dtd.py - add detailed timing descriptors (DTDs) to the CEA-861
-extension of the HDMI_2 capture EDID (dvi2rgb's EEPROM init file: 256 lines,
-one byte per line in binary). Runs after edid_audio.py; a DTD that is
-already there is not added again; the extension checksum is made again.
+"""edid_add_dtd.py - set the detailed timing descriptors (DTDs) of the
+CEA-861 extension of the HDMI_2 capture EDID (dvi2rgb's EEPROM init file: 256
+lines, one byte per line in binary). Runs after edid_audio.py. The extension
+gets exactly the MODES below (the old extension DTDs are removed; 720p60 and
+1080p30 stay in the base block); the extension checksum is made again.
 
     python3 hw/edid_add_dtd.py [IP_dvi2rgb/src/dgl_720p_cea.data]
     then: vivado -mode batch -source hw/repackage_ip.tcl -tclargs IP_dvi2rgb
 
 The modes (2026-10-28): inputs whose quarters are standard output modes, for
 the debazd crops (/disp/<d>/crop). dvi2rgb (kClkRange = 2) takes 60-120 MHz.
-  1600x1200@30: VESA 1600x1200@60 blanking at half the clock = 81.00 MHz;
-                quarter = 800x600 (output 800x600@60)
+  1280x1024@60: VESA DMT, 108.00 MHz
+  1600x1200@30: CVT reduced blanking (H total 1760, V total 1217), 64.25 MHz;
+                quarter = 800x600 (output 800x600@60). Before: VESA 1600x1200@60
+                blanking at half the clock (81.00 MHz, H total 2160): dvi2rgb
+                locked, but hdmi_rx found no frames (2026-10-28).
+  1600x1200@25: VESA 1600x1200@60 blanking, 67.50 MHz (test: same shape as
+                the 81 MHz timing at another clock)
   1280x960@60:  VESA DMT, 108.00 MHz; quarter = 640x480 (output 640x480@60)
 """
 import sys
@@ -18,7 +24,9 @@ import sys
 # (name, pixel clock MHz, h active, front porch, sync, back porch,
 #  v active, front porch, sync, back porch, hsync +, vsync +)
 MODES = [
-    ('1600x1200@30', 81.00, 1600, 64, 192, 304, 1200, 1, 3, 46, True, True),
+    ('1280x1024@60', 108.00, 1280, 48, 112, 248, 1024, 1, 3, 38, True, True),
+    ('1600x1200@30', 64.25, 1600, 48, 32, 80, 1200, 3, 4, 10, True, False),
+    ('1600x1200@25', 67.50, 1600, 64, 192, 304, 1200, 1, 3, 46, True, True),
     ('1280x960@60', 108.00, 1280, 96, 112, 312, 960, 1, 3, 36, True, True),
 ]
 
@@ -44,16 +52,7 @@ assert len(d) == 256 and sum(d[0:128]) % 256 == 0, 'want a valid 256-byte EDID'
 e = d[128:256]
 assert e[0] == 0x02 and e[1] == 3, 'want a CEA-861 extension, revision 3'
 
-dtds, i = [], e[2]
-while i + 18 <= 127 and (e[i] or e[i + 1]):
-    dtds.append(e[i:i + 18])
-    i += 18
-added = []
-for m in MODES:
-    t = dtd(m)
-    if t not in dtds:
-        dtds.append(t)
-        added.append(m[0])
+dtds = [dtd(m) for m in MODES]
 
 out = e[:e[2]]
 for t in dtds:
@@ -64,5 +63,5 @@ out.append((-sum(out)) % 256)
 d[128:256] = out
 with open(path, 'w') as f:
     f.write('\n'.join(format(b, '08b') for b in d) + '\n')
-print('%s: %d DTDs in the extension, added: %s, checksum %02x' %
-      (path, len(dtds), ', '.join(added) or 'none', out[127]))
+print('%s: extension DTDs %s, checksum %02x' %
+      (path, ', '.join(m[0] for m in MODES), out[127]))

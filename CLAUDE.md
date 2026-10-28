@@ -700,9 +700,30 @@ libdz DZ_STRIDE); `/disp/<d>/crop x y` shows the mode-sized window at x, y of
 the shown slot (x even; clamped; the capture's real size when it is shown);
 debazd sets the capture size from the INPUT (RX_SIZE; dz_capture_arm = soft
 reset + arm; /capture/auto). New hdmi2 mode 1024x768@60 (65 MHz). EDID (build
-`edid`): + 1600x1200@30 (81 MHz; does NOT decode on the board - try longer
-vertical blanking) and 1280x960@60 (108 MHz: works; 640x480 quarters of it
-verified at 640x480@60 out). The laptop sends limited-range RGB.
+`edid`): + 1600x1200@30 (81 MHz, DMT blanking at half clock: dvi2rgb
+locked, hdmi_rx found NO frames) and 1280x960@60 (108 MHz: works; 640x480
+quarters of it verified at 640x480@60 out). Build `edid2` (Oct 28, ON THE
+BOARD): extension DTDs = exactly `hw/edid_add_dtd.py` MODES (1280x1024@60,
+1600x1200@30 CVT-RB 64.25 MHz, 1600x1200@25 DMT 67.5 MHz, 1280x960@60; the
+720p60/1080p30 copies stay in the base block only). **1600x1200@30 CVT-RB
+WORKS**: 1600x1200 clean, 800x600 quarters on both outputs. The laptop sends
+limited-range RGB.
+**Capture wedge by two owners (Oct 28, twice, reboot each time):** hdmi2
+armed the capture at the DISPLAY size (wrong line length -> errors -> its
+reset + retry loop), then the debazd re-arm reset left CR bit 2 stuck, HP1
+AFI write FIFO level 0xF8009020 stuck non-zero (0x80, 0x1E; normal 0).
+Fixed: hdmi2 never touches the capture while debazd holds /tmp/debazd.lock;
+plreload stops debazd BEFORE its own capture soft reset and refuses to load
+if the reset sticks (a manual devmem reset with debazd running is undone at
+once: debazd re-arms a halted channel). debazd waits for a slow reset (no
+"watch off"; wedge reported after 10 s) and survives SIGBUS (a VTC read
+during an hdmi2 pixel-clock switch bus-errored at 0x43C2_0004 and killed it):
+the handler waits 1 ms and the load runs again; 2 s of faults = default.
+**800x600 drop-outs (Oct 28):** clkConf x6/3 put the dynclk VCO at 600 MHz
+(the minimum) -> one monitor dropped in and out while the board saw no fault;
+now x10/5 (VCO 1000, as 640x480). Check other modes' VCO (1024x768 = 650).
+DVI monitor "out of range" at 1080p30 AND 1080p60 = the monitor (follows
+monitor + cable); the cheap 60 Hz monitor shows 1080p60 on both outputs.
 **Display VDMA wedge (MEASURED Oct 28 2026):** moving crops (60 changes/s)
 made BD HDMI_1's vid_out lose lock; on builds WITHOUT the interconnect data
 FIFOs (_fan and later) the HP2 AFI read FIFO then sticks at 122 words, the
