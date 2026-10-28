@@ -21,10 +21,11 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
 | 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: runs on the board, tested with live registers 2026-10-24; media upload/download/delete tested 2026-10-24; not in the boot script yet |
 | 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DOING: crops in software (`/disp/<d>/crop`, fixed 7680-byte pitch), frame-synced display VDMAs (build fs); video wall from a 1600x1200@30 input (CVT-RB EDID, build edid2) with 800x600 quarters WORKS 2026-10-28 |
-| 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | PLAN (2026-10-25) |
+| 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | DOING (2026-10-28): full userland beside BusyBox, passwordless sudo, journald runtime cap, ALSA card + alsa-utils, per-card MAC/hostname at first boot (debaz-firstboot, in the config, not built yet); open: partitions, sw in the image, read-only root |
 | 12 | Audio (HDMI out/in, I2S), PL_KEY I2C/SPI/UART, fan-port I/O, PL resource recovery, 1080p buffers (section 11) | 2 | ANALYSIS (2026-10-26) |
 | 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |
 | 14 | HDMI audio out (HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | WORKS on hardware 2026-10-26 (branch hdmi-audio, artifacts/..._20261026_audio): out, in, loop; 2026-10-27: HDMI_0 also hdmi_tx (own TX0_CTRL + audio source), simulated, built, not yet on hardware; open: software HPD; 1080p60 still needs the effects-chain pipelining (hdmi_tx itself: 10 ns) |
+| 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -1046,8 +1047,47 @@ playback pointer must be the PLAYED position (moved - FIFO level), moves
 are limited to appl_ptr, the playback underrun latch must NOT be an
 interrupt (it sets again every 48 kHz tick while empty = interrupt storm),
 starving = threshold 0 so the empty FIFO reports the end of a drain.
-Buffer max 16384 frames (341 ms). Not tested yet: I2S PCM, the route
-controls with amixer (no alsa-utils on the test image). debazd's
+Buffer max 16384 frames (341 ms).
+
+**IN THE IMAGE + TESTED with alsa-utils (2026-10-28 evening, image of
+commit e6fde117 on the second board, bitstream edid2):** the card binds at
+boot (4 s), no overlay or insmod. All heard on the HDMI0 audio extractor.
+| Test | Result |
+| --- | --- |
+| `aplay -l`, `amixer -c DEBAZ` | 3 playback devices; controls shown as `HDMI 0`, `HDMI 1`, `I2S` (the simple mixer drops "Route"), items Auto/Linux/Other |
+| `speaker-test -c 2 -t sine` on hw:DEBAZ,0 (440 Hz) and hw:DEBAZ,1 (1800 Hz) at once | both complete, L then R; it takes 4 x 4096 frames (the maximum buffer) |
+| Route during playback (`amixer sset "HDMI 0" ...`) | idle Auto 0, playing Auto 1, Other 0 (silence), Linux 1, stopped Linux 1, stopped Auto 0 |
+| `aplay` WAV (440 Hz left, 1800 Hz right) | plays; `plughw` resamples 44.1 kHz |
+| `arecord -D hw:DEBAZ,2 -d 5` | 5.00 s, mean -18.4 dB from the laptop |
+| `arecord \| aplay` HDMI2 -> HDMI0, 30 s, `-B 100000` both | 0 underruns / overruns (the earlier ffmpeg loop underruns came from its ~6 ms buffer) |
+| I2S PCM hw:DEBAZ,3 (`/i2s/on 1`, no DAC) | drains at 48 kHz (5 s in 5.08 s), route bit 7 follows Auto |
+| `alsactl store` / `restore` | route saved and restored; `alsa-restore.service` restores at boot and stores at shutdown (/var/lib/alsa/asound.state) |
+**OSC + web control (2026-10-28, tested on the board):** debazd `sound.c`
+(`/audio/out/<n>/source`, `/audio/play|stop|rec|rec/stop|status`, files in
+/home/ebaz/audio), `/movie/<s>/play name fps audio-mask` (the movie's own
+audio track to 1 HDMI 0 / 2 HDMI 1 / 3 both / 4 I2S), dzweb Media "Audio"
+folder + the Audio tab (sources, play, record, input meters). Tested: auto
+route bit 1 while a file plays / 0 after; 5 s recording exact; loop + stop
+(immediate); movie mask 1 -> PCM 0 runs, mask 3 -> PCM 0 + 1; sources read
+back after a debazd restart; web list / upload / delete. Details: sw/README.md.
+**HDMI_2 audio after a hot-plug (2026-10-28, second board):** after a
+physical replug the input delivered 38959 samples/s instead of 48000 with
+CLEAN samples and clean video (1600x1200, 0 short lines): hdmi_rx drops a
+subpacket with a BCH error (a packet with a header error), so the link had
+bit errors on the data lanes - a marginal dvi2rgb alignment. An HPD replug
+fixed it (3 of 3: ~48000/s). debazd now watches the rate (audio.c,
+`/audio/rx/rate`, `/audio/rx/auto`): off by > 2 % for 3 s -> replug, at most
+every 30 s. TODO gateware: count header / subpacket ECC errors (RX_STATUS)
+for an exact link-quality value (errors that cost no samples too), and
+check the alignment margin of dvi2rgb (kBlankTimeoutMs 2 ms) on this board.
+(The full-scale peaks seen at the same time were the laptop volume.)
+Notes: `alsactl` is in /usr/sbin (not in sudo's PATH: use the full path);
+the UCM warning of alsactl ("failed to import hw:0 use case configuration")
+is harmless (no UCM file for this card). A driver bind starts the controls
+at Auto: plreload.sh runs `alsactl restore DEBAZ` after its re-bind
+(commit c5953a19). Open: dmix/softvol `/etc/asound.conf` (one program per
+PCM today), an ALSA control for the HDMI mode of an output (still
+`/audio/tx*` in debazd), debazd leaving I2S_CTRL routing to the driver. debazd's
 `/pcm/to_hdmi*` fields write the same I2S_CTRL bits: use one or the other.
 
 - Platform driver, `compatible = "debaz,hdmi-audio-1.0"`, node in
@@ -1066,15 +1106,47 @@ controls with amixer (no alsa-utils on the test image). debazd's
 
 ### PetaLinux / rootfs
 
-- Recipe `meta-user/recipes-modules/debaz-audio` (module.bbclass), autoload.
-- rootfs: alsa-utils (aplay, arecord, amixer, alsactl), alsa-lib, an
-  `/etc/asound.conf` with dmix + softvol per HDMI output; `alsactl restore`
-  at boot (systemd `alsa-restore.service` comes with alsa-utils).
+- DONE 2026-10-28: recipe `meta-user/recipes-modules/debaz-audio`
+  (module.bbclass, `KERNEL_MODULE_AUTOLOAD`), the DT node in
+  system-user.dtsi, rootfs alsa-utils (aplay/arecord, amixer, alsamixer,
+  alsactl, speaker-test, alsaloop); `alsa-restore.service` is active.
+- `/etc/asound.conf` (in the debaz-audio recipe, 2026-10-28, not built
+  yet; installed by hand on the second board): default PCM = plughw:DEBAZ,0
+  playback / plughw:DEBAZ,2 capture, default ctl = DEBAZ. Needed because
+  alsa-plugins brings `99-pulseaudio-default.conf` (default = PulseAudio,
+  no server in the image: `amixer` / `aplay` without -c/-D failed with
+  "Connection refused"). TODO there: dmix + softvol per HDMI output.
 - Kernel: CONFIG_SND and CONFIG_SND_PCM (already in the Xilinx defconfig);
   the 2023 Xilinx I2S / Audio Formatter / ADAU1761 fragment was removed
   2026-10-27 (no such hardware).
 - Later, by need: ffmpeg with ALSA output (PACKAGECONFIG alsa), shairport-sync
   or snapclient (meta-multimedia), PipeWire.
+- **Decision (user, 2026-10-28): no PulseAudio / PipeWire on the unit.** The
+  complex sound design runs elsewhere (Max / Pd / Ableton / TouchDesigner);
+  the unit plays, captures and routes, and later gets network audio, not
+  much more. Estimate for PulseAudio here: 6-10 MB RAM, 1-3 % CPU per
+  stream, 5-10 % per resampled stream, more latency, and its rewinds do not
+  fit the FIFO driver - while a 720p movie already takes ~96 % CPU. Mixing
+  and volume, when needed: dmix + softvol in /etc/asound.conf (no daemon).
+  Network audio: one dedicated receiver (e.g. snapclient for synchronised
+  multi-unit audio, or RTP / shairport-sync) that plays into hw:DEBAZ, chosen
+  when the fleet work needs it. The alsa-plugins PulseAudio default is
+  overridden by /etc/asound.conf; the plugin can leave the image (done:
+  `meta-user/recipes-multimedia/alsa/alsa-plugins_%.bbappend`, not built yet).
+- **MIDI (decision 2026-10-28):** live MIDI comes over the network. Kernel
+  fragment `user_2026-10-28-midi.cfg` (not built yet): ALSA sequencer,
+  seq-dummy, hrtimer, rawmidi, virmidi, plus snd-aloop for routing tools,
+  all built in. Side effect: VirMIDI and Loopback are extra cards at boot,
+  so DEBAZ may not be card 0 - always name it (`hw:DEBAZ,N`, `-c DEBAZ`;
+  asound.conf does). Next, when needed: OSC -> synth (debazd passes
+  /midi/... to e.g. fluidsynth's command interface; no MIDI stack needed),
+  or rtpmidid (RTP-MIDI/AppleMIDI, needs the sequencer; no recipe yet).
+  The synth itself: TBD.
+- **Streaming audio to the fleet instead (estimate):** 48 kHz 16 bit
+  stereo = 1.54 Mbit/s raw (about 1.6 with RTP/UDP headers). Unicast to 12
+  units = ~19 Mbit/s from the sender, multicast = ~1.6 Mbit/s in total;
+  the units have 100 Mbit/s ethernet. So streaming PCM is cheap; a synth on
+  each unit only matters for independent, generative audio per unit.
 
 ### Order and test
 

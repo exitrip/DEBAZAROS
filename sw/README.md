@@ -293,7 +293,37 @@ HDMI audio housekeeping (debazd audio.c):
 dzctl /audio/fs              # pixel clock, the 48 kHz rate setting, auto on/off
 dzctl /audio/fs/auto 0       # stop debazd from setting /audio/tx/fs_inc
 dzctl /capture/replug 2      # HDMI_2 hot-plug low for 2 s: source re-reads the EDID
+dzctl /audio/rx/rate         # HDMI_2 input samples per second (48000 = healthy)
+dzctl /audio/rx/auto 0       # watchdog off (default on: replug when the rate is off by > 2 % for 3 s)
 ```
+
+## Audio: sources, files, recording (debazd sound.c, ALSA card DEBAZ)
+
+Outputs: 0 = HDMI 0, 1 = HDMI 1, 2 = I2S out. Files live in
+`/home/ebaz/audio` (the web app's Media tab uploads there; the Audio tab
+has all of this as controls).
+
+```sh
+dzctl /audio/out/0/source auto     # auto | linux | input | i2s | tone | off (I2S: auto|linux|input|off)
+dzctl /audio/out/1/source          # query (read from the hardware after a restart)
+dzctl /audio/play 0 song.mp3 1     # out, file, loop (any format ffmpeg reads)
+dzctl /audio/stop 0                # one output; no argument = all
+dzctl /audio/rec take1 30          # HDMI 2 In -> audio/take1.wav, 30 s (0 = until stop, max 1 h)
+dzctl /audio/rec/stop
+dzctl /audio/status                # /audio/out out file loop source (x3), /audio/rec file secs
+dzctl /files audio
+dzctl /movie/0/play clip.mkv 0 3   # a movie's own audio: 1 HDMI 0, 2 HDMI 1, 3 both, 4 I2S
+```
+
+`auto` = the output plays Linux audio while something plays on it, else
+the HDMI 2 input; every source but `off` switches an HDMI output to HDMI
+mode with audio. The Linux part is the driver's route control (`amixer -c
+DEBAZ`), so plain `aplay -D hw:DEBAZ,N` follows the same rules. "Audio
+follows the picture" with a movie on both outputs (mask 3): swap the
+sources `linux` / `input` together with the `/disp` swap. Playback is
+ffmpeg -f alsa, recording arecord, both children of debazd; a stop is
+immediate (SIGKILL; the recorder gets SIGINT so the WAV header is written).
+Recordings belong to the owner of the folder (dzweb can delete them).
 
 Green screen on HDMI_1 over HDMI_0: `/key/invert 1`,
 `/fx/key/color 0x00ff00 40`.

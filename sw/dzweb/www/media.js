@@ -1,4 +1,4 @@
-// media.js - images, movies and sprites on the board. File transfer (upload,
+// media.js - images, movies, audio files and sprites on the board. File transfer (upload,
 // download, delete) uses dzweb's HTTP /media; drawing and playback use OSC.
 import * as net from "./net.js";
 import { h, card, row, hexToRgb, toast } from "./ui.js";
@@ -6,9 +6,10 @@ import { h, card, row, hexToRgb, toast } from "./ui.js";
 const KINDS = {
   img: { title: "Images", dir: "/home/ebaz/img", accept: "image/*,.ppm" },
   movies: { title: "Movies", dir: "/home/ebaz/movies", accept: "video/*,.mkv,.ts" },
+  audio: { title: "Audio", dir: "/home/ebaz/audio", accept: "audio/*,.wav,.mp3,.flac,.ogg,.mkv" },
 };
-let lists = {}, uploads = {}, freeEl, spriteId, slotSel, info;
-let state = { free: -1, keep: 0, max: 0, img: [], movies: [] };
+let lists = {}, uploads = {}, freeEl, spriteId, slotSel, info, movieAudio, audioOut;
+let state = { free: -1, keep: 0, max: 0, img: [], movies: [], audio: [] };
 let queue = Promise.resolve(); // one upload at a time: the SD card is slow
 
 const mb = (n) => (n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(2)} GB` : `${(n / (1 << 20)).toFixed(1)} MB`);
@@ -47,8 +48,11 @@ function actions(kind, name) {
       } }, "→ sprite"),
       h("button", { title: "draw into the target slot", onclick: () => net.msg(`/img/${slotSel.value}/load`, name) }, "draw"),
     ];
+  if (kind === "audio")
+    return [h("button.primary", { title: "play on the output chosen below",
+      onclick: () => net.msg("/audio/play", parseInt(audioOut.value), name, 0) }, "play")];
   return [h("button.primary", { title: "play into the target slot",
-    onclick: () => net.msg(`/movie/${slotSel.value}/play`, name) }, "play")];
+    onclick: () => net.msg(`/movie/${slotSel.value}/play`, name, 0, parseInt(movieAudio.value)) }, "play")];
 }
 
 function draw(kind) {
@@ -135,6 +139,12 @@ export function init(root) {
   spriteId = h("input", { type: "number", min: 0, max: 63, value: 0 });
   slotSel = slotPicker();
   info = h("span.hint", {}, "");
+  movieAudio = h("select", { title: "where the movie's own audio track plays" },
+    h("option", { value: 0 }, "no audio"), h("option", { value: 1 }, "HDMI 0"),
+    h("option", { value: 2 }, "HDMI 1"), h("option", { value: 3 }, "HDMI 0 + 1"),
+    h("option", { value: 4 }, "I2S"));
+  audioOut = h("select", {}, h("option", { value: 0 }, "HDMI 0"), h("option", { value: 1 }, "HDMI 1"),
+    h("option", { value: 2 }, "I2S"));
   const color = h("input", { type: "color", value: "#ffffff" });
   const text = h("input", { type: "text", value: "feedback" });
   const size = h("input", { type: "number", min: 8, max: 400, value: 96, title: "TrueType size in px" });
@@ -149,9 +159,14 @@ export function init(root) {
     h("div.grid", {},
       card(`${KINDS.img.title} (${KINDS.img.dir})`, dropZone("img"), uploads.img, lists.img),
       card(`${KINDS.movies.title} (${KINDS.movies.dir})`, dropZone("movies"), uploads.movies, lists.movies,
+        row("movie audio", movieAudio),
         row(null, h("button", { onclick: () => net.msg(`/movie/${slotSel.value}/stop`) }, "Stop movie in slot")),
         h("p.hint", {}, "Movies decode on the board (about 12–20 fps per 720p stream). " +
           "File names change to A-Z a-z 0-9 . _ - on upload.")),
+      card(`${KINDS.audio.title} (${KINDS.audio.dir})`, dropZone("audio"), uploads.audio, lists.audio,
+        row("play on", audioOut, h("button", { onclick: () => net.msg("/audio/stop") }, "Stop all")),
+        h("p.hint", {}, "Recordings from the Audio tab land here. HDMI 0 + 1 for a movie = the same " +
+          "audio on both outputs; the Audio tab's sources choose what each output plays.")),
       card("Sprites",
         row("colour", color, text),
         row(null,

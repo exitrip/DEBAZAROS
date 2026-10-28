@@ -20,7 +20,7 @@
  *   /list [s:prefix]              -> /entry s:path s:help ... /entry/end i:count
  *   /fields [s:prefix]            -> /field s:path i:lo i:width s:unit i:ro
  *                                    s:help ... /field/end i:count  (for UIs)
- *   /files s:img|movies           -> /file s:name ... /file/end i:count
+ *   /files s:img|movies|audio     -> /file s:name ... /file/end i:count
  *   <field> value...              set a field (see sw/lib/dz_fields.h rules)
  *   <field>                       (no value) -> /value s:path i:raw f:normalized
  *   /get s:path                   same as <field> without value
@@ -350,13 +350,14 @@ static void handle(dz_msg *m, void *ctx)
 	if (!strcmp(m->path, "/files")) {
 		const char *which = (m->n >= 1 && m->a[0].type == 's') ? m->a[0].s : "";
 		const char *dir = !strcmp(which, "movies") ? DZ_MOVIE_DIR :
-				  !strcmp(which, "img") ? DZ_IMG_DIR : NULL;
+				  !strcmp(which, "img") ? DZ_IMG_DIR :
+				  !strcmp(which, "audio") ? DZ_AUDIO_DIR : NULL;
 		DIR *d = dir ? opendir(dir) : NULL;
 		struct dirent *e;
 		int count = 0;
 
 		if (!dir) {
-			reply("/error", "ss", "/files needs img or movies", m->path);
+			reply("/error", "ss", "/files needs img, movies or audio", m->path);
 			return;
 		}
 		while (d && (e = readdir(d)) != NULL) {
@@ -411,7 +412,7 @@ static void handle(dz_msg *m, void *ctx)
 		}
 	}
 	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || io_dispatch(m) ||
-	    audio_dispatch(m) || pwm_dispatch(m))
+	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
 		int bit, n0 = 0, press = 0;
@@ -782,6 +783,7 @@ int main(int argc, char **argv)
 		if (now_ms() >= next) {
 			monitor();
 			audio_tick(now_ms());
+			sound_tick();
 			for (int s = 0; s < DZ_SLOTS; s++)
 				dz_draw_movie_running(s);
 			next = now_ms() + interval;
@@ -790,6 +792,7 @@ int main(int argc, char **argv)
 	}
 	fprintf(stderr, "debazd: stopping\n");
 	pwm_close();
+	sound_close();
 	disp_close();
 	dz_draw_close();
 	dz_unmap_all();

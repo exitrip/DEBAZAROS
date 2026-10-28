@@ -6,9 +6,10 @@ import * as effects from "./effects.js";
 import * as lfo from "./lfo.js";
 import * as paint from "./paint.js";
 import * as media from "./media.js";
+import * as audio from "./audio.js";
 import * as con from "./console.js";
 
-const modules = { displays, effects, lfo, paint, media, console: con };
+const modules = { displays, effects, lfo, paint, media, audio, console: con };
 const $ = (id) => document.getElementById(id);
 
 // ---- tabs ----

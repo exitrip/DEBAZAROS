@@ -848,8 +848,20 @@ int dz_draw_movie_play(int i, const char *name)
 
 int dz_draw_movie_play_fps(int i, const char *name, float fps)
 {
+	return dz_draw_movie_play_av(i, name, fps, 0);
+}
+
+/* the movie's audio track to ALSA card DEBAZ (2026-10-28): bit 0 = HDMI 0
+ * (PCM 0), bit 1 = HDMI 1 (PCM 1), bit 2 = I2S (PCM 3). Several bits = the
+ * same audio on several PCMs; the route controls choose what each output
+ * plays (a swap = route changes only). A file without audio plays as
+ * before: the shell checks for an audio stream (ffprobe) before it runs
+ * ffmpeg, so this call does not wait. */
+int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
+{
 	surf_t *s = get(i);
-	char cmd[768], path[256], dst[96], cap[32] = "";
+	char cmd[1280], path[256], dst[96], cap[32] = "", aud[400] = "";
+	static const int pcm_of[3] = { 0, 1, 3 };
 	pid_t pid;
 
 	if (!s || !name_ok(name))
@@ -880,12 +892,27 @@ int dz_draw_movie_play_fps(int i, const char *name, float fps)
 	 * pipe copy or conversion (DDR traffic at 1080p60, CLAUDE.md) */
 	if (fps > 0.0f && fps <= 120.0f)
 		snprintf(cap, sizeof(cap), "fps=%.3f,", fps);
-	snprintf(cmd, sizeof(cmd),
-		 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
-		 "-i '%s' -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p -f rawvideo pipe:1 "
-		 "| %s -y %s -w %d -h %d -s %u%s",
-		 path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
-		 movie_verbose ? " -v" : "");
+	for (int k = 0; k < 3; k++)
+		if (audio & (1 << k))
+			snprintf(aud + strlen(aud), sizeof(aud) - strlen(aud),
+				 " -map 0:a:0 -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d", pcm_of[k]);
+	if (aud[0])
+		snprintf(cmd, sizeof(cmd),
+			 "A=; ffprobe -v error -select_streams a:0 -show_entries stream=index "
+			 "-of csv=p=0 '%s' | grep -q . && A='%s'; "
+			 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
+			 "-i '%s' -map 0:v:0 -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p "
+			 "-f rawvideo pipe:1 $A "
+			 "| %s -y %s -w %d -h %d -s %u%s",
+			 path, aud, path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h,
+			 (unsigned)s->stride, movie_verbose ? " -v" : "");
+	else
+		snprintf(cmd, sizeof(cmd),
+			 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
+			 "-i '%s' -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p -f rawvideo pipe:1 "
+			 "| %s -y %s -w %d -h %d -s %u%s",
+			 path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+			 movie_verbose ? " -v" : "");
 	pid = fork();
 	if (pid < 0)
 		return -1;
@@ -1232,7 +1259,9 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			if (!strcmp(op, "play") && n >= 1 && a[0].type == 's') {
 				float fps = n >= 2 ? (a[1].type == 'f' ? a[1].f :
 						      a[1].type == 'i' ? (float)a[1].i : 0.0f) : 0.0f;
-				int rc = dz_draw_movie_play_fps(i, a[0].s, fps);
+				int au = n >= 3 ? (a[2].type == 'f' ? (int)a[2].f :
+						      a[2].type == 'i' ? a[2].i : 0) : 0;
+				int rc = dz_draw_movie_play_av(i, a[0].s, fps, au & 7);
 
 				if (rc)
 					fails++;

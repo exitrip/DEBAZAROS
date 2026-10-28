@@ -43,6 +43,9 @@ int  io_dispatch(const dz_msg *m);	/* 0 = not /io/pin or /io/pins */
 /* ---- audio.c: 48 kHz rate setting from the video mode, HDMI_2 replug ---- */
 int  audio_dispatch(const dz_msg *m);	/* 0 = not an /audio/fs or /capture/replug address */
 void audio_tick(long ms);		/* from the monitor loop */
+int  sound_dispatch(const dz_msg *m);	/* 0 = not /audio/play|stop|rec|status|out/<n>/source */
+void sound_tick(void);			/* reaps finished players / recorder */
+void sound_close(void);
 
 /* ---- pwm.c: software PWM / servo pulses on the fan pin 4 outputs ---- */
 void pwm_init(void);			/* starts the PWM thread */

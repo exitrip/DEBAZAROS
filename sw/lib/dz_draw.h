@@ -32,10 +32,13 @@
  *   /draw/<s>/alpha            a          (0..1, for later draws)
  *   /draw/<s>/blend            normal|add|lighten|multiply (or 0..3)
  *   /img/<s>/load              "name" [x y w h]     (file in DZ_IMG_DIR)
- *   /movie/<s>/play            "name" [fps]         (file in DZ_MOVIE_DIR; fps
+ *   /movie/<s>/play            "name" [fps] [audio] (file in DZ_MOVIE_DIR; fps
  *                                         caps the frame rate: dropped frames
  *                                         are not scaled, piped or converted,
- *                                         only decoded; 0 = the file's rate)
+ *                                         only decoded; 0 = the file's rate.
+ *                                         audio = outputs for the audio track:
+ *                                         1 HDMI 0, 2 HDMI 1, 3 both, 4 I2S;
+ *                                         0 / none = no audio)
  *   /movie/<s>/stop
  *   /surface/<s>/present
  *   /surface/<s>/auto          0|1
@@ -61,6 +64,9 @@
 #endif
 #ifndef DZ_MOVIE_DIR
 #define DZ_MOVIE_DIR	"/home/ebaz/movies"
+#endif
+#ifndef DZ_AUDIO_DIR
+#define DZ_AUDIO_DIR	"/home/ebaz/audio"
 #endif
 #ifndef DZ_IMG_DIR
 #define DZ_IMG_DIR	"/home/ebaz/img"
@@ -105,6 +111,7 @@ int  dz_draw_peek(int s, int x, int y, dz_color *c);
 int  dz_draw_image(int s, const char *name, dz_rect r);
 int  dz_draw_movie_play(int s, const char *name);
 int  dz_draw_movie_play_fps(int s, const char *name, float fps);	/* 0 = no cap */
+int  dz_draw_movie_play_av(int s, const char *name, float fps, int audio);	/* + audio to DEBAZ */
 int  dz_draw_movie_stop(int s);
 int  dz_draw_movie_running(int s);	/* reaps a finished player */
 int  dz_draw_save(int s, const char *name);

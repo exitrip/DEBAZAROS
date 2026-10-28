@@ -4,7 +4,7 @@
  *   dzweb [-p port] [-w wwwdir] [-m mediadir] [-d host] [-o oscport] [-v]
  *     -p PORT   HTTP port (default 8080)
  *     -w DIR    web app files (default /home/ebaz/www)
- *     -m DIR    media root with img/ and movies/ (default /home/ebaz)
+ *     -m DIR    media root with img/, movies/ and audio/ (default /home/ebaz)
  *     -d HOST   debazd host (default 127.0.0.1), -o its UDP port (9000)
  *
  * HTTP:
@@ -13,11 +13,11 @@
  *   GET /osc        WebSocket. Each binary message is one OSC packet (or
  *                   bundle). Every browser gets its own UDP socket to debazd,
  *                   so replies and /subscribe events come back to it.
- *   GET /media                     JSON: free bytes, files in img/ and movies/
- *   GET    /media/<img|movies>/<name>  download a file (?dl: as attachment)
- *   PUT    /media/<img|movies>/<name>  upload (raw body, Content-Length)
- *   DELETE /media/<img|movies>/<name>  delete
- *     Media folders are <media>/img and <media>/movies (-m, default
+ *   GET /media                     JSON: free bytes, files in img/, movies/, audio/
+ *   GET    /media/<img|movies|audio>/<name>  download a file (?dl: as attachment)
+ *   PUT    /media/<img|movies|audio>/<name>  upload (raw body, Content-Length)
+ *   DELETE /media/<img|movies|audio>/<name>  delete
+ *     Media folders are <media>/img, movies and audio (-m, default
  *     /home/ebaz), the folders debazd reads. Names: [A-Za-z0-9._-], as in
  *     debazd. An upload goes to .<name>.part and is renamed when complete.
  *     Transfers move in chunks inside the poll loop, so other clients stay live.
@@ -337,7 +337,7 @@ static void serve_units(client_t *c)
 	http_reply(c, "200 OK", "application/json", json, o);
 }
 
-/* ---- /media: files in img/ and movies/ ---------------------------------------- */
+/* ---- /media: files in img/, movies/ and audio/ -------------------------------- */
 static void http_err(client_t *c, const char *status, const char *msg)
 {
 	http_reply(c, status, "text/plain", msg, strlen(msg));
@@ -372,7 +372,7 @@ static int media_path(const char *url, char *out, size_t sz, char *part, size_t 
 		return -1;
 	memcpy(kind, s, (size_t)(e - s));
 	kind[e - s] = 0;
-	if (strcmp(kind, "img") && strcmp(kind, "movies"))
+	if (strcmp(kind, "img") && strcmp(kind, "movies") && strcmp(kind, "audio"))
 		return -1;
 	snprintf(name, sizeof(name), "%s", e + 1);
 	if (!media_name_ok(name))
@@ -423,6 +423,8 @@ static void serve_media_list(client_t *c)
 	o += list_dir("img", json + o, sizeof(json) - o - 64);
 	o += (size_t)snprintf(json + o, sizeof(json) - o, ",");
 	o += list_dir("movies", json + o, sizeof(json) - o - 64);
+	o += (size_t)snprintf(json + o, sizeof(json) - o, ",");
+	o += list_dir("audio", json + o, sizeof(json) - o - 64);
 	o += (size_t)snprintf(json + o, sizeof(json) - o, "}\n");
 	http_reply(c, "200 OK", "application/json", json, o);
 }
@@ -786,10 +788,11 @@ int main(int argc, char **argv)
 	}
 	for (int i = 0; i < MAX_CLIENTS; i++)
 		C[i].fd = C[i].udp = C[i].ffd = -1;
-	for (const char *k = "img"; k; k = strcmp(k, "img") ? NULL : "movies") {
+	for (int i = 0; i < 3; i++) {
+		static const char *const kinds[3] = { "img", "movies", "audio" };
 		char d[300];
 
-		snprintf(d, sizeof(d), "%s/%s", media, k);
+		snprintf(d, sizeof(d), "%s/%s", media, kinds[i]);
 		mkdir(d, 0755);			/* EEXIST is fine */
 	}
 
