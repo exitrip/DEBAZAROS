@@ -651,8 +651,13 @@ discrete member nets; never leave a parallel interface-level connection.** Verif
 generation: both vid_out instantiations in
 `Vivado.gen/sources_1/bd/ebaz4205/synth/ebaz4205.v` must show real nets on all five
 vtg_* ports (only vtg_field_id may be 1'b0).
-Also: physical DVI connector labels vs BD names may be swapped — BD HDMI_0 = TMDS clk
-F19/F20, BD HDMI_1 = TMDS clk L16/L17 (see ebaz4205.xdc). Channel-identity kill test:
+**Connector names = BD names, NO swap** (checked by the user Oct 28 2026 in
+KiCad, the BD, the XDC and the PCB): PCB J1 "HDMI0" (HDMI-OUT, via J9 DATA1)
+= ports TMDS_*_0 (clk F19/F20, HPD D18, CEC H18) = BD HDMI_0 = display 0 =
+PCM stream 0 / TX0_CTRL; "HDMI1-INOUT" = TMDS_*_1 (clk L16/L17) = BD HDMI_1 =
+display 1 = stream 1 / TX_CTRL; "HDMI2-INOUT" = TMDS_*_2 (clk N20/P20) = BD
+HDMI_2 (capture). Earlier notes that said the labels were swapped were WRONG.
+Channel-identity kill test:
 `devmem 0x41210000 32 0` blacks out BD HDMI_0's output (restore **0x01ffffff**: bits
 [31:24] are the HDMI_0 sine divider den, and den=0 sticks the oscillator at 0xFFFF —
 the board was found in that state, Oct 2026).
@@ -739,8 +744,7 @@ off), and the pixel clock is timed for 108 MHz (1080p60 selectable but untimed).
 Verified on the board: 1734 crop changes per display in 30 s -> 0 lock
 losses, 0 underflows, smooth on both monitors; 5 hdmi2 restarts all recover;
 moving 640x480 quarters of a live 1280x960 input: 0 events. Check: AFI read FIFO level at 0xF800800C (HP0) /
-0xF800A00C (HP2) - streaming 0-8, stuck = 0x7A. Your PCB "HDMI0" connector is
-BD HDMI_1 (labels swapped, see VTC sharing). BD HDMI_1 also drops out at
+0xF800A00C (HP2) - streaming 0-8, stuck = 0x7A. BD HDMI_1 (= PCB HDMI1) also drops out at
 times with no crop activity: cause open (not the feedback gain).
 **Timing-report hygiene (Aug 2026):** PXL_CLK is constrained at 10 ns (100 MHz dynclk
 default) so every build "fails" with WNS ≈ −39 ns — all on DORMANT mixer mode-1 MAC

@@ -249,7 +249,7 @@ CONFIG_mtd-utils=y
 #
 # procps 
 #
-# CONFIG_procps is not set
+CONFIG_procps=y
 # CONFIG_procps-dbg is not set
 # CONFIG_procps-dev is not set
 
@@ -290,7 +290,7 @@ CONFIG_mtd-utils=y
 #
 # bash 
 #
-# CONFIG_bash is not set
+CONFIG_bash=y
 # CONFIG_bash-dev is not set
 # CONFIG_bash-dbg is not set
 
@@ -306,7 +306,7 @@ CONFIG_mtd-utils=y
 #
 # tar 
 #
-# CONFIG_tar is not set
+CONFIG_tar=y
 # CONFIG_tar-dev is not set
 # CONFIG_tar-rmt is not set
 # CONFIG_tar-dbg is not set
@@ -345,7 +345,7 @@ CONFIG_mtd-utils=y
 #
 # util-linux 
 #
-# CONFIG_util-linux is not set
+CONFIG_util-linux=y
 # CONFIG_util-linux-dev is not set
 # CONFIG_util-linux-fsck.cramfs is not set
 # CONFIG_util-linux-swaponoff is not set
@@ -643,21 +643,21 @@ CONFIG_parted=y
 #
 # file 
 #
-# CONFIG_file is not set
+CONFIG_file=y
 # CONFIG_file-dbg is not set
 # CONFIG_file-dev is not set
 
 #
 # findutils 
 #
-# CONFIG_findutils is not set
+CONFIG_findutils=y
 # CONFIG_findutils-dbg is not set
 # CONFIG_findutils-dev is not set
 
 #
 # gawk 
 #
-# CONFIG_gawk is not set
+CONFIG_gawk=y
 # CONFIG_gawk-dbg is not set
 # CONFIG_gawk-dev is not set
 
@@ -674,7 +674,7 @@ CONFIG_parted=y
 #
 # grep 
 #
-# CONFIG_grep is not set
+CONFIG_grep=y
 # CONFIG_grep-dbg is not set
 # CONFIG_grep-dev is not set
 
@@ -703,7 +703,7 @@ CONFIG_parted=y
 #
 # less 
 #
-# CONFIG_less is not set
+CONFIG_less=y
 # CONFIG_less-dev is not set
 # CONFIG_less-dbg is not set
 
@@ -762,7 +762,7 @@ CONFIG_pciutils=y
 #
 # sed 
 #
-# CONFIG_sed is not set
+CONFIG_sed=y
 # CONFIG_sed-dbg is not set
 # CONFIG_sed-dev is not set
 
@@ -783,7 +783,7 @@ CONFIG_pciutils=y
 #
 # strace 
 #
-# CONFIG_strace is not set
+CONFIG_strace=y
 # CONFIG_strace-dev is not set
 # CONFIG_strace-dbg is not set
 
@@ -946,7 +946,7 @@ CONFIG_pciutils=y
 #
 # lsof 
 #
-# CONFIG_lsof is not set
+CONFIG_lsof=y
 # CONFIG_lsof-dev is not set
 # CONFIG_lsof-dbg is not set
 
@@ -2161,7 +2161,7 @@ CONFIG_alsa-oss=y
 #
 # coreutils 
 #
-# CONFIG_coreutils is not set
+CONFIG_coreutils=y
 # CONFIG_coreutils-dev is not set
 # CONFIG_coreutils-dbg is not set
 
