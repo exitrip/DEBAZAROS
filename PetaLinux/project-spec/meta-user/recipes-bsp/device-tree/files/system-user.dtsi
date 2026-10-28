@@ -115,3 +115,18 @@
 	status = "okay";
 };
 
+
+/*
+ * ALSA card DEBAZ (2026-10-28): driver debaz-audio (meta-user/recipes-modules)
+ * for the PCM FIFOs of hdmi_audio_regs_0. The node is here by hand because
+ * REMOVE_PL_DTB drops all PL nodes. Interrupt IRQ_F2P[7] = GIC 68 = DT 36,
+ * level high. Same node as hw/dt/debaz-audio.dtso (test overlay).
+ */
+&amba {
+	debaz_audio: audio@43c60000 {
+		compatible = "debaz,hdmi-audio-1.0";
+		reg = <0x43c60000 0x10000>;
+		interrupt-parent = <&intc>;
+		interrupts = <0 36 4>;
+	};
+};

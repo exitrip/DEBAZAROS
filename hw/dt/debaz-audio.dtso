@@ -1,0 +1,22 @@
+// debaz-audio.dtso - device tree overlay with ONLY the node of the ALSA
+// driver debaz-audio (2026-10-28; ROADMAP.md section 13), for tests without
+// a reboot. The image's system-user.dtsi has the same node.
+//
+// Build:  dtc -@ -I dts -O dtb -o debaz-audio.dtbo hw/dt/debaz-audio.dtso
+// Load:   mkdir /sys/kernel/config/device-tree/overlays/debaz-audio
+//         cat debaz-audio.dtbo > /sys/kernel/config/device-tree/overlays/debaz-audio/dtbo
+//         insmod debaz-audio.ko        (binds to the node)
+// Remove: rmmod debaz-audio; rmdir /sys/kernel/config/device-tree/overlays/debaz-audio
+//
+// Interrupt: IRQ_F2P[7] = GIC 68 = DT 36, level high (HDMI_0 concat In4).
+/dts-v1/;
+/plugin/;
+
+&amba {
+	debaz_audio: audio@43c60000 {
+		compatible = "debaz,hdmi-audio-1.0";
+		reg = <0x43c60000 0x10000>;
+		interrupt-parent = <&intc>;
+		interrupts = <0 36 4>;
+	};
+};

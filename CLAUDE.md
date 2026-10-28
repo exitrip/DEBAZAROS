@@ -465,6 +465,12 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   0x08 RX_CTRL ([0] loop, [1] clear peaks), 0x0C TX0_CTRL (HDMI_0, as TX_CTRL), 0x10 RX_STATUS, 0x14 samples, 0x18 peak R|L, 0x1C N,
   0x20 CTS, 0x3C ID. OSC fields `/audio/...` (`sw/lib/dz_fields.c`).
   RX_CTRL [2] = HDMI_2 HPD low. 0x40-0x54 = pl_io (user I/O + I2S).
+- **ALSA card DEBAZ (driver debaz-audio, 2026-10-28, WORKS on the board):**
+  playback HDMI 0/1 + capture HDMI 2 In tested (ROADMAP.md section 13 for
+  results and lessons). Route controls Auto/Linux/Other per output. The
+  driver touches the PL only while a PCM is open / a control is written;
+  plreload.sh refuses while a DEBAZ PCM is open and unbinds/binds it.
+  `pcmplay` (userspace) must not run while ALSA plays the same FIFO.
 - **Linux PCM for an ALSA card (2026-10-27, build `pcm`, simulated only):**
   0x60-0x8C, 3 playback FIFOs (HDMI_0, HDMI_1, I2S DOUT) + 1 capture FIFO
   (HDMI_2), BRAM 512 x 32 each, paced by a 48 kHz NCO on FCLK0; IRQ =

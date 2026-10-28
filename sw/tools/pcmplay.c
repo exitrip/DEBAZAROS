@@ -13,6 +13,11 @@
  * and clears it at the end. The output must be in HDMI mode with audio on
  * (/audio/tx0/hdmi 1, /audio/tx0/enable 1, tone off). Run as root.
  * At the end it prints frames sent, underruns, and the FIFO level range.
+ *
+ * -s 0,1 (2026-10-28) writes the same samples into several FIFOs, started
+ * together (one PCM_CTRL write), so a switch between outputs is only a
+ * routing bit (/pcm/to_hdmi0|1). -n leaves the routing bits alone (a
+ * routing test script sets them).
  */
 #include "dz_map.h"
 #include "dz_hw.h"
@@ -82,26 +87,42 @@ static int capture(volatile uint32_t *r, double secs)
 
 int main(int argc, char **argv)
 {
-	int s = 0, opt, lmin = DEPTH, lmax = 0, prime = 1;
+	int s = 0, opt, lmin = DEPTH, lmax = 0, prime = 1, noroute = 0;
+	unsigned mask = 0, route = 0, irq = 0;
+	const char *list = "0";
 	double tone = 0.0, ph = 0.0, cap = 0.0;
 	unsigned long sent = 0, under = 0;
 	volatile uint32_t *r;
 	struct sched_param sp = { .sched_priority = 50 };
 
-	while ((opt = getopt(argc, argv, "s:t:c:")) != -1) {
+	while ((opt = getopt(argc, argv, "s:t:c:n")) != -1) {
 		if (opt == 's')
-			s = atoi(optarg);
+			list = optarg;
+		else if (opt == 'n')
+			noroute = 1;
 		else if (opt == 't')
 			tone = atof(optarg);
 		else if (opt == 'c')
 			cap = atof(optarg);
 		else {
-			fprintf(stderr, "usage: pcmplay [-s 0|1|2] [-t hz] [-c secs] < s16le-stereo-48k\n");
+			fprintf(stderr, "usage: pcmplay [-s 0|1|2[,..]] [-n] [-t hz] [-c secs] < s16le-stereo-48k\n");
 			return 2;
 		}
 	}
-	if (s < 0 || s > 2)
+	for (const char *c = list; *c; c++) {
+		if (*c >= '0' && *c <= '2')
+			mask |= 1u << (*c - '0');
+		else if (*c != ',')
+			return 2;
+	}
+	if (!mask)
 		return 2;
+	for (int k = 0; k < 3; k++)
+		if (mask & (1u << k)) {
+			route |= 1u << route_bit[k];
+			irq |= 0x10u << k;
+			s = k;			/* the summary names the last one */
+		}
 	r = dz_regs(HW_HDMI_AUDIO_REGS_0_BASE);	/* dz_map checks the "HAUD" ID */
 	if (!r) {
 		fprintf(stderr, "pcmplay: no HDMI audio block in this bitstream\n");
@@ -113,18 +134,23 @@ int main(int argc, char **argv)
 	if (cap > 0.0)
 		return capture(r, cap);
 
-	r[PCM_CTRL / 4] = (r[PCM_CTRL / 4] & 0xF & ~(1u << s)) | (1u << (8 + s));	/* stop + flush */
-	r[IRQ_STATUS / 4] = 0x10u << s;					/* clear the underrun latch */
-	r[I2S_CTRL / 4] |= 1u << route_bit[s];
+	r[PCM_CTRL / 4] = (r[PCM_CTRL / 4] & 0xF & ~mask) | (mask << 8);	/* stop + flush */
+	r[IRQ_STATUS / 4] = irq;					/* clear the underrun latches */
+	if (!noroute)
+		r[I2S_CTRL / 4] |= route;
 	while (!stop) {
-		int lv = level(r, s), room = TOP - lv, eof = 0;
+		int lv = 0, room, eof = 0;
 
+		for (int k = 0; k < 3; k++)	/* the fullest FIFO sets the room */
+			if (mask & (1u << k) && level(r, k) > lv)
+				lv = level(r, k);
+		room = TOP - lv;
 		if (!prime) {
 			lmin = lv < lmin ? lv : lmin;
 			lmax = lv > lmax ? lv : lmax;
-			if (r[IRQ_STATUS / 4] & (0x10u << s)) {
+			if (r[IRQ_STATUS / 4] & irq) {
 				under++;
-				r[IRQ_STATUS / 4] = 0x10u << s;
+				r[IRQ_STATUS / 4] = irq;
 			}
 		}
 		for (int i = 0; i < room; i++) {
@@ -141,24 +167,27 @@ int main(int argc, char **argv)
 				eof = 1;
 				break;
 			}
-			r[data_off[s] / 4] = w;
+			for (int k = 0; k < 3; k++)
+				if (mask & (1u << k))
+					r[data_off[k] / 4] = w;
 			sent++;
 		}
 		if (prime) {			/* pre-filled: start the stream */
-			r[PCM_CTRL / 4] |= 1u << s;
+			r[PCM_CTRL / 4] |= mask;
 			prime = 0;
 		}
 		if (eof) {			/* let the FIFO play out */
-			while (!stop && level(r, s) > 0)
+			while (!stop && level(r, s) > 0)	/* the FIFOs drain together */
 				nap_us(2000);
 			break;
 		}
 		nap_us(2000);			/* 2 ms = 96 frames; the FIFO holds 10.7 ms */
 	}
-	r[PCM_CTRL / 4] &= ~(1u << s);
-	r[IRQ_STATUS / 4] = 0x10u << s;	/* the drained FIFO latches one underrun */
-	r[I2S_CTRL / 4] &= ~(1u << route_bit[s]);
-	fprintf(stderr, "pcmplay: stream %d, %lu frames (%.1f s), %lu underrun periods, level %d..%d of %d\n",
-		s, sent, sent / 48000.0, under, lmin, lmax, DEPTH);
+	r[PCM_CTRL / 4] &= ~mask;
+	r[IRQ_STATUS / 4] = irq;	/* the drained FIFO latches one underrun */
+	if (!noroute)
+		r[I2S_CTRL / 4] &= ~route;
+	fprintf(stderr, "pcmplay: stream %s, %lu frames (%.1f s), %lu underrun periods, level %d..%d of %d\n",
+		list, sent, sent / 48000.0, under, lmin, lmax, DEPTH);
 	return 0;
 }

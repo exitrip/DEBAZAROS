@@ -1020,6 +1020,24 @@ level IRQ, underrun IRQ + silence + clear, flush).
 
 ### Kernel driver (`debaz-audio`, out-of-tree module, PetaLinux recipe)
 
+**WRITTEN + TESTED on the board (2026-10-28, test overlay + insmod; bitstream
+edid2):** `meta-user/recipes-modules/debaz-audio/`, DT node in
+`system-user.dtsi` (test: `hw/dt/debaz-audio.dtso`). Card DEBAZ, PCM 0 HDMI 0,
+1 HDMI 1, 2 HDMI 2 In (capture), 3 I2S; controls `HDMI 0 Route`, `HDMI 1
+Route`, `I2S Route` = Auto (Linux while the PCM runs) / Linux / Other.
+Results: 60 s file (ffmpeg -f alsa, full buffer) 0 ALSA + 0 FIFO underruns,
+~5 % CPU, ~1400 IRQ/s; capture 5.00 s exact, real levels; live loop
+capture -> playback 5-6 ALSA underruns per 30-60 s (ffmpeg keeps only ~6 ms
+in the playback buffer in a live loop: an application setting); drain ends
+on time; plreload unbinds/binds the driver around a PL load. Lessons: the
+playback pointer must be the PLAYED position (moved - FIFO level), moves
+are limited to appl_ptr, the playback underrun latch must NOT be an
+interrupt (it sets again every 48 kHz tick while empty = interrupt storm),
+starving = threshold 0 so the empty FIFO reports the end of a drain.
+Buffer max 16384 frames (341 ms). Not tested yet: I2S PCM, the route
+controls with amixer (no alsa-utils on the test image). debazd's
+`/pcm/to_hdmi*` fields write the same I2S_CTRL bits: use one or the other.
+
 - Platform driver, `compatible = "debaz,hdmi-audio-1.0"`, node in
   `system-user.dtsi` (REMOVE_PL_DTB: written by hand): reg 0x43c60000
   0x10000, the interrupt above. Registers an ALSA card (no ASoC needed: a

@@ -14,6 +14,19 @@ BIN=$1
 shift
 D=/home/ebaz/bin
 [ -f /tmp/$BIN ] || { echo "no /tmp/$BIN"; exit 1; }
+# ALSA driver debaz-audio (2026-10-28): a PL access from the kernel during
+# the load is a kernel fault, so no DEBAZ PCM may be open, and the driver is
+# unbound for the load (bound again below)
+DZA=/sys/bus/platform/drivers/debaz-audio
+for st in /proc/asound/DEBAZ/pcm*/sub0/status; do
+	[ -f "$st" ] || continue
+	grep -q closed "$st" || { echo "a DEBAZ PCM is open ($st): stop the audio first"; exit 1; }
+done
+dza_dev=
+if [ -d $DZA ]; then
+	for d in $DZA/*.audio; do [ -e "$d" ] && dza_dev=$(basename "$d"); done
+	[ -n "$dza_dev" ] && echo "$dza_dev" > $DZA/unbind
+fi
 # hdmi2 and debazd access PL registers all the time: stop them for the load
 kill $(pgrep debazd) $(pgrep -f hdmi2.elf) 2>/dev/null
 sleep 1
@@ -28,6 +41,7 @@ echo 0 > /sys/class/fpga_manager/fpga0/flags
 echo $BIN > /sys/class/fpga_manager/fpga0/firmware
 cat /sys/class/fpga_manager/fpga0/state
 sleep 1
+[ -n "$dza_dev" ] && echo "$dza_dev" > $DZA/bind
 setsid nohup $D/hdmi2.elf "$@" > /tmp/hdmi2.log 2>&1 &
 sleep 4
 setsid nohup $D/debazd -v > /tmp/debazd.log 2>&1 &
