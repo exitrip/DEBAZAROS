@@ -404,7 +404,8 @@ rotation clips the negative terms and normalises rows (exact at 0/120/240°,
 less saturated between).
 
 **Colour key + register-file slim-down (mixer coreRevision 22, Oct 26 2026 —
-simulated, NOT yet tested on hardware):** per channel CTRL_1 [1] KEY = this
+key WORKS on hardware 2026-10-28, `_pwm` bitstream: `/fx/key/source 1` + `/fx/key/color
+0x00FF00` replaced exactly the green bar of HDMI_0's bars with HDMI_1's picture):** per channel CTRL_1 [1] KEY = this
 channel's lo..hi band joins the key mask (AND of all joined bands; lo > hi =
 outside hi..lo), CTRL_1 [2] SRC = compare HDMI_0's video (vid_in) instead of
 HDMI_1 — also for modes 3/0x1x/0x2x. Globals in channel 0 CTRL_0 [15:8]: [8]
@@ -433,7 +434,8 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   HDMI_0); TX_FS_INC is shared (one pixel clock). The island scheduler has a
   register stage (Oct 27): worst hdmi_tx path 10.05 ns routed, +3.4 ns at
   720p60 (was 12.58 ns); latency LOOK + 5 = 15 px.
-- HDMI_2 hot-plug (Oct 27): HDMI_HPD_2 = ~RX_CTRL[2] (was an xlconstant 1;
+- HDMI_2 hot-plug (Oct 27; WORKS on hardware Oct 28: laptop re-locked 0.75 s after
+  HPD high, EDID re-read): HDMI_HPD_2 = ~RX_CTRL[2] (was an xlconstant 1;
   reset = high as before). `/capture/replug [s]` pulses it low: the source
   re-reads the EDID and redoes its mode set (use 12 s if the source fell back
   to polling after an HPD storm). `/hdmi/2/hpd_low` = the raw bit.
