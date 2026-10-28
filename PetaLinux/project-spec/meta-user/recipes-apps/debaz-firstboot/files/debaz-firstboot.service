@@ -1,0 +1,19 @@
+# debaz-firstboot.service (2026-10-28): commissions a new SD card once - a
+# MAC from the card's CID into /boot/uEnv.txt and the hostname, then one
+# reboot (debaz-mac.sh --firstboot; nothing to do on later boots). Before
+# the network, so the DHCP request of the next boot has the new MAC.
+[Unit]
+Description=DEBAZAROS first boot: per-card MAC and hostname
+DefaultDependencies=no
+RequiresMountsFor=/boot
+After=local-fs.target
+Before=network-pre.target systemd-networkd.service networking.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/debaz-mac.sh --firstboot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=sysinit.target

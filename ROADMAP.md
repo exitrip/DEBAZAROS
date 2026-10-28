@@ -107,6 +107,18 @@ are enough for menu + mode on one unit, but not to manage 12 units.
   cannot share a LAN. Give each board its own MAC: U-Boot `ethaddr` from
   the Zynq DNA or the SD card serial (locally administered, `02:xx:...`),
   or a per-card `uEnv.txt` (boot.scr already imports it).
+  **DONE 2026-10-28:** `sw/tools/debaz-mac.sh` (commissioning, as root):
+  MAC = md5("debaz:" SD CID), locally administered unicast, written as
+  `dz_ethaddr=` + `uenvcmd=setenv -f ethaddr ${dz_ethaddr}` (a plain
+  `ethaddr=` is refused: write-once env flag); hostname debaz-<last 3
+  bytes>. U-Boot's fdt fixup gives it to the kernel. Tested: 00:0a:35:00:1e:53
+  -> 66:af:a3:4d:9c:fa after one reboot. The Ebang NAND MAC
+  (`eth0_mac.conf`) is 8C:C7:D0:0F:4F:C1 on two different boards: NOT
+  unique, not used. Automatic: recipe `meta-user/recipes-apps/debaz-firstboot`
+  (debaz-mac.sh from sw/tools + debaz-firstboot.service, enabled, before
+  the network): a card without a MAC in uEnv.txt commissions itself and
+  reboots once. In the config, NOT built yet (2026-10-28); unit dry-tested
+  by hand on the board (MAC present -> no action).
 - Discovery: mDNS (avahi) or an OSC broadcast "hello".
 - OSC namespace per unit plus group addresses (all units, groups).
 - Multi-unit UI (selection, spreads, hub), shared show clock, timed

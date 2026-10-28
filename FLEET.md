@@ -303,7 +303,7 @@ today; h264 in software is probably slower).
 
 | # | Task | Depends on | Branch |
 | --- | --- | --- | --- |
-| F1 | Unique MAC per board (U-Boot `ethaddr`, see ROADMAP "Fleet") | - | clanker |
+| F1 | Unique MAC per board (U-Boot `ethaddr`, see ROADMAP "Fleet"). DONE 2026-10-28: `sw/tools/debaz-mac.sh -w -r` (MAC from the SD card CID -> /boot/uEnv.txt, hostname debaz-xxxxxx); tested on the second board | - | clanker |
 | F2 | debazd: lock file per port; `/units` with ip:port (fleet test on one laptop) | - | clanker |
 | F3 | Hub mode in dzweb: registry, `/@selector` fan-out, `/from/<unit>` replies; fleet bar with "same" spread | F2 | clanker |
 | F4 | Spreads (all modes), preview strip, Fleet tab, Identify | F3 | clanker |
