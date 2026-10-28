@@ -30,9 +30,11 @@
 #define DZ_SLOT_BLANK	11	/* always black: frame store 2 of each display     */
 
 /* Default geometry of every slot today (hdmi2 default mode). */
-#define DZ_WIDTH	1280
+#define DZ_WIDTH	1280	/* fallback geometry; the running mode: dz_geom_w/h/stride() */
 #define DZ_HEIGHT	720
 #define DZ_BPP		4	/* a8r8g8b8 in memory                              */
+#define DZ_STRIDE	(1920u * 4u)	/* fixed line pitch of every slot and mode
+				 * (2026-10-28; hdmi2 DISPLAY_STRIDE): fallback  */
 
 /* ---- displays ------------------------------------------------------------ */
 #define DZ_DISPLAYS	2

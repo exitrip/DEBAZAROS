@@ -23,11 +23,13 @@ module hdmi_tx_encoder #(
     endfunction
 
     // ---- stage 1 ----------------------------------------------------------
+    // no SRLs for the short delay registers: an SRL's long setup time cost
+    // the 6.73 ns of 1080p60 (2026-10-28)
     reg [7:0] d1 = 0;
     reg [3:0] n1d1 = 0;
-    reg [2:0] mode1 = 0;
-    reg [1:0] ctrl1 = 0;
-    reg [3:0] terc1 = 0;
+    (* shreg_extract = "no" *) reg [2:0] mode1 = 0;
+    (* shreg_extract = "no" *) reg [1:0] ctrl1 = 0;
+    (* shreg_extract = "no" *) reg [3:0] terc1 = 0;
     always @(posedge clk) begin
         d1 <= video;
         n1d1 <= ones8(video);
@@ -53,9 +55,9 @@ module hdmi_tx_encoder #(
     // ---- stage 2 ----------------------------------------------------------
     reg [8:0] qm2 = 0;
     reg [3:0] n1q2 = 0, n0q2 = 0;
-    reg [2:0] mode2 = 0;
-    reg [1:0] ctrl2 = 0;
-    reg [3:0] terc2 = 0;
+    (* shreg_extract = "no" *) reg [2:0] mode2 = 0;
+    (* shreg_extract = "no" *) reg [1:0] ctrl2 = 0;
+    (* shreg_extract = "no" *) reg [3:0] terc2 = 0;
     always @(posedge clk) begin
         qm2 <= qm1;
         n1q2 <= ones8(qm1[7:0]);

@@ -78,6 +78,26 @@ static const VideoMode VMODE_800x600 = {
 	.clkConf = {40.0, 0x06, 0x03, 0x01} // 3 *5 is fine
 };
 
+/* VESA DMT 1024x768@60 (XGA, 2026-10-28): 65.000 MHz = 100 x 13 / (2 x 2 x 5),
+ * VCO 650 MHz. H 1024 + 24 + 136 + 160 = 1344, V 768 + 3 + 6 + 29 = 806,
+ * both syncs negative. A 4:3 window for debazd crops (/disp/<d>/crop) that
+ * moves through a 1920x1080 slot (x 0..896, y 0..312). */
+static const VideoMode VMODE_1024x768 = {
+	.label = "1024x768@60Hz",
+	.width = 1024,
+	.height = 768,
+	.hps = 1048,
+	.hpe = 1184,
+	.hmax = 1343,
+	.hpol = 0,
+	.vps = 771,
+	.vpe = 777,
+	.vmax = 805,
+	.vpol = 0,
+	.freq = 65.0,
+	.clkConf = {65.0, 0x000d, 0x02, 0x02} // 2 *5 is fine
+};
+
 static const VideoMode VMODE_1280x1024 = {
 	.label = "1280x1024@60Hz",
 	.width = 1280,

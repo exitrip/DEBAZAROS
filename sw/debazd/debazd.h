@@ -24,6 +24,8 @@ int  disp_dispatch(const dz_msg *m);	/* 0 = not a /disp or /vsync address */
 int  disp_frame_fd(void);	/* eventfd: readable once per frame (or -1) */
 int  disp_vsync_ok(void);	/* 1 while real vsync arrives */
 double disp_frame_hz(void);	/* measured frame rate, 0 without vsync */
+void disp_crop_reset(void);	/* crops back to 0 0 (video mode change) */
+extern int capture_auto;	/* debazd.c: capture size follows the input */
 
 /* ---- lfo.c: oscillators, wave shapers, step sequences ---- */
 void lfo_init(void);

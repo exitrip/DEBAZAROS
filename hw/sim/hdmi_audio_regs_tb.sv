@@ -6,6 +6,8 @@ module tb;
   reg [12:0] awaddr = 0, araddr = 0; reg awvalid = 0, wvalid = 0, arvalid = 0, rready = 0; reg [31:0] wdata = 0;
   wire awready, wready, bvalid, arready, rvalid; wire [1:0] bresp, rresp; wire [31:0] rdata, txc, txf, rxc, i2c, i2i, t0c; wire [0:0] hpd; wire [23:0] iof; wire [5:0] ioo;
   reg pub = 0, vs = 0; wire j3, j5; wire [0:0] ledr; wire evirq;
+  reg pclk = 0; always #3.367 pclk = ~pclk;              // 148.5 MHz
+  reg uf0 = 0, uf1 = 0, lk0 = 1, lk1 = 1, dlk = 1;
   reg j3i = 1, j5i = 1; reg [5:0] ioin = 6'b101010; reg [31:0] ph = 0; always @(posedge clk) ph <= ph + 32'd1000; reg [31:0] smp = 0, hold = 0;
   hdmi_audio_regs dut (.s_axi_aclk(clk), .s_axi_aresetn(rstn), .s_axi_awaddr(awaddr), .s_axi_awvalid(awvalid),
     .s_axi_awready(awready), .s_axi_wdata(wdata), .s_axi_wstrb(4'hf), .s_axi_wvalid(wvalid), .s_axi_wready(wready),
@@ -14,7 +16,9 @@ module tb;
     .tx_ctrl(txc), .tx0_ctrl(t0c), .hpd2(hpd), .tx_fs_inc(txf), .rx_ctrl(rxc), .rx_pub(pub), .rx_status(2'b11), .rx_samples(hold),
     .rx_peak(32'h12345678), .rx_acr_n(20'd6144), .rx_acr_cts(20'd74250),
     .io_func(iof), .io_out(ioo), .io_in(ioin), .i2s_ctrl(i2c), .i2s_inc(i2i), .i2s_status(32'h0000_0A03),
-    .vsync(vs), .j3p4(j3), .j5p4(j5), .led_red(ledr), .j3p3(j3i), .j5p3(j5i), .dds_phase(ph), .ev_irq(evirq));
+    .vsync(vs), .j3p4(j3), .j5p4(j5), .led_red(ledr), .j3p3(j3i), .j5p3(j5i), .dds_phase(ph), .ev_irq(evirq),
+    .pxl_clk(pclk), .vo0_locked(lk0), .vo0_underflow(uf0), .vo1_locked(lk1), .vo1_underflow(uf1),
+    .dyn_locked(dlk), .rx_size_h(32'h0780_0780), .rx_size_v(32'h0000_0438));
   integer fails = 0;
   task wr(input [12:0] a, input [31:0] d); begin @(posedge clk); awaddr <= a; wdata <= d; awvalid <= 1; wvalid <= 1;
     while (!awready) @(posedge clk); @(posedge clk); awvalid <= 0; wvalid <= 0; while (bvalid) @(posedge clk); end endtask
@@ -56,7 +60,7 @@ module tb;
     wr(7'h44, 32'h0);
     // ---- events (page 1) ----
     rd(13'h1000, 32'h45564E54);
-    rd(13'h1018, {23'd0, 1'b0, 6'b101010, 2'b11});          // levels: vsync 0, lines, J5 J3 high
+    rd(13'h1018, {18'd0, 5'b10011, 1'b0, 6'b101010, 2'b11}); // levels: dynclk + both vid_out locked, vsync 0, lines, J5 J3 high
     wr(13'h1014, 32'h003);                                  // falling edges of J3, J5
     wr(13'h1010, 32'h104);                                  // rising: line 0, vsync
     wr(13'h100C, 32'h001);                                  // IRQ on J3 only
@@ -86,6 +90,33 @@ module tb;
       if (ts - 1000 * t1 > 3000 && 1000 * t1 - ts > 3000) begin fails++; $display("FAIL DDS phase at vsync %0d vs time %0d", ts, t1); end
     end
     rd(7'h44, 32'h0);                                       // page 0 unchanged
+    // ---- video events: underflow pulses (1 pixel clock), lock loss ----
+    begin
+      reg [31:0] t0, v;
+      wr(13'h103C, 0);                                      // clear the counters
+      wr(13'h1010, 32'h3E00); wr(13'h1014, 32'h3E00);       // both edges of [13:9]
+      wr(13'h1008, 32'h3FFF);
+      @(posedge clk); araddr <= 13'h1004; arvalid <= 1;
+      while (!rvalid) @(posedge clk); arvalid <= 0; t0 = rdata; rready <= 1; @(posedge clk); rready <= 0;
+      repeat (3) begin
+        @(posedge pclk); uf0 <= 1; @(posedge pclk); uf0 <= 0;
+        repeat (40) @(posedge clk);
+      end
+      rd(13'h103C, 32'h0000_0003);
+      @(posedge clk); araddr <= 13'h1008; arvalid <= 1;
+      while (!rvalid) @(posedge clk); arvalid <= 0; v = rdata; rready <= 1; @(posedge clk); rready <= 0;
+      if (!v[11] || v[12]) begin fails++; $display("FAIL underflow event bits %04x", v); end
+      @(posedge clk); araddr <= 13'h1038; arvalid <= 1;
+      while (!rvalid) @(posedge clk); arvalid <= 0; v = rdata; rready <= 1; @(posedge clk); rready <= 0;
+      if (v - t0 < 80 || v - t0 > 400) begin fails++; $display("FAIL TS_VIDEO %0d clocks after the time read", v - t0); end
+      wr(13'h1008, 32'h3FFF);
+      lk1 = 0; repeat (8) @(posedge clk);
+      rd(13'h1008, 32'h0000_0400);                           // HDMI_1 lock lost
+      lk1 = 1; wr(13'h1008, 32'h3FFF); repeat (8) @(posedge clk);
+      wr(13'h1010, 0); wr(13'h1014, 0); wr(13'h1008, 32'h3FFF);
+      rd(8'h24, 32'h0780_0780);
+    end
+
     // ---- J3 hardware PWM ----
     rd(8'h98, 32'h50574D31);
     if (j3 !== 1'b1) begin fails++; $display("FAIL J3 not off before the PWM"); end

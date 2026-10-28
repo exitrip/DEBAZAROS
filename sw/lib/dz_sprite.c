@@ -7,6 +7,7 @@
 #include "dz_draw_int.h"
 #include "dz_hw.h"
 #include "dz_map.h"
+#include "dz_vdma.h"
 #include "dz_text.h"
 
 #include <math.h>
@@ -120,18 +121,19 @@ int dz_sprite_grab(int id, int slot, int x, int y, int w, int h)
 {
 	const uint8_t *dev;
 	uint32_t *px;
+	const size_t st = dz_geom_stride();	/* the running mode's line pitch */
 
 	if (!sp(id) || w <= 0 || h <= 0 || x < 0 || y < 0 ||
-	    x + w > DZ_WIDTH || y + h > DZ_HEIGHT)
+	    x + w > dz_geom_w() || y + h > dz_geom_h())
 		return -1;
-	dev = dz_slot(slot, (size_t)DZ_WIDTH * DZ_HEIGHT * DZ_BPP, NULL);
+	dev = dz_slot(slot, DZ_SLOT_PITCH, NULL);
 	px = dev ? malloc((size_t)w * h * 4) : NULL;
 	if (!px)
 		return -1;
 	for (int r = 0; r < h; r++) {
 		uint32_t *row = px + (size_t)r * w;
 
-		memcpy(row, dev + ((size_t)(y + r) * DZ_WIDTH + x) * 4, (size_t)w * 4);
+		memcpy(row, dev + (size_t)(y + r) * st + (size_t)x * 4, (size_t)w * 4);
 		for (int c = 0; c < w; c++)
 			row[c] |= 0xFF000000u;		/* opaque */
 	}

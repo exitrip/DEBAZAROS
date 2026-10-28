@@ -9,6 +9,10 @@
 //   video preamble (8 x CTL0) + 2 guard symbols -> video until a control token
 //   island preamble (CTL0 + CTL2) + 2 guard -> packets of 32 pixels + 2 guard
 //   a data symbol without a preamble -> video (DVI source: same as before)
+//   (2026-10-28) no preamble, but the first symbol is the island guard band
+//   (ch1 = ch2 = 0100110011) while an HDMI source is seen -> island. A laptop
+//   at 1080p30 sends ~77 islands per frame that the preamble rule missed: they
+//   came out as short DE "lines" (68 px = 2 packets + guards) and gave EOLEarly.
 // Outputs: dvi2rgb's pixels with the corrected DE; syncs from the control
 // tokens, inside islands from the TERC4 bits of channel 0. One clock later
 // than dvi2rgb's outputs.
@@ -19,6 +23,12 @@
 // samples go (rx_ctrl[0] = loop) through an async FIFO into the transmitter
 // clock domain (tx_clk), for hdmi_tx aud_l/aud_r/aud_valid.
 // Status for hdmi_audio_regs: hold registers + rx_pub toggle every 2^16 clocks.
+// Input size (2026-10-28), measured on the corrected output stream (what the
+// capture VDMA gets), per frame from one VSYNC rising edge to the next:
+//   rx_size_h = {longest, shortest} DE line in pixels
+//   rx_size_v = {[31:24] lines shorter than the longest line of the frame
+//                before (saturates at 255), [23:12] index of the first such
+//                line, [11:0] DE lines}
 `timescale 1ns / 1ps
 module hdmi_rx (
     input  wire        clk,            // dvi2rgb PixelClk
@@ -40,6 +50,8 @@ module hdmi_rx (
     output reg  [31:0] rx_peak = 0,
     output reg  [19:0] rx_acr_n = 0,
     output reg  [19:0] rx_acr_cts = 0,
+    output reg  [31:0] rx_size_h = 0,
+    output reg  [31:0] rx_size_v = 0,
 
     output wire [15:0] rx_l,           // received samples in this clock domain
     output wire [15:0] rx_r,           // (pl_io: I2S output), one per rx_valid
@@ -89,6 +101,11 @@ module hdmi_rx (
     wire dpre = is_ctl && c1[1:0] == 2'b01 && c2[1:0] == 2'b01;
     wire dguard = s1 == 10'b0100110011 && s2 == 10'b0100110011;
 
+    // HDMI source seen: a good island in the last 2^22 clocks (~56 ms at 74 MHz);
+    // set further below, where the packet decoder is
+    reg  [21:0] src_cnt = 0;
+    wire        hdmi_src = src_cnt != 0;
+
     // ---- period state machine -------------------------------------------------
     localparam S_CTL = 3'd0, S_VGRD = 3'd1, S_VID = 3'd2, S_DGRD = 3'd3, S_DATA = 3'd4, S_TRAIL = 3'd5;
     reg [2:0] st = S_CTL;
@@ -100,7 +117,8 @@ module hdmi_rx (
     always @* begin
         nst = st;
         case (st)
-            S_CTL:   nst = (pre_n >= 4'd6) ? (pre_di ? S_DGRD : S_VGRD) : S_VID;
+            S_CTL:   nst = (pre_n >= 4'd6) ? (pre_di ? S_DGRD : S_VGRD) :
+                           (hdmi_src && dguard) ? S_DGRD : S_VID;
             S_VGRD:  if (gcnt == 2'd2) nst = S_VID;
             S_DGRD:  if (gcnt == 2'd2) nst = S_DATA;
             S_DATA:  if (dj[4:0] == 5'd0 && dj != 0 && dguard) nst = S_TRAIL;
@@ -144,6 +162,38 @@ module hdmi_rx (
         o_pVSync <= vs_n;
         o_pVDE <= vde_n & vid_pVDE;
         o_pData <= vde_n ? vid_pData : 24'd0;
+    end
+
+    // ---- input size, on the output stream --------------------------------------------
+    reg        m_de = 0, m_vs = 0;
+    reg [15:0] m_run = 0, m_min = 16'hFFFF, m_max = 0, m_ref = 0;
+    reg [11:0] m_lines = 0, m_first = 0;
+    reg [7:0]  m_short = 0;
+    reg [31:0] size_h = 0, size_v = 0;     // last complete frame
+    always @(posedge clk) begin
+        m_de <= o_pVDE;
+        m_vs <= o_pVSync;
+        if (o_pVDE)
+            m_run <= m_de ? m_run + 16'd1 : 16'd1;
+        if (m_de && !o_pVDE) begin                       // a DE line ended
+            m_lines <= m_lines + 12'd1;
+            if (m_run < m_min) m_min <= m_run;
+            if (m_run > m_max) m_max <= m_run;
+            if (m_run < m_ref) begin
+                if (m_short == 0) m_first <= m_lines;
+                if (m_short != 8'hFF) m_short <= m_short + 8'd1;
+            end
+        end
+        if (o_pVSync && !m_vs) begin                     // frame boundary
+            size_h <= {m_max, m_min};
+            size_v <= {m_short, m_first, m_lines};
+            m_ref <= m_max;
+            m_lines <= 0; m_short <= 0; m_first <= 0;
+            m_min <= 16'hFFFF; m_max <= 0;
+        end
+        if (rst) begin
+            size_h <= 0; size_v <= 0; m_ref <= 0;
+        end
     end
 
     // ---- packets ------------------------------------------------------------------
@@ -233,6 +283,7 @@ module hdmi_rx (
         clr_s <= {clr_s[1:0], rx_ctrl[1]};
         loop_s <= {loop_s[0], rx_ctrl[0]};
         if (done && hdr_ok) islands <= 1'b1;
+        src_cnt <= (done && hdr_ok) ? 22'h3FFFFF : hdmi_src ? src_cnt - 22'd1 : 22'd0;
         if (smp_valid) begin
             audio <= 1'b1;
             nsmp <= nsmp + 32'd1;
@@ -246,6 +297,8 @@ module hdmi_rx (
             rx_peak <= {pk_r, pk_l};
             rx_acr_n <= acr_n;
             rx_acr_cts <= acr_cts;
+            rx_size_h <= size_h;
+            rx_size_v <= size_v;
             rx_pub <= ~rx_pub;
             islands <= 1'b0;
             audio <= 1'b0;

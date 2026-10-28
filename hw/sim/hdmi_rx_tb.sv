@@ -4,6 +4,9 @@
 //   +mode=1  HDMI + audio: corrected DE/syncs/pixels == the transmitter input,
 //            every audio sample comes out of the loop FIFO (tx_clk, another
 //            clock) in order, ACR N/CTS reach the status outputs
+//   +mode=2  as mode 1, but every second data island loses its preamble (the
+//            island preamble tokens become plain CTL 00 on channels 1 and 2):
+//            hdmi_rx must still find it by its guard band (2026-10-28)
 // The model of dvi2rgb's TMDS_Decoder keeps its two HDMI faults: DE = 1 for
 // every non-control symbol (islands, guard bands) and stale syncs in islands.
 `timescale 1ns/1ps
@@ -44,7 +47,17 @@ module tb;
     .aRst_n(rst_n), .vid_pData(rgb), .vid_pVDE(de), .vid_pHSync(hs), .vid_pVSync(vs),
     .PixelClk(clk), .SerialClk(1'b0), .ctrl(ctrl), .fs_inc(32'd0),
     .aud_l(al), .aud_r(ar), .aud_valid(av));
-  wire [29:0] sym = {tx.tmds2, tx.tmds1, tx.tmds0};
+  wire [29:0] sym_tx = {tx.tmds2, tx.tmds1, tx.tmds0};
+  // mode 2: drop the preamble of every second island
+  localparam [9:0] CTL00 = 10'b1101010100, CTL01 = 10'b0010101011;
+  wire dpre_tx = sym_tx[19:10] == CTL01 && sym_tx[29:20] == CTL01;
+  reg  dpre_q = 0; integer nisl = 0;
+  always @(posedge clk) begin
+    dpre_q <= dpre_tx;
+    if (dpre_tx && !dpre_q) nisl <= nisl + 1;
+  end
+  wire drop = mode == 2 && dpre_tx && nisl[0];
+  wire [29:0] sym = drop ? {CTL00, CTL00, sym_tx[9:0]} : sym_tx;
 
   // ---- dvi2rgb TMDS_Decoder model: outputs and pRawSym registered together --
   function automatic [7:0] dec(input [9:0] s);
@@ -74,17 +87,17 @@ module tb;
   end
 
   wire [23:0] o_data; wire o_vde, o_hs, o_vs;
-  wire rx_pub; wire [1:0] rx_status; wire [31:0] rx_samples, rx_peak; wire [19:0] rx_n, rx_cts;
+  wire rx_pub; wire [1:0] rx_status; wire [31:0] rx_samples, rx_peak, rx_sh, rx_sv; wire [19:0] rx_n, rx_cts;
   wire [15:0] lo_l, lo_r; wire lo_v;
   hdmi_rx rx (.clk(clk), .pLocked(rst_n), .vid_pData(m_data), .vid_pVDE(m_vde),
     .vid_pHSync(m_hs), .vid_pVSync(m_vs), .pRawSym(m_raw),
     .o_pData(o_data), .o_pVDE(o_vde), .o_pHSync(o_hs), .o_pVSync(o_vs),
     .rx_ctrl(32'h1), .rx_pub(rx_pub), .rx_status(rx_status), .rx_samples(rx_samples),
-    .rx_peak(rx_peak), .rx_acr_n(rx_n), .rx_acr_cts(rx_cts),
+    .rx_peak(rx_peak), .rx_acr_n(rx_n), .rx_acr_cts(rx_cts), .rx_size_h(rx_sh), .rx_size_v(rx_sv),
     .tx_clk(tclk), .tx_aud_l(lo_l), .tx_aud_r(lo_r), .tx_aud_valid(lo_v));
 
   // ---- checks ---------------------------------------------------------------------
-  localparam LAT = 15 + 1 + 1;          // tx (LOOK + 5) + decoder model + hdmi_rx
+  localparam LAT = 16 + 1 + 1;          // tx (LOOK + 6) + decoder model + hdmi_rx
   reg [26:0] hist [0:NCYC];
   reg [26:0] mhist [0:NCYC];
   integer cyc = 0, fails = 0, nvid = 0, nsync = 0;
@@ -121,7 +134,7 @@ module tb;
   // audio: transmitted samples vs the loop FIFO output
   reg [31:0] sent [$];
   integer nrx = 0, synced = 0;
-  always @(posedge clk) if (rst_n && av && mode == 1) sent.push_back({ar, al});
+  always @(posedge clk) if (rst_n && av && mode >= 1) sent.push_back({ar, al});
   always @(posedge tclk) if (lo_v) begin
     if (!synced) begin
       while (sent.size() > 0 && sent[0] !== {lo_r, lo_l}) void'(sent.pop_front());
@@ -138,13 +151,17 @@ module tb;
 
   initial begin
     if (!$value$plusargs("mode=%d", mode)) mode = 0;
-    ctrl = (mode == 1) ? 32'h3 : 32'h0;
+    ctrl = (mode >= 1) ? 32'h3 : 32'h0;
     repeat (5) @(posedge clk);
     rst_n = 1;
     wait (cyc == NCYC);
-    $display("rx mode %0d: %0d video pixels, %0d sync checks, %0d samples looped (%0d in flight), status %b, N %0d CTS %0d, peak %08x",
-             mode, nvid, nsync, nrx, sent.size(), rx_status, rx_n, rx_cts, rx_peak);
-    if (mode == 1) begin
+    $display("rx mode %0d: %0d video pixels, %0d sync checks, %0d samples looped (%0d in flight), status %b, N %0d CTS %0d, peak %08x, size %0d-%0d x %0d (short %0d)",
+             mode, nvid, nsync, nrx, sent.size(), rx_status, rx_n, rx_cts, rx_peak,
+             rx_sh[15:0], rx_sh[31:16], rx_sv[11:0], rx_sv[31:24]);
+    // input size: every DE line H_ACT pixels, V_ACT lines, none short
+    if (rx_sh !== {16'(H_ACT), 16'(H_ACT)} || rx_sv !== 32'(V_ACT))
+      fail($sformatf("input size %08x %08x", rx_sh, rx_sv));
+    if (mode >= 1) begin
       if (nvid < 40 * H_ACT * V_ACT) fail("too few video pixels");
       if (nrx < 1500) fail("too few samples");
       if (sent.size() > 12) fail("samples lost");

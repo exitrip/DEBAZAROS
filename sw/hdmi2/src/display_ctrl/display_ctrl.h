@@ -80,6 +80,13 @@ typedef enum {
 	DISPLAY_RUNNING = 1
 } DisplayState;
 
+/* One line pitch for every slot, VDMA and video mode (2026-10-28): 1920
+ * pixels x 4 bytes. A 720p frame then sits in the top-left 1280x720 of its
+ * slot, and any window of any slot is an address offset (debazd crops,
+ * /disp/<d>/crop). The VDMA reads only HSIZE bytes per line, so the DDR
+ * load does not change. Must match DZ stride in sw/lib (dz_geom_stride). */
+#define DISPLAY_STRIDE (1920 * 4)
+
 typedef struct {
 		u32 dynClkAddr; /*Physical Base address of the dynclk core*/
 		XAxiVdma *vdma; /*VDMA driver struct*/

@@ -151,14 +151,26 @@ static const dz_field static_fields[] = {
 	{ "/fan/3/pwm/invert", AUD, 0x90, 30, 1, DZ_BOOL, 0, "active part = opto off = pin 4 high (servo pulses)" },
 	{ "/fan/3/pwm/lock",   AUD, 0x90, 31, 1, DZ_BOOL, 0, "restart the period at each vsync start" },
 	{ "/fan/3/pwm/duty",   AUD, 0x94, 0, 24, DZ_RAW,  0, "active counts at the start of each period" },
+	/* HDMI_2 input size, last frame (build p148, hdmi_rx measures what the
+	 * capture VDMA gets) */
+	{ "/capture/in/width",     AUD, 0x24, 16, 16, DZ_RAW, DZ_F_RO, "HDMI_2 input: longest DE line (pixels)" },
+	{ "/capture/in/width_min", AUD, 0x24, 0, 16,  DZ_RAW, DZ_F_RO, "HDMI_2 input: shortest DE line" },
+	{ "/capture/in/lines",     AUD, 0x28, 0, 12,  DZ_RAW, DZ_F_RO, "HDMI_2 input: DE lines per frame" },
+	{ "/capture/in/short",     AUD, 0x28, 24, 8,  DZ_RAW, DZ_F_RO, "HDMI_2 input: lines shorter than the longest (saturates 255)" },
+	{ "/capture/in/first_short", AUD, 0x28, 12, 12, DZ_RAW, DZ_F_RO, "HDMI_2 input: index of the first short line" },
 	{ "/led/red",         AUD, 0x44, 12, 1,  DZ_BOOL, 0, "LED_RED pin W14 level (the LED may not be fitted)" },
 	/* events (page 0x1000; gateware 2026-10-27). Bits: [0] J3 pin 3, [1] J5
-	 * pin 3, [7:2] user I/O lines 0-5, [8] vsync. Times: 100 MHz counts */
-	{ "/ev/rise",         EVT, 0x10, 0, 9,   DZ_RAW,  0, "sources whose rising edges count as events" },
-	{ "/ev/fall",         EVT, 0x14, 0, 9,   DZ_RAW,  0, "sources whose falling edges count (pin 3 / buttons are active low)" },
-	{ "/ev/irq_en",       EVT, 0x0C, 0, 9,   DZ_RAW,  0, "pending events that raise the event interrupt (GIC 84)" },
-	{ "/ev/pend",         EVT, 0x08, 0, 9,   DZ_RAW,  DZ_F_RO, "events seen (write 1 to 0x43C6_1008 to clear)" },
-	{ "/ev/level",        EVT, 0x18, 0, 9,   DZ_RAW,  DZ_F_RO, "synchronized source levels now" },
+	 * pin 3, [7:2] user I/O lines 0-5, [8] vsync; build p148 (2026-10-28):
+	 * [9] HDMI_0 / [10] HDMI_1 vid_out locked, [11] / [12] their underflow
+	 * toggles, [13] dynclk locked. Times: 100 MHz counts */
+	{ "/ev/rise",         EVT, 0x10, 0, 14,  DZ_RAW,  0, "sources whose rising edges count as events" },
+	{ "/ev/fall",         EVT, 0x14, 0, 14,  DZ_RAW,  0, "sources whose falling edges count (pin 3 / buttons are active low)" },
+	{ "/ev/irq_en",       EVT, 0x0C, 0, 14,  DZ_RAW,  0, "pending events that raise the event interrupt (GIC 84)" },
+	{ "/ev/pend",         EVT, 0x08, 0, 14,  DZ_RAW,  DZ_F_RO, "events seen (write 1 to 0x43C6_1008 to clear)" },
+	{ "/ev/level",        EVT, 0x18, 0, 14,  DZ_RAW,  DZ_F_RO, "synchronized source levels now" },
+	{ "/ev/ts/video",     EVT, 0x38, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last enabled vid_out / dynclk edge (bits 13:9)" },
+	{ "/ev/underflow/0",  EVT, 0x3C, 0, 16,  DZ_RAW,  DZ_F_RO, "HDMI_0 vid_out underflow pulses (write 0x43C6_103C = clear)" },
+	{ "/ev/underflow/1",  EVT, 0x3C, 16, 16, DZ_RAW,  DZ_F_RO, "HDMI_1 vid_out underflow pulses" },
 	{ "/ev/time",         EVT, 0x04, 0, 32,  DZ_RAW,  DZ_F_RO, "free-running 100 MHz counter (wraps every 42.9 s)" },
 	{ "/ev/ts/j3",        EVT, 0x20, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last enabled J3 pin 3 edge" },
 	{ "/ev/ts/j5",        EVT, 0x24, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last enabled J5 pin 3 edge" },

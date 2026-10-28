@@ -9,6 +9,7 @@
 #include "dz_xform.h"
 #include "dz_hw.h"
 #include "dz_map.h"
+#include "dz_vdma.h"
 
 #include <errno.h>
 #include <math.h>
@@ -40,7 +41,11 @@ typedef struct {
 } surf_t;
 
 static surf_t surf[DZ_SLOTS];
+static int    movie_verbose;	/* debazd -v: fbfeed -v prints fps to the log */
 
+/* Geometry = the running video mode (dz_geom_*, 2026-10-28: 720p or 1080p).
+ * A surface made for another mode starts again: black, its movie stopped
+ * (ffmpeg/fbfeed run with the old size and stride). */
 static surf_t *get(int i)
 {
 	surf_t *s;
@@ -48,10 +53,17 @@ static surf_t *get(int i)
 	if (i < 0 || i >= DZ_SLOTS)
 		return NULL;
 	s = &surf[i];
+	if (s->shadow && (s->w != dz_geom_w() || s->h != dz_geom_h() ||
+			  s->stride != dz_geom_stride())) {
+		dz_draw_movie_stop(i);
+		free(s->shadow);
+		s->shadow = NULL;
+		s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
+	}
 	if (!s->shadow) {
-		s->w = DZ_WIDTH;
-		s->h = DZ_HEIGHT;
-		s->stride = (size_t)DZ_WIDTH * DZ_BPP;
+		s->w = dz_geom_w();
+		s->h = dz_geom_h();
+		s->stride = dz_geom_stride();
 		s->alpha = 256;
 		s->blend = DZ_BLEND_NORMAL;
 		s->autoflush = 1;
@@ -831,8 +843,13 @@ int dz_draw_movie_stop(int i)
 
 int dz_draw_movie_play(int i, const char *name)
 {
+	return dz_draw_movie_play_fps(i, name, 0.0f);
+}
+
+int dz_draw_movie_play_fps(int i, const char *name, float fps)
+{
 	surf_t *s = get(i);
-	char cmd[768], path[256], dst[96];
+	char cmd[768], path[256], dst[96], cap[32] = "";
 	pid_t pid;
 
 	if (!s || !name_ok(name))
@@ -859,11 +876,16 @@ int dz_draw_movie_play(int i, const char *name)
 		snprintf(dst, sizeof(dst), "-d /dev/fb0 -o 0");
 	else
 		snprintf(dst, sizeof(dst), "-a 0x%08X", (unsigned)DZ_SLOT_ADDR(i));
+	/* frame-rate cap before the scaler: a dropped frame costs no scaling,
+	 * pipe copy or conversion (DDR traffic at 1080p60, CLAUDE.md) */
+	if (fps > 0.0f && fps <= 120.0f)
+		snprintf(cap, sizeof(cap), "fps=%.3f,", fps);
 	snprintf(cmd, sizeof(cmd),
 		 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
-		 "-i '%s' -vf scale=%d:%d -pix_fmt yuv420p -f rawvideo pipe:1 "
-		 "| %s -y %s -w %d -h %d -s %u",
-		 path, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride);
+		 "-i '%s' -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p -f rawvideo pipe:1 "
+		 "| %s -y %s -w %d -h %d -s %u%s",
+		 path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+		 movie_verbose ? " -v" : "");
 	pid = fork();
 	if (pid < 0)
 		return -1;
@@ -1080,6 +1102,7 @@ static int op_fill(int i, const dz_arg *a, int n)
 
 int dz_draw_dispatch(const dz_msg *m, int verbose)
 {
+	movie_verbose = verbose;
 	const dz_arg *a = m->a;
 	const char *op = "";
 	unsigned mask = 0;
@@ -1128,8 +1151,8 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 						       n >= 11 ? argn(&a[10]) : 0.0f);
 			else if (!strcmp(op, "gradient/radial") && n >= 6)
 				rc = dz_shape_radial(i, col(a, 0), col(a, 3),
-						     n >= 8 ? argn(&a[6]) : DZ_WIDTH / 2.0f,
-						     n >= 8 ? argn(&a[7]) : DZ_HEIGHT / 2.0f,
+						     n >= 8 ? argn(&a[6]) : dz_geom_w() / 2.0f,
+						     n >= 8 ? argn(&a[7]) : dz_geom_h() / 2.0f,
 						     n >= 9 ? argn(&a[8]) : 0.0f);
 			else if (!strcmp(op, "fill") && n >= 1) {
 				rc = op_fill(i, a, n);
@@ -1147,8 +1170,8 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 				rc = dz_xform_affine(i, n >= 7 ? a[6].i : -1, mm);
 			} else if (!strcmp(op, "rotozoom") && n >= 2)
 				rc = dz_xform_rotozoom(i, n >= 5 ? a[4].i : -1, argn(&a[0]), argn(&a[1]),
-						       n >= 4 ? argn(&a[2]) : DZ_WIDTH / 2.0f,
-						       n >= 4 ? argn(&a[3]) : DZ_HEIGHT / 2.0f);
+						       n >= 4 ? argn(&a[2]) : dz_geom_w() / 2.0f,
+						       n >= 4 ? argn(&a[3]) : dz_geom_h() / 2.0f);
 			else if (!strcmp(op, "scroll") && n >= 2)
 				rc = dz_xform_scroll(i, n >= 3 ? a[2].i : -1, a[0].i, a[1].i);
 			else if (!strcmp(op, "mirror") && n >= 1)
@@ -1207,7 +1230,9 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			if (!(mask & (1u << i)))
 				continue;
 			if (!strcmp(op, "play") && n >= 1 && a[0].type == 's') {
-				int rc = dz_draw_movie_play(i, a[0].s);
+				float fps = n >= 2 ? (a[1].type == 'f' ? a[1].f :
+						      a[1].type == 'i' ? (float)a[1].i : 0.0f) : 0.0f;
+				int rc = dz_draw_movie_play_fps(i, a[0].s, fps);
 
 				if (rc)
 					fails++;

@@ -14,6 +14,10 @@
 //   0x18 RO RX_PEAK     [31:16] R, [15:0] L: peak |sample| since the last clear
 //   0x1C RO RX_ACR_N    N of the last Audio Clock Regeneration packet
 //   0x20 RO RX_ACR_CTS  CTS of the last Audio Clock Regeneration packet
+//   0x24 RO RX_SIZE_H   HDMI_2 input, last frame: [31:16] longest, [15:0]
+//                       shortest DE line (pixels) (2026-10-28, hdmi_rx.v)
+//   0x28 RO RX_SIZE_V   [11:0] DE lines, [23:12] first line shorter than the
+//                       longest line of the frame before, [31:24] such lines
 //   0x3C RO ID          "HAUD" (0x48415544)
 // User I/O lines PL_KEY0-5 + I2S (hw/rtl/pl_io, 2026-10-27):
 //   0x40 RW IO_FUNC     4 bits per line (line n = [4n+3:4n]), see pl_io_core.v
@@ -63,7 +67,10 @@
 // Events (page 1 = 0x1000-0x1FFF, its own interrupt `ev_irq`, so a UIO node
 // can own it apart from the ALSA driver; 2026-10-27). Sources (bit n):
 // [0] fan J3 pin 3, [1] fan J5 pin 3, [7:2] user I/O lines 0-5 (pin levels),
-// [8] VTC vsync. Timestamps = EV_TIME at the edge (+3 clocks for the
+// [8] VTC vsync; (2026-10-28) [9] HDMI_0 / [10] HDMI_1 v_axi4s_vid_out
+// locked, [11] HDMI_0 / [12] HDMI_1 vid_out underflow (pulses, made toggles in
+// the pixel clock: level = toggle state, so enable BOTH edges), [13] dynclk
+// LOCKED (pixel clock MMCM). A lost lock blanks that output (CLAUDE.md). Timestamps = EV_TIME at the edge (+3 clocks for the
 // synchronizers; vsync up to 1 more), 10 ns per count, wraps every 42.9 s.
 //   0x1000 RO EV_ID        "EVNT" (0x45564E54)
 //   0x1004 RO EV_TIME      free-running 100 MHz counter
@@ -78,6 +85,9 @@
 //   0x102C RO TS_VSYNC     time of the last vsync start (always)
 //   0x1030 RO DDS0_AT_VS   HDMI_0 DDS phase (32 bit) at the last vsync start
 //   0x1034 RO DDS0_PHASE   HDMI_0 DDS phase now
+//   0x1038 RO TS_VIDEO     time of the last enabled edge of bits [13:9]
+//   0x103C RO UNDERFLOWS   [31:16] HDMI_1, [15:0] HDMI_0 underflow pulses
+//                          (counted always, saturate; write any value = clear)
 //
 // The rx_* inputs live in the receiver clock domain: the receiver copies
 // them into hold registers and toggles rx_pub; this block takes the copy
@@ -120,6 +130,12 @@ module hdmi_audio_regs #(
     input  wire        j3p3,           // fan pin 3 inputs (raw pins)
     input  wire        j5p3,
     input  wire [31:0] dds_phase,      // HDMI_0 DDS phase (FCLK0 = s_axi_aclk)
+    input  wire        pxl_clk,        // output pixel clock (vid_out status domain)
+    input  wire        vo0_locked, vo0_underflow,   // HDMI_0 v_axi4s_vid_out
+    input  wire        vo1_locked, vo1_underflow,   // HDMI_1 v_axi4s_vid_out
+    input  wire        dyn_locked,     // axi_dynclk LOCKED_O
+    input  wire [31:0] rx_size_h,      // hdmi_rx hold values (rx_pub)
+    input  wire [31:0] rx_size_v,
     output reg         ev_irq = 0,
     input  wire [5:0]  io_in,
     output reg  [31:0] i2s_ctrl = 0,
@@ -172,6 +188,7 @@ module hdmi_audio_regs #(
     reg [1:0]  st = 0;
     reg [31:0] samples = 0, peak = 0;
     reg [19:0] acr_n = 0, acr_cts = 0;
+    reg [31:0] size_h = 0, size_v = 0;
     always @(posedge s_axi_aclk) begin
         pub_sync <= {pub_sync[1:0], rx_pub};
         if (pub_sync[2] ^ pub_sync[1]) begin
@@ -180,6 +197,8 @@ module hdmi_audio_regs #(
             peak <= rx_peak;
             acr_n <= rx_acr_n;
             acr_cts <= rx_acr_cts;
+            size_h <= rx_size_h;
+            size_v <= rx_size_v;
         end
     end
 
@@ -193,12 +212,22 @@ module hdmi_audio_regs #(
     always @(posedge s_axi_aclk) irq <= |(irq_st & irq_en);
 
     // ---- events (page 1) ---------------------------------------------------------
-    (* ASYNC_REG = "TRUE" *) reg [2:0] ev_s1 = 0, ev_s2 = 0;
-    always @(posedge s_axi_aclk) {ev_s2, ev_s1} <= {ev_s1, {vsync, j5p3, j3p3}};
-    wire [8:0]  ev_lvl = {ev_s2[2], io_in, ev_s2[1:0]};   // io_in is synchronized in pl_io
-    reg  [8:0]  ev_q = 0, ev_pend = 0, ev_en = 0, ev_rise = 0, ev_fall = 0;
-    reg  [31:0] ev_time = 0, ts_j3 = 0, ts_j5 = 0, ts_line = 0, ts_vs = 0, ph_vs = 0;
-    wire [8:0]  ev_hit = (ev_lvl & ~ev_q & ev_rise) | (~ev_lvl & ev_q & ev_fall);
+    // underflow pulses -> toggles in the pixel clock
+    reg [1:0] uf_q = 0, uf_t = 0;
+    always @(posedge pxl_clk) begin
+        uf_q <= {vo1_underflow, vo0_underflow};
+        uf_t <= uf_t ^ ({vo1_underflow, vo0_underflow} & ~uf_q);
+    end
+    (* ASYNC_REG = "TRUE" *) reg [7:0] ev_s1 = 0, ev_s2 = 0;
+    always @(posedge s_axi_aclk)
+        {ev_s2, ev_s1} <= {ev_s1, {dyn_locked, uf_t, vo1_locked, vo0_locked, vsync, j5p3, j3p3}};
+    wire [13:0] ev_lvl = {ev_s2[7:3], ev_s2[2], io_in, ev_s2[1:0]};   // io_in is synchronized in pl_io
+    reg  [13:0] ev_q = 0, ev_pend = 0, ev_en = 0, ev_rise = 0, ev_fall = 0;
+    reg  [31:0] ev_time = 0, ts_j3 = 0, ts_j5 = 0, ts_line = 0, ts_vs = 0, ph_vs = 0, ts_vid = 0;
+    reg  [15:0] ufc0 = 0, ufc1 = 0;
+    reg         ufc_clr = 0;
+    wire [13:0] ev_hit = (ev_lvl & ~ev_q & ev_rise) | (~ev_lvl & ev_q & ev_fall);
+    wire [1:0]  uf_edge = ev_lvl[12:11] ^ ev_q[12:11];   // one per underflow pulse
     assign vs_start = ev_lvl[8] && !ev_q[8];
     always @(posedge s_axi_aclk) begin
         ev_q <= ev_lvl;
@@ -207,6 +236,13 @@ module hdmi_audio_regs #(
         if (ev_hit[1]) ts_j5 <= ev_time;
         if (|ev_hit[7:2]) ts_line <= ev_time;
         if (vs_start) begin ts_vs <= ev_time; ph_vs <= dds_phase; end
+        if (|ev_hit[13:9]) ts_vid <= ev_time;
+        if (ufc_clr) begin
+            ufc0 <= 0; ufc1 <= 0;
+        end else begin
+            if (uf_edge[0] && ufc0 != 16'hFFFF) ufc0 <= ufc0 + 16'd1;
+            if (uf_edge[1] && ufc1 != 16'hFFFF) ufc1 <= ufc1 + 16'd1;
+        end
         ev_irq <= |(ev_pend & ev_en);
     end
 
@@ -228,12 +264,14 @@ module hdmi_audio_regs #(
             pcm_flush <= 0;
             xrun <= xrun | pcm_xrun;
             ev_pend <= ev_pend | ev_hit;
+            ufc_clr <= 1'b0;
             if (wr && s_axi_awaddr[12]) begin
                 case (s_axi_awaddr[7:2])
-                    6'h02: ev_pend <= (ev_pend & ~s_axi_wdata[8:0]) | ev_hit;
-                    6'h03: ev_en <= s_axi_wdata[8:0];
-                    6'h04: ev_rise <= s_axi_wdata[8:0];
-                    6'h05: ev_fall <= s_axi_wdata[8:0];
+                    6'h02: ev_pend <= (ev_pend & ~s_axi_wdata[13:0]) | ev_hit;
+                    6'h03: ev_en <= s_axi_wdata[13:0];
+                    6'h04: ev_rise <= s_axi_wdata[13:0];
+                    6'h05: ev_fall <= s_axi_wdata[13:0];
+                    6'h0F: ufc_clr <= 1'b1;
                     default: ;
                 endcase
                 s_axi_bvalid <= 1'b1;
@@ -294,17 +332,19 @@ module hdmi_audio_regs #(
                 case (s_axi_araddr[7:2])
                     6'h00: s_axi_rdata <= 32'h45564E54;
                     6'h01: s_axi_rdata <= ev_time;
-                    6'h02: s_axi_rdata <= {23'd0, ev_pend};
-                    6'h03: s_axi_rdata <= {23'd0, ev_en};
-                    6'h04: s_axi_rdata <= {23'd0, ev_rise};
-                    6'h05: s_axi_rdata <= {23'd0, ev_fall};
-                    6'h06: s_axi_rdata <= {23'd0, ev_lvl};
+                    6'h02: s_axi_rdata <= {18'd0, ev_pend};
+                    6'h03: s_axi_rdata <= {18'd0, ev_en};
+                    6'h04: s_axi_rdata <= {18'd0, ev_rise};
+                    6'h05: s_axi_rdata <= {18'd0, ev_fall};
+                    6'h06: s_axi_rdata <= {18'd0, ev_lvl};
                     6'h08: s_axi_rdata <= ts_j3;
                     6'h09: s_axi_rdata <= ts_j5;
                     6'h0A: s_axi_rdata <= ts_line;
                     6'h0B: s_axi_rdata <= ts_vs;
                     6'h0C: s_axi_rdata <= ph_vs;
                     6'h0D: s_axi_rdata <= dds_phase;
+                    6'h0E: s_axi_rdata <= ts_vid;
+                    6'h0F: s_axi_rdata <= {ufc1, ufc0};
                     default: s_axi_rdata <= 0;
                 endcase
                 s_axi_rvalid <= 1'b1;
@@ -319,6 +359,8 @@ module hdmi_audio_regs #(
                     6'h06: s_axi_rdata <= peak;
                     6'h07: s_axi_rdata <= {12'd0, acr_n};
                     6'h08: s_axi_rdata <= {12'd0, acr_cts};
+                    6'h09: s_axi_rdata <= size_h;
+                    6'h0A: s_axi_rdata <= size_v;
                     6'h0F: s_axi_rdata <= 32'h48415544;
                     6'h10: s_axi_rdata <= {8'd0, io_func};
                     6'h11: s_axi_rdata <= {18'd0, pwm_sel, led_r, fan, 2'd0, io_out};

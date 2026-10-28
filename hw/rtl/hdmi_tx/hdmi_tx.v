@@ -3,7 +3,7 @@
 // kRstActiveHigh = false, no lane swaps). BD module reference.
 //
 // ctrl = 0: DVI. The TMDS output is the same as rgb2dvi's (same encoder, same
-//   channel mapping, same serializer); only the latency is LOOK + 1 clocks longer
+//   channel mapping, same serializer); only the latency is LOOK + 3 clocks longer
 //   (sync and data together, so the picture does not move).
 // ctrl[0] = 1: HDMI. Data islands in the horizontal blanking of every line:
 //   the AVI InfoFrame (every field), and with ctrl[1] audio in ONE format,
@@ -93,15 +93,17 @@ module hdmi_tx #(
     //     polarity gives the same period)
     // hc: position in the line from the DE rise; wraps at line_len, so it
     //     also runs through the lines of the vertical blanking
-    reg [12:0] lc = 0, hc = 0, line_len = 0, act_w = 0;
+    reg [12:0] lc = 0, hc = 0, line_len = 0, act_w = 0, llm1 = 0;
     reg        tvalid = 0, hs_d_q = 0;
     wire rise_d = de_d & ~de_d_q, fall_d = ~de_d & de_d_q;
     wire hs_rise = hs_d & ~hs_d_q;
-    wire [12:0] hc_n = rise_d ? 13'd0 : (hc == line_len - 13'd1) ? 13'd0 : hc + 13'd1;
+    // llm1 = line_len - 1, one clock late after a change (tvalid needs two equal lines)
+    wire [12:0] hc_n = rise_d ? 13'd0 : (hc == llm1) ? 13'd0 : hc + 13'd1;
     always @(posedge PixelClk) begin
         de_d_q <= de_d;
         hs_d_q <= hs_d;
         hc <= hc_n;
+        llm1 <= line_len - 13'd1;
         lc <= hs_rise ? 13'd0 : (lc == 13'h1FFF) ? lc : lc + 13'd1;
         if (hs_rise) begin
             line_len <= lc + 13'd1;
@@ -115,25 +117,44 @@ module hdmi_tx #(
             act_w <= 0;
         end
     end
-    // packets per line: (blank - 30) / 32, max 18 (as hdl-util)
-    wire [12:0] blank = line_len - act_w;
+    // packets per line: (blank - 30) / 32, max 18 (as hdl-util); blank and
+    // npk are registers (they change at most once per line)
+    reg  [12:0] blank = 0;
     reg  [4:0]  npk = 0;
-    always @(posedge PixelClk)
+    reg  [12:0] di_end = 0;
+    always @(posedge PixelClk) begin
+        blank <= line_len - act_w;
         npk <= (!tvalid || blank < 13'd62) ? 5'd0 :
                ((blank - 13'd30) >> 5) > 13'd18 ? 5'd18 : (blank - 13'd30) >> 5;
-
-    // data island: preamble p = 4..11, guard 12..13, packets 14.., guard 2
-    wire        in_blank = !de_d && hc_n >= act_w;
-    wire [12:0] p = hc_n - act_w;
-    wire [12:0] di_end = 13'd14 + {npk, 5'd0};
-    wire di_on = hdmi_en && npk != 0 && in_blank;
-    wire di_pre_0    = di_on && p >= 13'd4 && p < 13'd12;
-    wire di_period_0 = di_on && p >= 13'd14 && p < di_end;
-    wire di_guard_0  = di_on && ((p >= 13'd12 && p < 13'd14) || (p >= di_end && p < di_end + 13'd2));
-    wire pkt_en = di_period_0 && (p[4:0] == 5'd14);   // (p - 14) mod 32 == 0
+        di_end <= 13'd14 + {npk, 5'd0};
+    end
     reg  vs_d_q = 0;
     always @(posedge PixelClk) vs_d_q <= vs_d;
     wire field_end = vs_d ^ vs_d_q;
+
+    // ---- stage a: island position (2026-10-28, for 1080p60 = 6.73 ns) ---------
+    // p = hc_n - act_w and the blank flag get their own clock; the window
+    // compares follow in stage q. Data, syncs and the video preamble flags get
+    // the same extra clock, so nothing moves.
+    reg [12:0] p_a = 0;
+    reg in_blank_a = 0, vid_pre_a = 0, vid_guard_a = 0, field_end_a = 0;
+    reg de_a = 0, hs_a = 0, vs_a = 0;
+    reg [23:0] rgb_a = 0;
+    // hc_n >= act_w = no borrow out of hc_n - act_w: one carry chain for both
+    wire [13:0] p_w = {1'b0, hc_n} - {1'b0, act_w};
+    always @(posedge PixelClk) begin
+        p_a <= p_w[12:0];
+        in_blank_a <= !de_d && !p_w[13];
+        vid_pre_a <= vid_pre_0;  vid_guard_a <= vid_guard_0;  field_end_a <= field_end;
+        de_a <= de_d;  hs_a <= hs_d;  vs_a <= vs_d;  rgb_a <= rgb_d;
+    end
+
+    // data island: preamble p = 4..11, guard 12..13, packets 14.., guard 2
+    wire di_on = hdmi_en && npk != 0 && in_blank_a;
+    wire di_pre_0    = di_on && p_a >= 13'd4 && p_a < 13'd12;
+    wire di_period_0 = di_on && p_a >= 13'd14 && p_a < di_end;
+    wire di_guard_0  = di_on && ((p_a >= 13'd12 && p_a < 13'd14) || (p_a >= di_end && p_a < di_end + 13'd2));
+    wire pkt_en = di_period_0 && (p_a[4:0] == 5'd14);   // (p - 14) mod 32 == 0
 
     // ---- stage q: register the scheduler decisions (2026-10-27) ----------------
     // The position compares (line length -> hc -> p -> island windows -> packet
@@ -143,10 +164,10 @@ module hdmi_tx #(
     reg pkt_en_q = 0, field_end_q = 0, de_q = 0, hs_q = 0, vs_q = 0;
     reg [23:0] rgb_q = 0;
     always @(posedge PixelClk) begin
-        vid_pre_q <= vid_pre_0;  vid_guard_q <= vid_guard_0;
+        vid_pre_q <= vid_pre_a;  vid_guard_q <= vid_guard_a;
         di_pre_q <= di_pre_0;    di_guard_q <= di_guard_0;  di_period_q <= di_period_0;
-        pkt_en_q <= pkt_en;      field_end_q <= field_end;
-        de_q <= de_d;  hs_q <= hs_d;  vs_q <= vs_d;  rgb_q <= rgb_d;
+        pkt_en_q <= pkt_en;      field_end_q <= field_end_a;
+        de_q <= de_a;  hs_q <= hs_a;  vs_q <= vs_a;  rgb_q <= rgb_a;
     end
 
     // ---- stage 1 -------------------------------------------------------------

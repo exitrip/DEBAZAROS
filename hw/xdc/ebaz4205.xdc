@@ -162,3 +162,19 @@ set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~
 ## fan pin 3 inputs into 2-FF synchronizers
 set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/ev_s1_reg[*]}]
 
+
+## ---- output pixel clock for 1080p60 (2026-10-28) ---------------------------
+## axi_dynclk's MMCM is set at run time through the DRP (hdmi2 dynclk.c), so
+## Vivado only sees the power-up setting: 500 MHz serial / 100 MHz pixel
+## (10 ns). Time it for the fastest mode in use, 1080p60: serial 742.5 MHz =
+## 100 MHz x 297 / 40, pixel = serial / 5 (BUFR) = 148.5 MHz = 6.734 ns.
+create_generated_clock -name dynclk_ser -source [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKIN1] -multiply_by 297 -divide_by 40 [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKOUT0]
+## The MMCM runs from FCLK0, but at run-time ratios FCLK0 and the pixel clock
+## have no fixed phase: every crossing is a designed CDC or a quasi-static
+## register (GPIO gains, mixer and VTC settings), and the HDMI_0 DDS quotient
+## (FCLK0) into the mixer is a known untimed crossing (value glitches only).
+set_clock_groups -asynchronous -group [get_clocks clk_fpga_0] -group [get_clocks -include_generated_clocks dynclk_ser]
+## Mixer mode 1 (sum of gain x input, DSP48 MACs cascaded across channels,
+## 19 logic levels, ~16 ns) is NOT supported at these clocks: no setting uses
+## it. Untimed, so the tools work on the paths in use.
+set_false_path -through [get_pins -of_objects [get_cells -hier -filter {NAME =~ *mixerMatrix/mixer_0/* && REF_NAME =~ DSP48*}] -filter {DIRECTION == OUT}]

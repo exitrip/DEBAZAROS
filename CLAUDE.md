@@ -433,7 +433,10 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   audio source (pl_io: HDMI_2 loop or I2S DIN, i2s_ctrl[2] HDMI_1 / [4]
   HDMI_0); TX_FS_INC is shared (one pixel clock). The island scheduler has a
   register stage (Oct 27): worst hdmi_tx path 10.05 ns routed, +3.4 ns at
-  720p60 (was 12.58 ns); latency LOOK + 5 = 15 px.
+  720p60 (was 12.58 ns). Oct 28 (build p148, for 1080p60 = 6.73 ns): one more
+  scheduler stage (p = hc_n - act_w registered), npk/blank/llm1 registered,
+  packet bits by shift registers instead of 56:1 muxes, no SRLs in the
+  encoder; latency LOOK + 6 = 16 px.
 - HDMI_2 hot-plug (Oct 27; WORKS on hardware Oct 28: laptop re-locked 0.75 s after
   HPD high, EDID re-read): HDMI_HPD_2 = ~RX_CTRL[2] (was an xlconstant 1;
   reset = high as before). `/capture/replug [s]` pulses it low: the source
@@ -654,6 +657,64 @@ F19/F20, BD HDMI_1 = TMDS clk L16/L17 (see ebaz4205.xdc). Channel-identity kill 
 [31:24] are the HDMI_0 sine divider den, and den=0 sticks the oscillator at 0xFFFF —
 the board was found in that state, Oct 2026).
 
+**1080p60 output timing (analysis Oct 28 2026, build pwm2 routed):** with the
+old 10 ns constraint, at 720p60 (13.47 ns) ONLY the dormant mixer mode-1 MAC
+paths fail; at 1080p60 (6.73 ns) the shared VTC (1373 endpoints, 1-3 logic
+levels but up to 9.9 ns = routing, never optimised for it), both hdmi_tx
+schedulers/encoders (up to 10.5 ns) and the MACs fail. Build p148 constrains
+the pixel clock for 148.5 MHz (`create_generated_clock dynclk_ser` on the dynclk
+MMCM CLKOUT0, x297/40 of FCLK0), makes FCLK0 and the pixel clocks asynchronous
+(set_clock_groups), and false-paths the mixer_0 DSPs (mode 1 NOT supported).
+1080p60 TMDS = 1.485 Gb/s per lane, at/over the data-sheet limit of this speed
+grade (works on Digilent Zybo Z7-10, same part). DDR: one 16-bit DDR3 at 533
+MHz = 2.13 GB/s peak; 1080p60 x 2 displays + 1080p30 capture = 1.24 GB/s (58 %),
+720p60 case 31 %. HP ports are AXI3 (16-beat bursts max).
+**Capture follows the display mode (sw/hdmi2, Oct 28):** cap_w/h/stride from
+dispCtrl0 at start-up and after each menu mode change (CaptureResize: soft reset,
+then the same arm/verify sequence); `-r` now sets BOTH displays (one shared
+pixel clock + VTC), new `-r 1920x1080x30Hz`. Verified: laptop 1080p30 -> slot 4
+-> display 0 at 1080p60 fills the screen. The laptop (i915) sends LIMITED range
+RGB (16-235) in CE modes. The 1080p30 input latches EOLEarly every frame while
+every pixel lands right (probably one short "line" in the vertical blanking;
+build p148's RX_SIZE_V counts short lines). Blanking footprints (p148): event
+bits [13:9] = vid_out locked x2, underflow x2, dynclk lock; debazd logs them
+("VIDEO t=... HDMI_0-UNDERFLOW ...", /event/video).
+**Memory bandwidth = the 1080p60 limit (MEASURED Oct 28 2026, rx2 bitstream):**
+at 1080p60 two display reads (1.0 GB/s) + capture (0.25 GB/s) run clean alone,
+but ANY heavy CPU memory traffic starves both display VDMAs: a 1080p MPEG-4
+movie (6.9 fps) -> 760 video events in 40 s, `dd if=/dev/zero bs=4M` -> 634 in
+13 s (542 without capture); both outputs underflow + lose lock together, no
+clock event (footprints, `debazd: VIDEO ...`). DDR read-port priority
+(`sw/tools/ddrprio.sh on`: axi_priority_rd_port2/3 = 4) did NOT help: the
+traffic is CPU WRITES. Untried fix: HPR (axi_priority_rd_portN [19] +
+ctrl_reg1 0xF8006060 [6:1] lpr_num_entries < 0x1F), best set at boot via the
+PS7 config. 720p60 is robust: live input + 720p movie (MPEG-4 23-24 fps,
+H.264 18.5 fps) and even H.264 + dd hog -> 0 events, 0 underflows.
+**Software geometry (Oct 28):** debazd/libdz read the running mode from display
+0's VDMA (`dz_geom_w/h/stride`, fallback 1280x720); surfaces restart on a mode
+change, movies stop; hdmi2 boot mode no longer redraws slot 2 every 10 s;
+movie scaling fast_bilinear; vsync thread wakes 0.4 ms early (was 1.5).
+**Crops / video wall (Oct 28 2026, software only):** ONE fixed line pitch of
+7680 bytes (1920 px) for every slot, VDMA and mode (hdmi2 DISPLAY_STRIDE,
+libdz DZ_STRIDE); `/disp/<d>/crop x y` shows the mode-sized window at x, y of
+the shown slot (x even; clamped; the capture's real size when it is shown);
+debazd sets the capture size from the INPUT (RX_SIZE; dz_capture_arm = soft
+reset + arm; /capture/auto). New hdmi2 mode 1024x768@60 (65 MHz). EDID (build
+`edid`): + 1600x1200@30 (81 MHz; does NOT decode on the board - try longer
+vertical blanking) and 1280x960@60 (108 MHz: works; 640x480 quarters of it
+verified at 640x480@60 out). The laptop sends limited-range RGB.
+**Display VDMA wedge (MEASURED Oct 28 2026):** moving crops (60 changes/s)
+made BD HDMI_1's vid_out lose lock; on builds WITHOUT the interconnect data
+FIFOs (_fan and later) the HP2 AFI read FIFO then sticks at 122 words, the
+MM2S soft reset never finishes, only a reboot recovers (hdmi2 then reports
+"VDMA 1 Configuration Initialization failed"). On _pcm (with the FIFOs) the
+same demo gave short drop-outs that recover. Cause of the drop-outs: the
+display VDMAs run without frame sync, so each address commit (VSIZE write)
+cuts a frame. Planned fix: MM2S fsync from the VTC vsync + the display
+interconnect FIFOs back. Check: AFI read FIFO level at 0xF800800C (HP0) /
+0xF800A00C (HP2) - streaming 0-8, stuck = 0x7A. Your PCB "HDMI0" connector is
+BD HDMI_1 (labels swapped, see VTC sharing). BD HDMI_1 also drops out at
+times with no crop activity: cause open (not the feedback gain).
 **Timing-report hygiene (Aug 2026):** PXL_CLK is constrained at 10 ns (100 MHz dynclk
 default) so every build "fails" with WNS ≈ −39 ns — all on DORMANT mixer mode-1 MAC
 paths (synthesis builds 10-DSP cascades ACROSS channels, e.g. dout3_reg→dout7_reg,

@@ -2204,6 +2204,8 @@ proc create_hier_cell_HDMI_2 { parentCell nameHier } {
   create_bd_pin -dir I -from 2 -to 0 TMDS_Data_p_2
   create_bd_pin -dir I -type rst aRst_n
   create_bd_pin -dir O -from 4 -to 0 debug
+  create_bd_pin -dir O -from 31 -to 0 rx_size_h
+  create_bd_pin -dir O -from 31 -to 0 rx_size_v
   create_bd_pin -dir I -type clk m_axi_s2mm_aclk_0
   create_bd_pin -dir I -type rst pRst_n
   create_bd_pin -dir O -type intr s2mm_introut_0
@@ -2346,6 +2348,10 @@ proc create_hier_cell_HDMI_2 { parentCell nameHier } {
   connect_bd_net -net v_vid_in_axi4s_0_underflow [get_bd_pins v_vid_in_axi4s_0/underflow] [get_bd_pins xlconcat_0/In3]
   connect_bd_net -net xlconcat_0_dout [get_bd_pins debug] [get_bd_pins xlconcat_0/dout]
 
+  # input size measurement (2026-10-28)
+  connect_bd_net -net hdmi_rx_0_rx_size_h [get_bd_pins rx_size_h] [get_bd_pins hdmi_rx_0/rx_size_h]
+  connect_bd_net -net hdmi_rx_0_rx_size_v [get_bd_pins rx_size_v] [get_bd_pins hdmi_rx_0/rx_size_v]
+
   # Restore current instance
   current_bd_instance $oldCurInst
 }
@@ -2399,6 +2405,8 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   # Create pins
   create_bd_pin -dir I -type rst ARESETN
   create_bd_pin -dir O -from 0 -to 0 HDMI_OEN
+  create_bd_pin -dir O vo_locked
+  create_bd_pin -dir O vo_underflow
   create_bd_pin -dir I -from 0 -to 0 In2
   create_bd_pin -dir I -type clk PixelClk
   create_bd_pin -dir I -type clk SerialClk
@@ -2784,6 +2792,10 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   connect_bd_net -net xlslice_6_Dout [get_bd_pins colorGainOscSin/Din0] [get_bd_pins xlslice_6/Dout]
   connect_bd_net -net xlslice_7_Dout [get_bd_pins c_addsub_0/B] [get_bd_pins xlslice_7/Dout]
 
+  # vid_out status for the event block (2026-10-28)
+  connect_bd_net -net v_axi4s_vid_out_0_locked [get_bd_pins vo_locked] [get_bd_pins v_axi4s_vid_out_0/locked]
+  connect_bd_net -net v_axi4s_vid_out_0_underflow [get_bd_pins vo_underflow] [get_bd_pins v_axi4s_vid_out_0/underflow]
+
   # Restore current instance
   current_bd_instance $oldCurInst
 }
@@ -2839,6 +2851,8 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   # Create pins
   create_bd_pin -dir I -type rst ARESETN
   create_bd_pin -dir O -from 0 -to 0 HDMI_OEN
+  create_bd_pin -dir O vo_locked
+  create_bd_pin -dir O vo_underflow
   create_bd_pin -dir I -from 0 -to 0 In2
   create_bd_pin -dir I -from 0 -to 0 -type intr In3
   create_bd_pin -dir I -from 0 -to 0 -type intr In4
@@ -3163,6 +3177,10 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net xlslice_3_Dout [get_bd_pins c_addsub_1/B] [get_bd_pins xlslice_3/Dout]
   connect_bd_net -net xlslice_4_Dout [get_bd_pins div16_8_recip_1/num] [get_bd_pins xlslice_4/Dout]
 
+  # vid_out status for the event block (2026-10-28)
+  connect_bd_net -net v_axi4s_vid_out_0_locked [get_bd_pins vo_locked] [get_bd_pins v_axi4s_vid_out_0/locked]
+  connect_bd_net -net v_axi4s_vid_out_0_underflow [get_bd_pins vo_underflow] [get_bd_pins v_axi4s_vid_out_0/underflow]
+
   # Restore current instance
   current_bd_instance $oldCurInst
 }
@@ -3418,6 +3436,12 @@ proc create_root_design { parentCell } {
   connect_bd_net -net hdmi_audio_regs_0_led_red [get_bd_pins hdmi_audio_regs_0/led_red] [get_bd_ports LED_RED]
   connect_bd_net -net HDMI_0_dds_phase [get_bd_pins HDMI_0/dds_phase] [get_bd_pins hdmi_audio_regs_0/dds_phase]
   connect_bd_net -net hdmi_audio_regs_0_ev_irq [get_bd_pins hdmi_audio_regs_0/ev_irq] [get_bd_pins HDMI_0/In5]
+  connect_bd_net -net HDMI_0_vo_locked [get_bd_pins HDMI_0/vo_locked] [get_bd_pins hdmi_audio_regs_0/vo0_locked]
+  connect_bd_net -net HDMI_0_vo_underflow [get_bd_pins HDMI_0/vo_underflow] [get_bd_pins hdmi_audio_regs_0/vo0_underflow]
+  connect_bd_net -net HDMI_1_vo_locked [get_bd_pins HDMI_1/vo_locked] [get_bd_pins hdmi_audio_regs_0/vo1_locked]
+  connect_bd_net -net HDMI_1_vo_underflow [get_bd_pins HDMI_1/vo_underflow] [get_bd_pins hdmi_audio_regs_0/vo1_underflow]
+  connect_bd_net -net HDMI_2_rx_size_h [get_bd_pins HDMI_2/rx_size_h] [get_bd_pins hdmi_audio_regs_0/rx_size_h]
+  connect_bd_net -net HDMI_2_rx_size_v [get_bd_pins HDMI_2/rx_size_v] [get_bd_pins hdmi_audio_regs_0/rx_size_v]
   connect_bd_net -net hdmi_audio_regs_0_j3p4 [get_bd_pins hdmi_audio_regs_0/j3p4] [get_bd_ports J3P4_OUTPUT]
   connect_bd_net -net hdmi_audio_regs_0_j5p4 [get_bd_pins hdmi_audio_regs_0/j5p4] [get_bd_ports J5P4_OUTPUT]
   connect_bd_net -net HDMI_1_HDMI_OEN [get_bd_ports HDMI_CEC_1] [get_bd_pins HDMI_1/HDMI_OEN]
@@ -3503,9 +3527,9 @@ proc create_root_design { parentCell } {
   connect_bd_net -net TMDS_Clk_p_2_1 [get_bd_ports TMDS_Clk_p_2] [get_bd_pins HDMI_2/TMDS_Clk_p_2]
   connect_bd_net -net TMDS_Data_n_2_1 [get_bd_ports TMDS_Data_n_2] [get_bd_pins HDMI_2/TMDS_Data_n_2]
   connect_bd_net -net TMDS_Data_p_2_1 [get_bd_ports TMDS_Data_p_2] [get_bd_pins HDMI_2/TMDS_Data_p_2]
-  connect_bd_net -net axi_dynclk_0_LOCKED_O [get_bd_pins HDMI_0/aRst_n] [get_bd_pins HDMI_1/aRst_n] [get_bd_pins HDMI_2/aRst_n] [get_bd_pins HDMI_2/pRst_n] [get_bd_pins axi_dynclk_0/LOCKED_O]
+  connect_bd_net -net axi_dynclk_0_LOCKED_O [get_bd_pins HDMI_0/aRst_n] [get_bd_pins HDMI_1/aRst_n] [get_bd_pins HDMI_2/aRst_n] [get_bd_pins HDMI_2/pRst_n] [get_bd_pins axi_dynclk_0/LOCKED_O] [get_bd_pins hdmi_audio_regs_0/dyn_locked]
   connect_bd_net -net axi_dynclk_0_PXL_CLK_5X_O [get_bd_pins HDMI_0/SerialClk] [get_bd_pins HDMI_1/SerialClk] [get_bd_pins axi_dynclk_0/PXL_CLK_5X_O]
-  connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins HDMI_0/PixelClk] [get_bd_pins HDMI_1/PixelClk] [get_bd_pins axi_dynclk_0/PXL_CLK_O] [get_bd_pins HDMI_2/tx_clk] [get_bd_pins pl_io_0/tx_clk]
+  connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins HDMI_0/PixelClk] [get_bd_pins HDMI_1/PixelClk] [get_bd_pins axi_dynclk_0/PXL_CLK_O] [get_bd_pins HDMI_2/tx_clk] [get_bd_pins pl_io_0/tx_clk] [get_bd_pins hdmi_audio_regs_0/pxl_clk]
   connect_bd_net -net axi_gpio_hdmi_in_dds_phase_div_out_gpio2_io_o [get_bd_pins axi_gpio_hdmi_in_phase0_div_gPhase1/gpio2_io_o] [get_bd_pins xlslice_1/Din] [get_bd_pins xlslice_2/Din]
   connect_bd_net -net axi_gpio_hdmi_ip2intc_irpt [get_bd_pins HDMI_0/In2] [get_bd_pins axi_gpio_hdmi_in_phase0_div_gPhase1/ip2intc_irpt]
   connect_bd_net -net pixIn1_1 [get_bd_pins HDMI_0/pixData] [get_bd_pins HDMI_1/pixIn1]

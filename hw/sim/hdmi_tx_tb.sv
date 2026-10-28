@@ -16,7 +16,7 @@
 module tb;
   localparam H_ACT = 160, H_FP = 10, H_SYNC = 20, H_TOT = 300;
   localparam V_ACT = 24, V_FP = 2, V_SYNC = 2, V_TOT = 30;
-  localparam LOOK = 10, LAT = LOOK + 5, DVI_OFF = LAT - 3;   // dig_enc output lags its input by 3
+  localparam LOOK = 10, LAT = LOOK + 6, DVI_OFF = LAT - 3;   // dig_enc output lags its input by 3
   localparam VIC = 4;
   localparam NCYC = 60 * H_TOT * V_TOT;
 

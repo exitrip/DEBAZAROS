@@ -446,6 +446,10 @@ void dzd_handle_internal(dz_msg *m)
 }
 
 /* ---- monitor --------------------------------------------------------------- */
+static void video_watch(void);
+static void capture_watch(void);
+static long now_ms(void);
+
 static void monitor(void)
 {
 	static uint32_t last_io = 0xFFFFFFFFu;
@@ -482,6 +486,113 @@ static void monitor(void)
 	}
 	last_lock = lock;
 	last_frames = cap_frames;
+	video_watch();
+	capture_watch();
+	/* video mode changed (hdmi2 menu or a restart with -r): surfaces start
+	 * again at the new size on their next use; movies stop (they write
+	 * with the old line pitch) */
+	if (dz_geom_refresh()) {
+		dzd_log("debazd: video mode now %dx%d, stride %u: movies stopped\n",
+			dz_geom_w(), dz_geom_h(), (unsigned)dz_geom_stride());
+		for (int s = 0; s < DZ_SLOTS; s++)
+			dz_draw_movie_stop(s);
+		disp_crop_reset();
+		event("/event/mode", "iii", dz_geom_w(), dz_geom_h(), (int)dz_geom_stride());
+	}
+}
+
+/* Video footprints (gateware p148, 2026-10-28): the event block latches every
+ * lock change of both v_axi4s_vid_out and the dynclk MMCM, and every vid_out
+ * underflow (a starved output stream: the output then blanks until it locks
+ * again). Logged with the 100 MHz timestamp; /event/video to subscribers.
+ * Older bitstreams have no bits 13:9 (their enables do not stick): silent. */
+#define EV_VIDEO	0x3E00u
+static void video_watch(void)
+{
+	volatile uint32_t *e = dz_regs(HW_HDMI_AUDIO_REGS_0_BASE + 0x1000);
+	static int armed;
+	uint32_t pend, lvl, uf;
+
+	if (!e)
+		return;
+	if (!armed) {
+		e[0x10 / 4] |= EV_VIDEO;	/* rising and falling edges */
+		e[0x14 / 4] |= EV_VIDEO;
+		e[0x08 / 4] = EV_VIDEO;		/* clear old latches */
+		armed = 1;
+		if (!(e[0x10 / 4] & EV_VIDEO))
+			return;
+		dzd_log("debazd: video watch on (vid_out lock/underflow, dynclk lock)\n");
+	}
+	pend = e[0x08 / 4] & EV_VIDEO;
+	if (!pend)
+		return;
+	e[0x08 / 4] = pend;			/* W1C */
+	lvl = e[0x18 / 4];
+	uf = e[0x3C / 4];
+	dzd_log("debazd: VIDEO t=%u%s%s%s%s%s | locked0=%u locked1=%u dynclk=%u | underflows0=%u underflows1=%u\n",
+		(unsigned)e[0x38 / 4],
+		(pend & 0x0200) ? " HDMI_0-lock" : "", (pend & 0x0400) ? " HDMI_1-lock" : "",
+		(pend & 0x0800) ? " HDMI_0-UNDERFLOW" : "", (pend & 0x1000) ? " HDMI_1-UNDERFLOW" : "",
+		(pend & 0x2000) ? " DYNCLK-lock" : "",
+		(unsigned)((lvl >> 9) & 1), (unsigned)((lvl >> 10) & 1), (unsigned)((lvl >> 13) & 1),
+		(unsigned)(uf & 0xFFFF), (unsigned)(uf >> 16));
+	event("/event/video", "iiii", (int)pend, (int)lvl, (int)(uf & 0xFFFF), (int)(uf >> 16));
+}
+
+/* Capture size follows the INPUT (2026-10-28), not the output mode: the
+ * HDMI_2 input size measured by hdmi_rx (RX_SIZE, build p148+). When a
+ * valid size is stable for 3 polls and differs from the S2MM setup, or the
+ * channel stopped (halted, or no completed frame for ~1 s), arm it again with
+ * the safe sequence (dz_capture_arm: soft reset first). An arm latches IntErr
+ * once (the partial first frame) while the channel runs on: the latches are
+ * cleared on the next poll, they are not a reason to arm again. At most one
+ * try per 2 s; a stuck reset (HP1 AFI wedged) ends the watch.
+ * /capture/auto 0 = off. */
+int capture_auto = 1;
+static void capture_watch(void)
+{
+	static int last_w, last_h, stable, dead, clear_next, idle;
+	static long last_try;
+	volatile uint32_t *a = dz_regs(HW_HDMI_AUDIO_REGS_0_BASE);
+	dz_vdma_regs r;
+	uint32_t sh, sv, addr;
+	int w, h, sick, rc;
+
+	if (!capture_auto || dead || !a || dz_map_simulating() || dz_capture_regs(&r) < 0)
+		return;
+	if (clear_next) {				/* the arm's own IntErr etc. */
+		dz_wr(DZ_CAPTURE_VDMA, 0x34, 0x0000F990);	/* S2MM_SR, W1C */
+		clear_next = 0;
+	}
+	idle = cap_frames ? 0 : idle + 1;		/* polls without a frame */
+	sh = a[0x24 / 4];
+	sv = a[0x28 / 4];
+	w = (int)(sh >> 16);
+	h = (int)(sv & 0xFFF) - (int)(sv >> 24);	/* minus the short "lines" */
+	if (w < 64 || w > 1920 || h < 64 || h > 1200 || (sh & 0xFFFF) != (uint32_t)w) {
+		stable = 0;				/* no input, or ragged */
+		return;
+	}
+	stable = (w == last_w && h == last_h) ? stable + 1 : 0;
+	last_w = w;
+	last_h = h;
+	sick = (r.sr & 0x01) || idle > 50;		/* halted, or ~1 s no frame */
+	if (stable < 3 || (!sick && r.hsize == (uint32_t)w * DZ_BPP && r.vsize == (uint32_t)h))
+		return;
+	if (now_ms() - last_try < 2000)
+		return;
+	last_try = now_ms();
+	addr = r.addr[0] ? r.addr[0] : DZ_SLOT_ADDR(DZ_SLOT_CAPTURE);
+	rc = dz_capture_arm(w, h, dz_geom_stride(), addr);
+	dzd_log("debazd: capture armed for the %dx%d input, stride %u -> 0x%08X%s\n", w, h,
+		(unsigned)dz_geom_stride(), (unsigned)addr,
+		rc == 0 ? "" : rc == -2 ? ": SOFT RESET STUCK - HP1 AFI wedged, power cycle; watch off" : ": refused");
+	if (rc == -2)
+		dead = 1;
+	clear_next = (rc == 0);
+	idle = 0;
+	event("/event/capture/armed", "iii", w, h, rc);
 }
 
 /* ---- main ------------------------------------------------------------------ */
@@ -570,7 +681,7 @@ int main(int argc, char **argv)
 	fprintf(stderr, "debazd: %d of %d slots inside reserved memory\n",
 		dz_slots_usable(), DZ_SLOTS);
 	if (!sim && dz_capture_addr() &&
-	    !dz_reserved(dz_capture_addr(), DZ_WIDTH * DZ_HEIGHT * DZ_BPP))
+	    !dz_reserved(dz_capture_addr(), DZ_SLOT_PITCH))
 		fprintf(stderr, "debazd: WARNING capture writes 0x%08X, OUTSIDE reserved "
 			"memory: it overwrites Linux RAM (fix: CLAUDE.md reserved-memory)\n",
 			(unsigned)dz_capture_addr());

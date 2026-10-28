@@ -130,19 +130,31 @@ module hdmi_tx_packets (
         next_ecc = (ecc >> 1) ^ ((ecc[0] ^ b) ? 8'b10000011 : 8'd0);
     endfunction
     reg  [7:0] par_s = 0, par_h = 0;
-    wire [5:0] e = {counter, 1'b0}, o = {counter, 1'b1};
+    // The bits leave in order (2 subpacket bits + 1 header bit per clock):
+    // shift registers instead of 56:1 / 24:1 index muxes (2026-10-28, for
+    // 6.73 ns). They load in the first packet clock (counter 0), which uses
+    // sub[1:0] / hdr[0] directly; ptype and the sample change in that clock.
+    reg  [55:0] sub_sh = 0;
+    reg  [23:0] hdr_sh = 0;
+    wire [1:0]  sb = (counter == 5'd0) ? sub[1:0] : sub_sh[1:0];
+    wire        hb = (counter == 5'd0) ? hdr[0] : hdr_sh[0];
+    always @(posedge clk) begin
+        sub_sh <= ((counter == 5'd0) ? sub : sub_sh) >> 2;
+        hdr_sh <= ((counter == 5'd0) ? hdr : hdr_sh) >> 1;
+    end
     always @(posedge clk)
         if (rst || !period || counter == 5'd31) begin
             par_s <= 0; par_h <= 0;
         end else if (counter < 5'd28) begin
-            par_s <= next_ecc(next_ecc(par_s, sub[e]), sub[o]);
-            if (counter < 5'd24) par_h <= next_ecc(par_h, hdr[counter]);
+            par_s <= next_ecc(next_ecc(par_s, sb[0]), sb[1]);
+            if (counter < 5'd24) par_h <= next_ecc(par_h, hb);
         end
-    wire [63:0] bch = {par_s, sub};
-    wire [31:0] bch_h = {par_h, hdr};
-    wire be = bch[e], bo = bch[o];
+    // bits 0..55 = subpacket, 56..63 = par_s; header 0..23, then par_h
+    wire be = (counter < 5'd28) ? sb[0] : par_s[{counter[1:0], 1'b0}];
+    wire bo = (counter < 5'd28) ? sb[1] : par_s[{counter[1:0], 1'b1}];
+    wire bh = (counter < 5'd24) ? hb : par_h[counter[2:0]];
     wire rep = is_acr;              // ACR: subpackets 1-3 = 0; ASP: empty
-    wire [8:0] dyn = {rep & bo, rep & bo, rep & bo, bo, rep & be, rep & be, rep & be, be, bch_h[counter]};
+    wire [8:0] dyn = {rep & bo, rep & bo, rep & bo, bo, rep & be, rep & be, rep & be, be, bh};
 
     // ---- constant packets ---------------------------------------------------------
     wire [8:0] rom_data;

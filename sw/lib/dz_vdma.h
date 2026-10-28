@@ -15,6 +15,7 @@
 #ifndef DZ_VDMA_H
 #define DZ_VDMA_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
@@ -24,6 +25,18 @@ typedef struct {
 
 /* MM2S (display) channel registers of display d. 0 or -1. */
 int dz_disp_regs(int d, dz_vdma_regs *r);
+
+/*
+ * Frame geometry of the running video mode (2026-10-28): display 0's VDMA
+ * HSIZE / VSIZE / STRIDE, as hdmi2 set them (both displays share one mode).
+ * Without a running display (simulation, bring-up) or with nonsense values:
+ * 1280 x 720 at the fixed DZ_STRIDE (7680). dz_geom_refresh() reads the VDMA again and returns
+ * 1 if the geometry changed; the getters return the last value read.
+ */
+int    dz_geom_refresh(void);
+int    dz_geom_w(void);
+int    dz_geom_h(void);
+size_t dz_geom_stride(void);
 /* Physical address display d scans now, or 0 if it is not running. */
 uint32_t dz_disp_addr(int d);
 /* Slot number display d scans now, or -1 (not running / not a slot). */
@@ -65,6 +78,17 @@ int dz_vsync_wait(int timeout_ms);
 
 /* S2MM (capture) channel registers. 0 or -1. */
 int dz_capture_regs(dz_vdma_regs *r);
+
+/*
+ * Arm the capture for a w x h input (up to 1920 x 1200; more than 1080 lines
+ * run on into the next slot), line pitch stride, all 3 frame stores
+ * at addr, parked on store 0 (2026-10-28). Soft reset first - the safe stop
+ * (CLAUDE.md: never clear RS while frames arrive) - then CR, addresses,
+ * stride, HSIZE, and VSIZE last (it starts the channel). 0 = armed, -1 = no
+ * capture VDMA / bad args, -2 = the soft reset did not finish: the HP1 AFI
+ * is wedged, only a PS reset helps (do not try again).
+ */
+int dz_capture_arm(int w, int h, size_t stride, uint32_t addr);
 /*
  * 1 if at least one capture frame completed since the last call, else 0.
  * Uses (and clears, W1C) S2MM DMASR bit 12 FrmCnt_Irq. Only one program

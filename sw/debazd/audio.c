@@ -89,6 +89,12 @@ int audio_dispatch(const dz_msg *m)
 		dzd_reply("/audio/fs/auto", "i", fs_auto);
 		return 1;
 	}
+	if (!strcmp(m->path, "/capture/auto")) {	/* capture size follows the input */
+		if (m->n >= 1)
+			capture_auto = m->a[0].type == 'f' ? m->a[0].f != 0.0f : m->a[0].i != 0;
+		dzd_reply("/capture/auto", "i", capture_auto);
+		return 1;
+	}
 	if (!strcmp(m->path, "/capture/replug")) {
 		double s = m->n >= 1 ? (a[0].type == 'f' ? a[0].f : a[0].i) : 2.0;
 		struct timespec ts;

@@ -203,6 +203,14 @@ check lfo-bad      "matches no field"              q /lfo/2/target nothing
 q /lfo/reset >/dev/null
 check lfo-reset    "/lfo/0 0 0"                    q /lfo/0
 
+# crop windows (disp.c): 720p window in a 1920x1080 slot, x even, clamped
+check crop-set     "/disp/0/crop 100 50"           q /disp/0/crop 100 50
+check crop-odd     "/disp/0/crop 100 51"           q /disp/0/crop 101 51
+check crop-clamp   "/disp/0/crop 640 360"          q /disp/0/crop 1000 999
+check crop-query   "/disp/0/crop 640 360"          q /disp/0/crop
+check crop-off     "/disp/0/crop 0 0"              q /disp/0/crop/off
+check capture-auto "/capture/auto 1"               q /capture/auto
+
 # fan PWM (pwm.c): J3 = hardware registers (simulated), J5 = software edges;
 # other IO_OUT bits survive the thread
 q /led/red 1 >/dev/null

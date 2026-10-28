@@ -55,6 +55,40 @@ int dz_disp_regs(int d, dz_vdma_regs *r)
 	return 0;
 }
 
+static int    g_w = DZ_WIDTH, g_h = DZ_HEIGHT, g_read;
+static size_t g_stride = DZ_STRIDE;
+
+int dz_geom_refresh(void)
+{
+	dz_vdma_regs r;
+	int w = DZ_WIDTH, h = DZ_HEIGHT;
+	size_t st = DZ_STRIDE;
+	int changed;
+
+	if (!dz_map_simulating() && dz_disp_regs(0, &r) == 0) {
+		int rw = (int)(r.hsize & 0xFFFF) / DZ_BPP, rh = (int)(r.vsize & 0x1FFF);
+		size_t rs = r.stride & 0xFFFF;
+
+		if (rw >= 64 && rw <= 1920 && rh >= 64 && rh <= 1080 &&
+		    rs >= (size_t)rw * DZ_BPP && (size_t)rh * rs <= DZ_SLOT_PITCH) {
+			w = rw; h = rh; st = rs;
+		}
+	}
+	changed = g_read && (w != g_w || h != g_h || st != g_stride);
+	g_w = w; g_h = h; g_stride = st; g_read = 1;
+	return changed;
+}
+
+static void geom_once(void)
+{
+	if (!g_read)
+		dz_geom_refresh();
+}
+
+int    dz_geom_w(void)      { geom_once(); return g_w; }
+int    dz_geom_h(void)      { geom_once(); return g_h; }
+size_t dz_geom_stride(void) { geom_once(); return g_stride; }
+
 static int running(const dz_vdma_regs *r)
 {
 	return (r->cr & CR_RS) && !(r->sr & SR_HALTED) && r->vsize;
@@ -190,7 +224,7 @@ int dz_disp_show(int d, int slot)
 		return -1;
 	/* reading Linux RAM is harmless, but the picture would be garbage and
 	 * whoever fills that slot would corrupt Linux: refuse it here */
-	if (!dz_reserved(DZ_SLOT_ADDR(slot), DZ_WIDTH * DZ_HEIGHT * DZ_BPP))
+	if (!dz_reserved(DZ_SLOT_ADDR(slot), DZ_SLOT_PITCH))
 		return -1;
 	return show_addr(d, DZ_SLOT_ADDR(slot));
 }
@@ -209,6 +243,36 @@ int dz_disp_show_capture(int d)
 	uint32_t a = dz_capture_addr();
 
 	return a ? show_addr(d, a) : -3;
+}
+
+#define CR_RESET	(1u << 2)
+#define CR_FRMCNT1	(1u << 16)	/* IRQFrameCount = 1 (as hdmi2) */
+#define PARK_WR_REF	(0x1Fu << 8)	/* [12:8] S2MM park frame index */
+
+int dz_capture_arm(int w, int h, size_t stride, uint32_t addr)
+{
+	uint32_t b = DZ_CAPTURE_VDMA;
+	int t;
+
+	/* up to 1920 x 1200 (1600x1200 inputs): a frame taller than 1080 lines
+	 * at the fixed pitch runs on into the next slot (both reserved) */
+	if (!dz_regs(b) || w < 64 || w > 1920 || h < 64 || h > 1200 ||
+	    stride < (size_t)w * DZ_BPP || (size_t)h * stride > 2 * (size_t)DZ_SLOT_PITCH ||
+	    !dz_reserved(addr, (uint32_t)((size_t)h * stride)))
+		return -1;
+	dz_wr(b, S2MM_CR, CR_RESET);
+	for (t = 0; t < 100 && (dz_rd(b, S2MM_CR) & CR_RESET); t++)
+		usleep(1000);
+	if (dz_rd(b, S2MM_CR) & CR_RESET)
+		return -2;
+	dz_wr(b, S2MM_CR, CR_FRMCNT1 | CR_RS);		/* park mode (CIRC = 0) */
+	dz_wr(b, PARK_PTR, dz_rd(b, PARK_PTR) & ~PARK_WR_REF);
+	for (int i = 0; i < 3; i++)
+		dz_wr(b, S2MM_ADDR(i), addr);
+	dz_wr(b, S2MM_STRIDE, (uint32_t)stride);	/* frame delay 0 */
+	dz_wr(b, S2MM_HSIZE, (uint32_t)w * DZ_BPP);
+	dz_wr(b, S2MM_VSIZE, (uint32_t)h);		/* last: starts the channel */
+	return 0;
 }
 
 int dz_capture_regs(dz_vdma_regs *r)

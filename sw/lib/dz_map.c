@@ -378,7 +378,7 @@ int dz_slots_usable(void)
 {
 	int n = 0;
 
-	while (n < DZ_SLOTS && dz_reserved(DZ_SLOT_ADDR(n), DZ_WIDTH * DZ_HEIGHT * DZ_BPP))
+	while (n < DZ_SLOTS && dz_reserved(DZ_SLOT_ADDR(n), DZ_SLOT_PITCH))
 		n++;
 	return n;
 }

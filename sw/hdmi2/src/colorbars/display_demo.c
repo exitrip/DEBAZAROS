@@ -235,7 +235,7 @@ static char doc[] = "Set the resolution and optionally display color bars for th
 static char args_doc[] = "[FILENAME]...";
 static struct argp_option options[] = {
     { "menu", 'm', 0, 0, "Show a menu to change settings."},
-	{ "resolution", 'r', 0, 0, "Set the resolution: 640x480 800x600 1280x1024 or 1280x720. Default=1280x720"},
+	{ "resolution", 'r', 0, 0, "Both displays: 640x480 800x600 1024x768 1280x720[x60Hz] 1280x720x50Hz 1280x720x30Hz 1920x1080x25Hz 1920x1080x30Hz 1920x1080x60Hz. Default 1280x720x60Hz; the capture takes the same size"},
     { 0 }
 };
 
@@ -244,25 +244,33 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     switch (key) {
 		case 'm':
 			showmenu = -1; break;
-		case 'r':
-			if(strcmp(state->argv[state->next],"640x480")==0)
-				dispCtrl0.vMode = VMODE_640x480;
-			else if(strcmp(state->argv[state->next], "800x600")==0)
-				dispCtrl0.vMode = VMODE_800x600;
-			else if(strcmp(state->argv[state->next],"1280x720x50Hz")==0)
-				dispCtrl0.vMode = VMODE_1280x720x50Hz;
-			else if(strcmp(state->argv[state->next],"1280x720x30Hz")==0) {
-				/* both displays: shared pixel clock */
-				dispCtrl0.vMode = VMODE_1280x720x30Hz;
-				dispCtrl1.vMode = VMODE_1280x720x30Hz;
-			}
-			else if(strcmp(state->argv[state->next],"1920x1080x25Hz")==0)
-				dispCtrl0.vMode = VMODE_1920x1080x25Hz;
-			else if(strcmp(state->argv[state->next],"1920x1080x60Hz")==0)
-				dispCtrl0.vMode = VMODE_1920x1080x60Hz;
-			else
-				dispCtrl0.vMode = VMODE_1280x720x50Hz;
+		case 'r': {
+			/* both displays: one shared pixel clock and one shared VTC */
+			const char *r = state->argv[state->next];
+			VideoMode m = VMODE_1280x720x50Hz;	/* unknown name (as before) */
+
+			if (strcmp(r, "640x480") == 0)
+				m = VMODE_640x480;
+			else if (strcmp(r, "800x600") == 0)
+				m = VMODE_800x600;
+			else if (strcmp(r, "1024x768") == 0)
+				m = VMODE_1024x768;
+			else if (strcmp(r, "1280x720") == 0 || strcmp(r, "1280x720x60Hz") == 0)
+				m = VMODE_1280x720x60Hz;
+			else if (strcmp(r, "1280x720x50Hz") == 0)
+				m = VMODE_1280x720x50Hz;
+			else if (strcmp(r, "1280x720x30Hz") == 0)
+				m = VMODE_1280x720x30Hz;
+			else if (strcmp(r, "1920x1080x25Hz") == 0)
+				m = VMODE_1920x1080x25Hz;
+			else if (strcmp(r, "1920x1080x30Hz") == 0)
+				m = VMODE_1920x1080x30Hz;
+			else if (strcmp(r, "1920x1080x60Hz") == 0)
+				m = VMODE_1920x1080x60Hz;
+			dispCtrl0.vMode = m;
+			dispCtrl1.vMode = m;
 			break;
+		}
 		case ARGP_KEY_ARG: return 0;
 		default: return ARGP_ERR_UNKNOWN;
     }
@@ -339,8 +347,11 @@ int writeBuffer(CircularBuffer *cb, const unsigned char *data, size_t length) {
  *   base address, S2MmWordLen, S2MmBufDepth, S2MmStreamWidth      */
 #define CAPTURE_VDMA_BASE   0x43020000  /* <- Address Editor value */
 #define CAPTURE_FRAME_SLOT  4           /* 0-1 disp0, 2-3 disp1    */
-#define CAPTURE_W           1280
-#define CAPTURE_H           720
+/* Capture size = the display mode (2026-10-28): width x height of
+ * dispCtrl0, stride = the display stride, so a captured frame fills a display
+ * of the same mode (1080p30 in -> 1080p60 out). Set at start-up and again
+ * after each mode change in the menu (CaptureResize). A slot holds 1080p. */
+static u32 cap_w = 1280, cap_h = 720, cap_stride = 1280 * 4;
 
 /* Capture frame address: slot CAPTURE_FRAME_SLOT if it is reserved memory,
  * else slot 1 (display 0's back frame, inside the 16 MB that old images
@@ -348,7 +359,7 @@ int writeBuffer(CircularBuffer *cb, const unsigned char *data, size_t length) {
 static u32 capture_phys(void)
 {
 	static u32 phys;
-	const u32 len = CAPTURE_W * CAPTURE_H * 4;
+	const u32 len = DEMO_MAX_FRAME;		/* any mode up to 1080p */
 	u32 want = fb_mm_IP.base_address + CAPTURE_FRAME_SLOT * DEMO_MAX_FRAME;
 	u32 alt  = fb_mm_IP.base_address + 1 * DEMO_MAX_FRAME;
 
@@ -391,28 +402,34 @@ static XAxiVdma_Config captureCfg = {
 	.AddrWidth          = 32,
 };
 
-int CaptureInitialize(void)
+/* Soft reset of the S2MM channel: the safe way to stop it (never RS=0 while
+ * frames arrive). 0 = done, -1 = stuck = HP1 AFI wedged (see above). */
+static int capture_soft_reset(u32 chanBase)
+{
+	int t = 100;
+
+	XAxiVdma_WriteReg(&vdma_cap_mm_IP, chanBase, XAXIVDMA_CR_OFFSET,
+	                  XAXIVDMA_CR_RESET_MASK);
+	while (t-- && (XAxiVdma_ReadReg(&vdma_cap_mm_IP, chanBase,
+	        XAXIVDMA_CR_OFFSET) & XAXIVDMA_CR_RESET_MASK))
+		usleep(1000);
+	if (t <= 0) {
+		xil_printf("Capture DEAD: soft reset stuck -> HP1 AFI "
+		  "wedged (PL reflashed or capture halted mid-write). "
+		  "Only a PS reset/power cycle recovers.\r\n");
+		return -1;
+	}
+	return 0;
+}
+
+/* Configure + start + park, at cap_w x cap_h / cap_stride. */
+static int capture_arm(u32 capPhys)
 {
 	int Status, i;
-	u32 capPhys = capture_phys();
 
-	if (!capPhys)
-		return XST_FAILURE;
-
-	vdma_cap_mm_IP.base_address = CAPTURE_VDMA_BASE;
-	vdma_cap_mm_IP.size_in_k = 64;
-	create_IP_driver(&vdma_cap_mm_IP);
-
-	Status = XAxiVdma_CfgInitialize(&vdma_cap_mm_IP, &captureVdma,
-	                                &captureCfg, CAPTURE_VDMA_BASE);
-	if (Status != XST_SUCCESS) {
-		xil_printf("Capture VDMA init failed %d\r\n", Status);
-		return Status;
-	}
-
-	captureSetup.VertSizeInput      = CAPTURE_H;
-	captureSetup.HoriSizeInput      = CAPTURE_W * 4;   /* bytes  */
-	captureSetup.Stride             = CAPTURE_W * 4;
+	captureSetup.VertSizeInput      = cap_h;
+	captureSetup.HoriSizeInput      = cap_w * 4;       /* bytes  */
+	captureSetup.Stride             = cap_stride;
 	captureSetup.FrameDelay         = 0;
 	captureSetup.EnableCircularBuf  = 0;  /* park on one slot     */
 	captureSetup.EnableSync         = 0;
@@ -448,9 +465,8 @@ int CaptureInitialize(void)
 		xil_printf("Capture VDMA StartParking failed %d\r\n", Status);
 		return Status;
 	}
-	xil_printf("Capture VDMA armed: %dx%d -> 0x%08x\r\n",
-	           CAPTURE_W, CAPTURE_H,
-	           capPhys);
+	xil_printf("Capture VDMA armed: %dx%d stride %d -> 0x%08x\r\n",
+	           cap_w, cap_h, cap_stride, capPhys);
 
 	/* ---- post-arm verification, retry, and wedge detection ----------
 	 * Arming can race a frame already in flight; the resulting partial
@@ -459,7 +475,9 @@ int CaptureInitialize(void)
 	 * means the HP1 AFI write FIFO (in the PS) holds an abandoned burst
 	 * - that happens when the PL is JTAG-reflashed or the channel is
 	 * halted while capture is writing DDR.  Only a PS reset (reboot /
-	 * power cycle) recovers from that; report it instead of spinning. */
+	 * power cycle) recovers from that; report it instead of spinning.
+	 * A source whose size differs from cap_w x cap_h also latches errors
+	 * every frame: then all 3 tries fail and the channel stays halted. */
 	{
 		const u32 chanBase = CAPTURE_VDMA_BASE + XAXIVDMA_RX_OFFSET;
 		const u32 errMask  = 0x00000870;  /* IntErr|SlvErr|DecErr|SOFEarly */
@@ -473,20 +491,8 @@ int CaptureInitialize(void)
 				break;
 			xil_printf("Capture arm race (DMASR=0x%08x), reset+retry %d\r\n",
 			           sr, try + 1);
-			XAxiVdma_WriteReg(&vdma_cap_mm_IP, chanBase,
-			                  XAXIVDMA_CR_OFFSET, XAXIVDMA_CR_RESET_MASK);
-			{	/* reset must self-clear; if it sticks the AFI is wedged */
-				int t = 100;
-				while (t-- && (XAxiVdma_ReadReg(&vdma_cap_mm_IP, chanBase,
-				        XAXIVDMA_CR_OFFSET) & XAXIVDMA_CR_RESET_MASK))
-					usleep(1000);
-				if (t <= 0) {
-					xil_printf("Capture DEAD: soft reset stuck -> HP1 AFI "
-					  "wedged (PL reflashed or capture halted mid-write). "
-					  "Only a PS reset/power cycle recovers.\r\n");
-					return XST_FAILURE;
-				}
-			}
+			if (capture_soft_reset(chanBase) < 0)
+				return XST_FAILURE;
 			XAxiVdma_DmaConfig(&vdma_cap_mm_IP, &captureVdma,
 			                   XAXIVDMA_WRITE, &captureSetup);
 			XAxiVdma_DmaSetBufferAddr(&vdma_cap_mm_IP, &captureVdma,
@@ -508,6 +514,46 @@ int CaptureInitialize(void)
 			           "DMASR=0x%08x)\r\n", sr);
 	}
 	return XST_SUCCESS;
+}
+
+static int capture_ready;	/* driver set up (CaptureInitialize ran) */
+
+int CaptureInitialize(void)
+{
+	int Status;
+	u32 capPhys = capture_phys();
+
+	if (!capPhys)
+		return XST_FAILURE;
+
+	vdma_cap_mm_IP.base_address = CAPTURE_VDMA_BASE;
+	vdma_cap_mm_IP.size_in_k = 64;
+	create_IP_driver(&vdma_cap_mm_IP);
+
+	Status = XAxiVdma_CfgInitialize(&vdma_cap_mm_IP, &captureVdma,
+	                                &captureCfg, CAPTURE_VDMA_BASE);
+	if (Status != XST_SUCCESS) {
+		xil_printf("Capture VDMA init failed %d\r\n", Status);
+		return Status;
+	}
+	capture_ready = 1;
+	return capture_arm(capPhys);
+}
+
+/* New capture size after a display mode change: soft reset (safe also while
+ * frames arrive), then arm at the new size. */
+int CaptureResize(u32 w, u32 h, u32 stride)
+{
+	u32 capPhys = capture_phys();
+
+	cap_w = w;
+	cap_h = h;
+	cap_stride = stride;
+	if (!capture_ready || !capPhys)
+		return XST_FAILURE;
+	if (capture_soft_reset(CAPTURE_VDMA_BASE + XAXIVDMA_RX_OFFSET) < 0)
+		return XST_FAILURE;
+	return capture_arm(capPhys);
 }
 
 
@@ -587,13 +633,15 @@ int main(int argc, char *argv[])
 //		IP_driver_write(&testLED_IP, 0, ledState);
 		DemoPrintTest(pFramesVirtual0[dispCtrl0.curFrame], dispCtrl0.vMode.width, dispCtrl0.vMode.height, dispCtrl0.stride, DEMO_PATTERN_D);
 		DemoPrintTest(pFramesVirtual1[dispCtrl1.curFrame], dispCtrl1.vMode.width, dispCtrl1.vMode.height, dispCtrl1.stride, DEMO_PATTERN_D);
+		/* boot mode: the pattern is drawn once. The old loop redrew
+		 * display 1's frame (slot 2) every 10 s: it overwrote what debazd
+		 * showed there, and at 1080p it was an 8.3 MB uncached CPU write
+		 * burst on top of the video (2026-10-28). Now it only waits. */
 		for (;;) {
 //			TimerDelay(&scu_timer_mm_IP, 100000);  //SEGV!!!
 			sleep(10);
 			ledState ^= 0x1;
-			printf("T%dck\n", ledState);
 //			IP_driver_write(&testLED_IP, 0, ledState);
-			DemoPrintTest(pFramesVirtual1[dispCtrl1.curFrame], dispCtrl1.vMode.width, dispCtrl1.vMode.height, dispCtrl1.stride, DEMO_PATTERN_D);
 //			DemoPrintTest(pFramesVirtual0[dispCtrl0.curFrame], dispCtrl0.vMode.width, dispCtrl0.vMode.height, dispCtrl0.stride, DEMO_PATTERN_D);
 
 //			ssize_t n = recvfrom(sockfd, packet, MAX_PACKET_SIZE, 0,
@@ -801,6 +849,9 @@ void DemoInitialize()
 		return;
 	}
 
+	cap_w = dispCtrl0.vMode.width;
+	cap_h = dispCtrl0.vMode.height;
+	cap_stride = dispCtrl0.stride;
 	CaptureInitialize();
 
 	//GG DemoPrintTest(dispCtrl0.framePtr[dispCtrl0.curFrame], dispCtrl0.vMode.width, dispCtrl0.vMode.height, dispCtrl0.stride, DEMO_PATTERN_1);
@@ -1331,6 +1382,15 @@ void DemoChangeRes()
 			DisplayStart(&vtc_0_mm_IP,&vdma_1_mm_IP, &dynclk_mm_IP, &dispCtrl1);
 			fResSet = 1;
 			break;
+		case 'c':
+			status[0] = DisplayStop(&vdma_0_mm_IP, &vtc_0_mm_IP, &dispCtrl0);
+			status[1] = DisplayStop(&vdma_1_mm_IP, &vtc_0_mm_IP, &dispCtrl1);
+			DisplaySetMode(&vdma_0_mm_IP, &vtc_0_mm_IP,&dispCtrl0, &VMODE_1024x768);
+			DisplaySetMode(&vdma_1_mm_IP, &vtc_0_mm_IP, &dispCtrl1, &VMODE_1024x768);
+			DisplayStart(&vtc_0_mm_IP,&vdma_0_mm_IP, &dynclk_mm_IP,&dispCtrl0);
+			DisplayStart(&vtc_0_mm_IP,&vdma_1_mm_IP, &dynclk_mm_IP, &dispCtrl1);
+			fResSet = 1;
+			break;
 		case 'q':
 			fResSet = 1;
 			break;
@@ -1343,6 +1403,10 @@ void DemoChangeRes()
 			xil_printf("\n\rWARNING: AXI VDMA Error detected and cleared\n\r");
 		}
 	}
+	/* the capture follows the new mode (no change for 'q') */
+	if (userInput != 'q')
+		CaptureResize(dispCtrl0.vMode.width, dispCtrl0.vMode.height,
+		              dispCtrl0.stride);
 }
 
 void DemoCRMenu()
@@ -1367,6 +1431,7 @@ void DemoCRMenu()
 	xil_printf("9 - %s\n\r", VMODE_1920x1080x60Hz.label);
 	xil_printf("a - %s\n\r", VMODE_1920x1080x30Hz.label);
 	xil_printf("b - %s\n\r", VMODE_1920x1080x25Hz.label);
+	xil_printf("c - %s\n\r", VMODE_1024x768.label);
 	xil_printf("q - Quit (don't change resolution)\n\r");
 	xil_printf("\n\r");
 	xil_printf("Select a new resolution:");

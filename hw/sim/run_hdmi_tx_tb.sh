@@ -26,7 +26,7 @@ verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style -Wno-COMBDLY --top-m
 	hw/rtl/hdmi_tx/hdmi_tx_encoder.v hw/rtl/hdmi_tx/hdmi_tx_packets.v \
 	hw/rtl/hdmi_tx/hdmi_tx_rom.v hw/rtl/hdmi_tx/hdmi_tx_serdes.v \
 	hw/rtl/hdmi_tx/hdmi_rx.v > $OUT/rx.log 2>&1 || { tail -20 $OUT/rx.log; exit 1; }
-for m in 0 1; do
+for m in 0 1 2; do
 	$OUT/rx/tbsim +mode=$m | grep -v '^- ' || rc=1
 done
 exit $rc

@@ -22,6 +22,17 @@
  *                                  frames; -1 = black. Strobe: seq 5 -1
  *   /disp/<d>/seq/rate i:frames    frames per step (default 1)
  *   /disp/<d>/seq/stop             back to the front slot (or black)
+ *   /disp/<d>/crop i:x i:y         show the window of the slot that starts at
+ *                                  pixel x, y (2026-10-28). Window = the video
+ *                                  mode (both displays share it); a slot is
+ *                                  1920 x 1080 at the fixed 7680-byte pitch, so
+ *                                  at 720p x = 0..640, y = 0..360. x is made
+ *                                  even (8-byte VDMA address alignment); the
+ *                                  values are clamped. Also for show, capture
+ *                                  and seq; lands on the next vsync, so it can
+ *                                  move every frame (LFO: "/disp/0/crop $0 $1").
+ *   /disp/<d>/crop                 -> /disp/<d>/crop i:x i:y
+ *   /disp/<d>/crop/off             = crop 0 0
  *   /disp/<d>                      -> /disp/<d> i:slot i:blanked i:seq
  *   /vsync                         -> /vsync i:frames f:hz f:jitter_us i:ok
  */
@@ -50,6 +61,10 @@ typedef struct {
 	uint32_t want_addr;
 	int      want_blank;		/* pending: -1 none, 0, 1          */
 	int      seq[SEQ_MAX];		/* slots, -1 = black               */
+	uint32_t off;			/* crop offset in bytes (applied)  */
+	int      want_crop;		/* pending: new offset in want_off */
+	uint32_t want_off;
+	int      cx, cy;		/* crop origin, pixels (requested) */
 	int      seqn, seqpos, rate, cnt, seqon, seqstop;
 } dstate;
 
@@ -88,16 +103,22 @@ static void apply(int d)
 {
 	dstate *s = &D[d];
 
+	if (s->want_crop) {
+		s->off = s->want_off;
+		s->want_crop = 0;
+		if (!s->seqon && !s->want && s->front)
+			dz_disp_set_store(d, STORE_FRONT, s->front + s->off);
+	}
 	if (s->seqstop) {
 		s->seqon = s->seqstop = 0;
-		dz_disp_set_store(d, STORE_FRONT, s->front);
+		dz_disp_set_store(d, STORE_FRONT, s->front + s->off);
 		park_front_or_blank(d);
 	}
 	if (s->want) {
 		s->front = s->want_addr;
 		s->want = 0;
 		if (!s->seqon) {
-			dz_disp_set_store(d, STORE_FRONT, s->front);
+			dz_disp_set_store(d, STORE_FRONT, s->front + s->off);
 			park_front_or_blank(d);
 		}
 	}
@@ -115,7 +136,7 @@ static void apply(int d)
 		if (slot < 0) {
 			dz_disp_park(d, STORE_BLANK);
 		} else {
-			dz_disp_set_store(d, STORE_FRONT, DZ_SLOT_ADDR(slot));
+			dz_disp_set_store(d, STORE_FRONT, DZ_SLOT_ADDR(slot) + s->off);
 			dz_disp_park(d, STORE_FRONT);
 		}
 	}
@@ -146,8 +167,11 @@ static void *vsync_main(void *arg)
 			}
 			got = w > 0;
 		} else {
-			if (vs_ok && last > 0.0 && last + period - 0.0015 > t)
-				sleep_until(last + period - 0.0015);
+			/* wake 0.4 ms early (was 1.5): the status bit stays latched,
+			 * so a late wake costs precision, not a frame; the spin at
+			 * real-time priority took CPU from movie decoding */
+			if (vs_ok && last > 0.0 && last + period - 0.0004 > t)
+				sleep_until(last + period - 0.0004);
 			deadline = now() + (vs_ok ? 0.004 : 0.0);
 			do {			/* poll window around the expected vsync */
 				if (dz_vsync_latched()) {
@@ -197,6 +221,18 @@ static void *vsync_main(void *arg)
 	return NULL;
 }
 
+/* after a video mode change: the old crop may not fit the new window */
+void disp_crop_reset(void)
+{
+	pthread_mutex_lock(&mu);
+	for (int d = 0; d < DZ_DISPLAYS; d++) {
+		D[d].cx = D[d].cy = 0;
+		D[d].want_off = 0;
+		D[d].want_crop = 1;
+	}
+	pthread_mutex_unlock(&mu);
+}
+
 /* no vsync: apply at once (main thread) */
 static void kick(int d)
 {
@@ -210,7 +246,7 @@ static void kick(int d)
 /* ---- init ------------------------------------------------------------------- */
 static void blank_slot_fill(void)
 {
-	size_t len = (size_t)DZ_WIDTH * DZ_HEIGHT * DZ_BPP;
+	size_t len = DZ_SLOT_PITCH;		/* any mode up to 1080p */
 	uint32_t *p = (uint32_t *)dz_slot(DZ_SLOT_BLANK, len, NULL);
 
 	if (!p) {
@@ -297,7 +333,7 @@ static void status(int d)
 static int usable(int slot)
 {
 	return slot >= 0 && slot < DZ_SLOTS &&
-	       dz_reserved(DZ_SLOT_ADDR(slot), DZ_WIDTH * DZ_HEIGHT * DZ_BPP);
+	       dz_reserved(DZ_SLOT_ADDR(slot), DZ_SLOT_PITCH);
 }
 
 int disp_dispatch(const dz_msg *m)
@@ -318,7 +354,7 @@ int disp_dispatch(const dz_msg *m)
 		char base[16], p[40];
 		const char *op = NULL;
 		static const char *ops[] = { "show", "home", "capture", "blank", "seq",
-					     "seq/rate", "seq/stop", NULL };
+					     "seq/rate", "seq/stop", "crop", "crop/off", NULL };
 
 		snprintf(base, sizeof(base), "/disp/%d", d);
 		if (dz_osc_match(m->path, base)) {
@@ -337,6 +373,13 @@ int disp_dispatch(const dz_msg *m)
 		hits++;
 		if (!*op) {
 			status(d);
+			continue;
+		}
+		if (!strcmp(op, "crop") && n == 0) {	/* query */
+			snprintf(p, sizeof(p), "%s/crop", base);
+			pthread_mutex_lock(&mu);
+			dzd_reply(p, "ii", D[d].cx, D[d].cy);
+			pthread_mutex_unlock(&mu);
 			continue;
 		}
 		if (!dz_disp_addr(d) && !sim) {
@@ -385,9 +428,47 @@ int disp_dispatch(const dz_msg *m)
 		} else if (!strcmp(op, "seq/stop")) {
 			if (D[d].seqon)
 				D[d].seqstop = 1;
+		} else if (!strcmp(op, "crop") || !strcmp(op, "crop/off")) {
+			/* window = the mode, inside the source: the capture's
+			 * real size (e.g. 1600 x 1200, which runs into the next
+			 * slot) when it is shown, else a 1920 x 1080 slot at
+			 * the running line pitch; x even: 8-byte VDMA alignment */
+			size_t st = dz_geom_stride();
+			int sw = (int)(st / DZ_BPP), sh = (int)(DZ_SLOT_PITCH / st);
+			dz_vdma_regs cr;
+			int maxx, maxy, x = 0, y = 0;
+
+			if (sh > 1080)
+				sh = 1080;
+			if (D[d].front && D[d].front == dz_capture_addr() &&
+			    dz_capture_regs(&cr) == 0 && cr.vsize) {
+				sw = (int)(cr.hsize & 0xFFFF) / DZ_BPP;
+				sh = (int)(cr.vsize & 0x1FFF);
+			}
+			maxx = sw - dz_geom_w();
+			maxy = sh - dz_geom_h();
+			maxx = maxx < 0 ? 0 : maxx;
+			maxy = maxy < 0 ? 0 : maxy;
+
+			if (!strcmp(op, "crop") && n >= 2) {
+				x = a[0].type == 'f' ? (int)a[0].f : a[0].i;
+				y = a[1].type == 'f' ? (int)a[1].f : a[1].i;
+			}
+			x = x < 0 ? 0 : x > maxx ? maxx : x;
+			y = y < 0 ? 0 : y > maxy ? maxy : y;
+			x &= ~1;
+			D[d].cx = x;
+			D[d].cy = y;
+			D[d].want_off = (uint32_t)((size_t)y * st + (size_t)x * DZ_BPP);
+			D[d].want_crop = 1;
 		}
 		pthread_mutex_unlock(&mu);
 		kick(d);
+		if (!strcmp(op, "crop") || !strcmp(op, "crop/off")) {
+			snprintf(p, sizeof(p), "%s/crop", base);	/* no log: may run per frame */
+			dzd_reply(p, "ii", D[d].cx, D[d].cy);
+			continue;
+		}
 		dzd_log("disp: %s %s\n", base, op);
 		status(d);
 	}

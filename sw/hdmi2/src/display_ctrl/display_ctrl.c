@@ -360,7 +360,7 @@ int DisplayInitialize(mm_IP * _vtc_mm_IP, mm_IP * _dynclk_mm_IP,DisplayCtrl *dis
 		dispPtr->framePtr[i] = framePtr[i];
 	}
 	dispPtr->state = DISPLAY_STOPPED;
-	dispPtr->stride = dispPtr->vMode.width *4 ;
+	dispPtr->stride = DISPLAY_STRIDE;	/* fixed for every mode (2026-10-28) */
 	//dispPtr->vMode = VMODE_640x480;
 
 //	ClkFindParams(_dynclk_mm_IP, dispPtr->vMode.freq, &clkMode);
@@ -465,7 +465,7 @@ int DisplaySetMode(mm_IP * _vdma_mm_IP ,mm_IP * _vtc_mm_IP , DisplayCtrl *dispPt
 	}
 
 	dispPtr->vMode = *newMode;
-	dispPtr->stride = dispPtr->vMode.width*4;
+	dispPtr->stride = DISPLAY_STRIDE;
 
 	return XST_SUCCESS;
 }
