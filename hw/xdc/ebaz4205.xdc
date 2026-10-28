@@ -163,12 +163,16 @@ set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~
 set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/ev_s1_reg[*]}]
 
 
-## ---- output pixel clock for 1080p60 (2026-10-28) ---------------------------
+## ---- output pixel clock (2026-10-28) ---------------------------------------
 ## axi_dynclk's MMCM is set at run time through the DRP (hdmi2 dynclk.c), so
 ## Vivado only sees the power-up setting: 500 MHz serial / 100 MHz pixel
-## (10 ns). Time it for the fastest mode in use, 1080p60: serial 742.5 MHz =
-## 100 MHz x 297 / 40, pixel = serial / 5 (BUFR) = 148.5 MHz = 6.734 ns.
-create_generated_clock -name dynclk_ser -source [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKIN1] -multiply_by 297 -divide_by 40 [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKOUT0]
+## (10 ns). Timed for 108 MHz (1280x1024@60, 1280x960@60): serial 540 MHz =
+## 100 MHz x 27 / 5, pixel = serial / 5 (BUFR) = 108 MHz = 9.259 ns.
+## 1080p60 (148.5 MHz) stays selectable in hdmi2 but is NOT timed: its serial
+## clock (742.5 MHz) is over the OSERDES limit of this speed grade (600 MHz),
+## and its DDR load starves the displays (CLAUDE.md). It may glitch.
+## (Build p148 timed 148.5 MHz: it could not close, and the placement spread.)
+create_generated_clock -name dynclk_ser -source [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKIN1] -multiply_by 27 -divide_by 5 [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKOUT0]
 ## The MMCM runs from FCLK0, but at run-time ratios FCLK0 and the pixel clock
 ## have no fixed phase: every crossing is a designed CDC or a quasi-static
 ## register (GPIO gains, mixer and VTC settings), and the HDMI_0 DDS quotient
@@ -178,3 +182,7 @@ set_clock_groups -asynchronous -group [get_clocks clk_fpga_0] -group [get_clocks
 ## 19 logic levels, ~16 ns) is NOT supported at these clocks: no setting uses
 ## it. Untimed, so the tools work on the paths in use.
 set_false_path -through [get_pins -of_objects [get_cells -hier -filter {NAME =~ *mixerMatrix/mixer_0/* && REF_NAME =~ DSP48*}] -filter {DIRECTION == OUT}]
+
+## fsync_gen (2026-10-28): VTC vsync (pixel clock) into a 2-FF synchronizer
+## in FCLK2 (display VDMA frame sync)
+set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *fsync_gen_0/inst/vs_s_reg[0]}]

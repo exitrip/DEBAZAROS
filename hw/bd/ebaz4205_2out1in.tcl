@@ -2404,6 +2404,7 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
 
   # Create pins
   create_bd_pin -dir I -type rst ARESETN
+  create_bd_pin -dir I mm2s_fsync
   create_bd_pin -dir O -from 0 -to 0 HDMI_OEN
   create_bd_pin -dir O vo_locked
   create_bd_pin -dir O vo_underflow
@@ -2464,8 +2465,8 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.NUM_MI {1} \
     CONFIG.NUM_SI {1} \
-    CONFIG.S00_HAS_DATA_FIFO {0} \
-    CONFIG.S00_HAS_REGSLICE {0} \
+    CONFIG.S00_HAS_DATA_FIFO {2} \
+    CONFIG.S00_HAS_REGSLICE {4} \
   ] $axi_interconnect_1
 
 
@@ -2474,6 +2475,7 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.c_include_s2mm {0} \
     CONFIG.c_m_axis_mm2s_tdata_width {32} \
+    CONFIG.c_use_mm2s_fsync {1} \
     CONFIG.c_mm2s_linebuffer_depth {4096} \
     CONFIG.c_mm2s_max_burst_length {16} \
     CONFIG.c_num_fstores {3} \
@@ -2796,6 +2798,9 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   connect_bd_net -net v_axi4s_vid_out_0_locked [get_bd_pins vo_locked] [get_bd_pins v_axi4s_vid_out_0/locked]
   connect_bd_net -net v_axi4s_vid_out_0_underflow [get_bd_pins vo_underflow] [get_bd_pins v_axi4s_vid_out_0/underflow]
 
+  # frame sync from the VTC vsync (fsync_gen at top level, 2026-10-28)
+  connect_bd_net -net mm2s_fsync_1 [get_bd_pins mm2s_fsync] [get_bd_pins axi_vdma_0/mm2s_fsync]
+
   # Restore current instance
   current_bd_instance $oldCurInst
 }
@@ -2850,6 +2855,7 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
 
   # Create pins
   create_bd_pin -dir I -type rst ARESETN
+  create_bd_pin -dir I mm2s_fsync
   create_bd_pin -dir O -from 0 -to 0 HDMI_OEN
   create_bd_pin -dir O vo_locked
   create_bd_pin -dir O vo_underflow
@@ -2899,8 +2905,8 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.NUM_MI {1} \
     CONFIG.NUM_SI {1} \
-    CONFIG.S00_HAS_DATA_FIFO {0} \
-    CONFIG.S00_HAS_REGSLICE {0} \
+    CONFIG.S00_HAS_DATA_FIFO {2} \
+    CONFIG.S00_HAS_REGSLICE {4} \
   ] $axi_interconnect_1
 
 
@@ -2909,6 +2915,7 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.c_include_s2mm {0} \
     CONFIG.c_m_axis_mm2s_tdata_width {32} \
+    CONFIG.c_use_mm2s_fsync {1} \
     CONFIG.c_mm2s_linebuffer_depth {4096} \
     CONFIG.c_mm2s_max_burst_length {16} \
     CONFIG.c_num_fstores {3} \
@@ -3181,6 +3188,9 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net v_axi4s_vid_out_0_locked [get_bd_pins vo_locked] [get_bd_pins v_axi4s_vid_out_0/locked]
   connect_bd_net -net v_axi4s_vid_out_0_underflow [get_bd_pins vo_underflow] [get_bd_pins v_axi4s_vid_out_0/underflow]
 
+  # frame sync from the VTC vsync (fsync_gen at top level, 2026-10-28)
+  connect_bd_net -net mm2s_fsync_1 [get_bd_pins mm2s_fsync] [get_bd_pins axi_vdma_0/mm2s_fsync]
+
   # Restore current instance
   current_bd_instance $oldCurInst
 }
@@ -3343,6 +3353,18 @@ proc create_root_design { parentCell } {
      return 1
    }
 
+  # Create instance: fsync_gen_0 (display VDMA frame sync from the VTC vsync,
+  # hw/rtl/fsync_gen.v, 2026-10-28)
+  set block_name fsync_gen
+  set block_cell_name fsync_gen_0
+  if { [catch {set fsync_gen_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   } elseif { $fsync_gen_0 eq "" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   }
+
   # Create instance: hdmi_audio_regs_0 (HDMI audio control/status, hw/rtl/hdmi_tx)
   set block_name hdmi_audio_regs
   set block_cell_name hdmi_audio_regs_0
@@ -3430,7 +3452,8 @@ proc create_root_design { parentCell } {
   connect_bd_net -net HDMI_0_hblank_out [get_bd_pins HDMI_0/hblank_out] [get_bd_pins HDMI_1/hblank_in]
   connect_bd_net -net HDMI_0_hsync_out [get_bd_pins HDMI_0/hsync_out] [get_bd_pins HDMI_1/hsync_in]
   connect_bd_net -net HDMI_0_vblank_out [get_bd_pins HDMI_0/vblank_out] [get_bd_pins HDMI_1/vblank_in]
-  connect_bd_net -net HDMI_0_vsync_out [get_bd_pins HDMI_0/vsync_out] [get_bd_pins HDMI_1/vsync_in] [get_bd_pins hdmi_audio_regs_0/vsync]
+  connect_bd_net -net HDMI_0_vsync_out [get_bd_pins HDMI_0/vsync_out] [get_bd_pins HDMI_1/vsync_in] [get_bd_pins hdmi_audio_regs_0/vsync] [get_bd_pins fsync_gen_0/vsync]
+  connect_bd_net -net fsync_gen_0_fsync [get_bd_pins fsync_gen_0/fsync] [get_bd_pins HDMI_0/mm2s_fsync] [get_bd_pins HDMI_1/mm2s_fsync]
   connect_bd_net -net J3P3_INPUT_1 [get_bd_ports J3P3_INPUT] [get_bd_pins xlconcat_0/In3] [get_bd_pins hdmi_audio_regs_0/j3p3]
   connect_bd_net -net J5P3_INPUT_1 [get_bd_ports J5P3_INPUT] [get_bd_pins xlconcat_0/In4] [get_bd_pins hdmi_audio_regs_0/j5p3]
   connect_bd_net -net hdmi_audio_regs_0_led_red [get_bd_pins hdmi_audio_regs_0/led_red] [get_bd_ports LED_RED]
@@ -3455,7 +3478,7 @@ proc create_root_design { parentCell } {
   connect_bd_net -net HDMI_2_s2mm_introut_0 [get_bd_pins HDMI_0/In3] [get_bd_pins HDMI_2/s2mm_introut_0]
   connect_bd_net -net HDMI_HPD_1 [get_bd_ports HDMI_HPD] [get_bd_pins xlconcat_0/In1]
   connect_bd_net -net In0_0_1 [get_bd_ports enet0_gmii_rxd] [get_bd_pins PS/enet0_gmii_rxd]
-  connect_bd_net -net Net [get_bd_pins HDMI_0/m_axis_mm2s_aclk] [get_bd_pins HDMI_1/m_axis_mm2s_aclk] [get_bd_pins HDMI_2/m_axi_s2mm_aclk_0] [get_bd_pins HDMI_2/s_axis_s2mm_aclk_0] [get_bd_pins PS/FCLK_CLK2_140M]
+  connect_bd_net -net Net [get_bd_pins HDMI_0/m_axis_mm2s_aclk] [get_bd_pins HDMI_1/m_axis_mm2s_aclk] [get_bd_pins HDMI_2/m_axi_s2mm_aclk_0] [get_bd_pins HDMI_2/s_axis_s2mm_aclk_0] [get_bd_pins PS/FCLK_CLK2_140M] [get_bd_pins fsync_gen_0/clk]
   connect_bd_net -net PL_KEY_1 [get_bd_ports PL_KEY] [get_bd_pins pl_io_0/PL_KEY]
   connect_bd_net -net pl_io_0_key_in [get_bd_pins pl_io_0/key_in] [get_bd_pins xlconcat_2/In0]
   connect_bd_net -net HDMI_2_tx_aud_l [get_bd_pins HDMI_2/tx_aud_l] [get_bd_pins pl_io_0/loop_l]

@@ -51,7 +51,8 @@ set rtl [list \
     $rtl_dir/pl_io/pl_io_core.v \
     $rtl_dir/pl_io/dz_i2s.v \
     $rtl_dir/pl_io/dz_async_fifo.v \
-    $rtl_dir/pl_io/dz_bram_fifo.v]
+    $rtl_dir/pl_io/dz_bram_fifo.v \
+    $rtl_dir/fsync_gen.v]
 set xdc [list $repo/hw/xdc/ebaz4205.xdc]
 
 # --- project -------------------------------------------------------------------

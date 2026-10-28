@@ -710,8 +710,14 @@ MM2S soft reset never finishes, only a reboot recovers (hdmi2 then reports
 "VDMA 1 Configuration Initialization failed"). On _pcm (with the FIFOs) the
 same demo gave short drop-outs that recover. Cause of the drop-outs: the
 display VDMAs run without frame sync, so each address commit (VSIZE write)
-cuts a frame. Planned fix: MM2S fsync from the VTC vsync + the display
-interconnect FIFOs back. Check: AFI read FIFO level at 0xF800800C (HP0) /
+cuts a frame. FIXED in build `fs` (Oct 28): `hw/rtl/fsync_gen.v` (VTC vsync ->
+FCLK2 pulse) drives mm2s_fsync of both display VDMAs (c_use_mm2s_fsync = 1;
+hdmi2 unchanged: CR fsync source 00 = external), the display interconnects have
+their 512-deep packet data FIFO + register slice back (the capture's stays
+off), and the pixel clock is timed for 108 MHz (1080p60 selectable but untimed).
+Verified on the board: 1734 crop changes per display in 30 s -> 0 lock
+losses, 0 underflows, smooth on both monitors; 5 hdmi2 restarts all recover;
+moving 640x480 quarters of a live 1280x960 input: 0 events. Check: AFI read FIFO level at 0xF800800C (HP0) /
 0xF800A00C (HP2) - streaming 0-8, stuck = 0x7A. Your PCB "HDMI0" connector is
 BD HDMI_1 (labels swapped, see VTC sharing). BD HDMI_1 also drops out at
 times with no crop activity: cause open (not the feedback gain).
