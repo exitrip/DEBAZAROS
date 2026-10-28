@@ -18,6 +18,22 @@
 // User I/O lines PL_KEY0-5 + I2S (hw/rtl/pl_io, 2026-10-27):
 //   0x40 RW IO_FUNC     4 bits per line (line n = [4n+3:4n]), see pl_io_core.v
 //   0x44 RW IO_OUT      [5:0] GPIO output values (function 1)
+//                       [9:8] fan J3 / J5 pin 4 opto ON (= pin 4 pulled low);
+//                       [11:10] J3 / J5 pin 4 follows the VTC vsync instead
+//                       (on during the sync pulse: frame sync to other units).
+//                       Reset 0 = optos off. Fan pin 3 inputs: GPIO
+//                       0x4120_0000 ch1 [15] J3, [16] J5 (raw, active low)
+//                       [12] LED_RED pin level (W14; may not be fitted)
+//                       [13] J3 pin 4 = hardware PWM (wins over [8] / [10])
+//   0x90 RW PWM_CTRL    J3 hardware PWM (2026-10-27): [23:0] period in 10 ns
+//                       counts (>= 2; 2000000 = 50 Hz; max 167 ms), [30]
+//                       invert: active = opto OFF = pin 4 high (RC servo
+//                       pulses), [31] restart the period at each vsync start
+//                       (pulses locked to the video frame)
+//   0x94 RW PWM_DUTY    [23:0] active counts at the start of each period
+//                       (taken at the period start: no glitch pulses);
+//                       0 = never active, >= period = always active
+//   0x98 RO PWM_ID      "PWM1" (0x50574D31): software finds the PWM by this
 //   0x48 RO IO_IN       [5:0] line levels (also at 0x4120_0000 ch1 [5:0])
 //   0x4C RW I2S_CTRL    [0] on, [1] DOUT = HDMI_2 audio, [2] HDMI_1 audio = DIN,
 //                       [3] steer the bit clock by the FIFO level
@@ -44,13 +60,31 @@
 //   0x84 RO PCM_FRAMES  48 kHz pacer frames (wraps; HDMI streams pop 1 each)
 //   0x88 RW THRESH01    [24:16] PCM1, [8:0] PCM0 threshold (words)
 //   0x8C RW THRESH2C    [24:16] capture, [8:0] PCM2 threshold
+// Events (page 1 = 0x1000-0x1FFF, its own interrupt `ev_irq`, so a UIO node
+// can own it apart from the ALSA driver; 2026-10-27). Sources (bit n):
+// [0] fan J3 pin 3, [1] fan J5 pin 3, [7:2] user I/O lines 0-5 (pin levels),
+// [8] VTC vsync. Timestamps = EV_TIME at the edge (+3 clocks for the
+// synchronizers; vsync up to 1 more), 10 ns per count, wraps every 42.9 s.
+//   0x1000 RO EV_ID        "EVNT" (0x45564E54)
+//   0x1004 RO EV_TIME      free-running 100 MHz counter
+//   0x1008 RW EV_PEND      [8:0] edges seen (enabled in RISE/FALL); write 1 = clear
+//   0x100C RW EV_IRQ_EN    [8:0] EV_PEND bits -> ev_irq (level high)
+//   0x1010 RW EV_RISE      [8:0] count rising edges
+//   0x1014 RW EV_FALL      [8:0] count falling edges (pin 3 / buttons: active low)
+//   0x1018 RO EV_LEVEL     [8:0] synchronized levels now
+//   0x1020 RO TS_J3        time of the last enabled J3 edge
+//   0x1024 RO TS_J5        time of the last enabled J5 edge
+//   0x1028 RO TS_LINE      time of the last enabled edge of lines 0-5
+//   0x102C RO TS_VSYNC     time of the last vsync start (always)
+//   0x1030 RO DDS0_AT_VS   HDMI_0 DDS phase (32 bit) at the last vsync start
+//   0x1034 RO DDS0_PHASE   HDMI_0 DDS phase now
 //
 // The rx_* inputs live in the receiver clock domain: the receiver copies
 // them into hold registers and toggles rx_pub; this block takes the copy
 // after the toggle passes a 2-FF synchronizer, so no value tears.
 `timescale 1ns / 1ps
 module hdmi_audio_regs #(
-    parameter integer C_S_AXI_ADDR_WIDTH = 8
+    parameter integer C_S_AXI_ADDR_WIDTH = 13
 ) (
     input  wire        s_axi_aclk,
     input  wire        s_axi_aresetn,
@@ -79,6 +113,14 @@ module hdmi_audio_regs #(
     output wire [0:0]  hpd2,           // HDMI_2 hot-plug detect pin (HDMI_HPD_2)
     output reg  [23:0] io_func = 0,
     output reg  [5:0]  io_out = 0,
+    input  wire        vsync,          // VTC vsync (pixel clock; to the pins only)
+    output wire        j3p4,           // FPGA pin levels for the fan optos
+    output wire        j5p4,           // (low = opto on)
+    output wire [0:0]  led_red,
+    input  wire        j3p3,           // fan pin 3 inputs (raw pins)
+    input  wire        j5p3,
+    input  wire [31:0] dds_phase,      // HDMI_0 DDS phase (FCLK0 = s_axi_aclk)
+    output reg         ev_irq = 0,
     input  wire [5:0]  io_in,
     output reg  [31:0] i2s_ctrl = 0,
     output reg  [31:0] i2s_inc = 32'd263882791,
@@ -102,6 +144,26 @@ module hdmi_audio_regs #(
     input  wire [19:0] rx_acr_cts
 );
     assign hpd2 = ~rx_ctrl[2];
+    reg [3:0] fan = 0;
+    reg       led_r = 0, pwm_sel = 0;
+    assign led_red = led_r;
+    // ---- J3 hardware PWM ---------------------------------------------------------
+    reg [31:0] pwm_ctrl = 0;
+    reg [23:0] pwm_duty = 0, pwm_dact = 0, pwm_cnt = 0;
+    reg        pwm_q = 1'b1;               // FPGA pin level (high = opto off)
+    wire       vs_start;                   // from the event synchronizer below
+    wire       pwm_wrap = pwm_cnt >= pwm_ctrl[23:0] - 24'd1;
+    always @(posedge s_axi_aclk) begin
+        if ((pwm_ctrl[31] && vs_start) || pwm_wrap) begin
+            pwm_cnt <= 24'd0;
+            pwm_dact <= pwm_duty;
+        end else
+            pwm_cnt <= pwm_cnt + 24'd1;
+        // active = count < duty; opto on = active (invert: active = opto off)
+        pwm_q <= ~((pwm_cnt < pwm_dact) ^ pwm_ctrl[30]);
+    end
+    assign j3p4 = pwm_sel ? pwm_q : ~(fan[2] ? vsync : fan[0]);
+    assign j5p4 = ~(fan[3] ? vsync : fan[1]);
     assign s_axi_bresp = 2'b00;
     assign s_axi_rresp = 2'b00;
 
@@ -130,6 +192,24 @@ module hdmi_audio_regs #(
     wire [7:0]  irq_st = {xrun, lvl_cond & pcm_run};
     always @(posedge s_axi_aclk) irq <= |(irq_st & irq_en);
 
+    // ---- events (page 1) ---------------------------------------------------------
+    (* ASYNC_REG = "TRUE" *) reg [2:0] ev_s1 = 0, ev_s2 = 0;
+    always @(posedge s_axi_aclk) {ev_s2, ev_s1} <= {ev_s1, {vsync, j5p3, j3p3}};
+    wire [8:0]  ev_lvl = {ev_s2[2], io_in, ev_s2[1:0]};   // io_in is synchronized in pl_io
+    reg  [8:0]  ev_q = 0, ev_pend = 0, ev_en = 0, ev_rise = 0, ev_fall = 0;
+    reg  [31:0] ev_time = 0, ts_j3 = 0, ts_j5 = 0, ts_line = 0, ts_vs = 0, ph_vs = 0;
+    wire [8:0]  ev_hit = (ev_lvl & ~ev_q & ev_rise) | (~ev_lvl & ev_q & ev_fall);
+    assign vs_start = ev_lvl[8] && !ev_q[8];
+    always @(posedge s_axi_aclk) begin
+        ev_q <= ev_lvl;
+        ev_time <= ev_time + 32'd1;
+        if (ev_hit[0]) ts_j3 <= ev_time;
+        if (ev_hit[1]) ts_j5 <= ev_time;
+        if (|ev_hit[7:2]) ts_line <= ev_time;
+        if (vs_start) begin ts_vs <= ev_time; ph_vs <= dds_phase; end
+        ev_irq <= |(ev_pend & ev_en);
+    end
+
     // ---- write channel: address and data together (AXI-Lite) ------------------
     wire wr = s_axi_awvalid && s_axi_wvalid && !s_axi_awready && !s_axi_bvalid;
     integer b;
@@ -137,8 +217,9 @@ module hdmi_audio_regs #(
         if (!s_axi_aresetn) begin
             s_axi_awready <= 0; s_axi_wready <= 0; s_axi_bvalid <= 0;
             tx_ctrl <= 0; tx0_ctrl <= 0; tx_fs_inc <= 0; rx_ctrl <= 0;
-            io_func <= 0; io_out <= 0; i2s_ctrl <= 0; i2s_inc <= 32'd263882791;
+            io_func <= 0; io_out <= 0; fan <= 0; i2s_ctrl <= 0; i2s_inc <= 32'd263882791;
             pcm_wr <= 0; pcm_run <= 0; pcm_flush <= 0; irq_en <= 0; xrun <= 0;
+            led_r <= 0; pwm_sel <= 0; pwm_ctrl <= 0; pwm_duty <= 0; ev_pend <= 0; ev_en <= 0; ev_rise <= 0; ev_fall <= 0;
             thr0 <= 0; thr1 <= 0; thr2 <= 0; thrc <= 0;
         end else begin
             s_axi_awready <= wr;
@@ -146,7 +227,17 @@ module hdmi_audio_regs #(
             pcm_wr <= 0;
             pcm_flush <= 0;
             xrun <= xrun | pcm_xrun;
-            if (wr) begin
+            ev_pend <= ev_pend | ev_hit;
+            if (wr && s_axi_awaddr[12]) begin
+                case (s_axi_awaddr[7:2])
+                    6'h02: ev_pend <= (ev_pend & ~s_axi_wdata[8:0]) | ev_hit;
+                    6'h03: ev_en <= s_axi_wdata[8:0];
+                    6'h04: ev_rise <= s_axi_wdata[8:0];
+                    6'h05: ev_fall <= s_axi_wdata[8:0];
+                    default: ;
+                endcase
+                s_axi_bvalid <= 1'b1;
+            end else if (wr) begin
                 case (s_axi_awaddr[7:2])
                     6'h19: pcm_wr[0] <= 1'b1;
                     6'h1A: pcm_wr[1] <= 1'b1;
@@ -165,10 +256,17 @@ module hdmi_audio_regs #(
                             6'h03: tx0_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             6'h10: if (b < 3) io_func[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             6'h11: if (b == 0) io_out <= s_axi_wdata[5:0];
+                                   else if (b == 1) begin
+                                       fan <= s_axi_wdata[11:8];
+                                       led_r <= s_axi_wdata[12];
+                                       pwm_sel <= s_axi_wdata[13];
+                                   end
                             6'h13: i2s_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             6'h14: i2s_inc[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             6'h18: if (b == 0) pcm_run <= s_axi_wdata[3:0];
                             6'h20: if (b == 0) irq_en <= s_axi_wdata[7:0];
+                            6'h24: pwm_ctrl[8*b +: 8] <= s_axi_wdata[8*b +: 8];
+                            6'h25: if (b < 3) pwm_duty[8*b +: 8] <= s_axi_wdata[8*b +: 8];
                             6'h22: if (b == 0) thr0[7:0] <= s_axi_wdata[7:0];
                                    else if (b == 1) thr0[8] <= s_axi_wdata[8];
                                    else if (b == 2) thr1[7:0] <= s_axi_wdata[23:16];
@@ -192,7 +290,25 @@ module hdmi_audio_regs #(
         end else begin
             s_axi_arready <= s_axi_arvalid && !s_axi_arready && !s_axi_rvalid;
             cap_pop <= 0;
-            if (s_axi_arvalid && !s_axi_arready && !s_axi_rvalid) begin
+            if (s_axi_arvalid && !s_axi_arready && !s_axi_rvalid && s_axi_araddr[12]) begin
+                case (s_axi_araddr[7:2])
+                    6'h00: s_axi_rdata <= 32'h45564E54;
+                    6'h01: s_axi_rdata <= ev_time;
+                    6'h02: s_axi_rdata <= {23'd0, ev_pend};
+                    6'h03: s_axi_rdata <= {23'd0, ev_en};
+                    6'h04: s_axi_rdata <= {23'd0, ev_rise};
+                    6'h05: s_axi_rdata <= {23'd0, ev_fall};
+                    6'h06: s_axi_rdata <= {23'd0, ev_lvl};
+                    6'h08: s_axi_rdata <= ts_j3;
+                    6'h09: s_axi_rdata <= ts_j5;
+                    6'h0A: s_axi_rdata <= ts_line;
+                    6'h0B: s_axi_rdata <= ts_vs;
+                    6'h0C: s_axi_rdata <= ph_vs;
+                    6'h0D: s_axi_rdata <= dds_phase;
+                    default: s_axi_rdata <= 0;
+                endcase
+                s_axi_rvalid <= 1'b1;
+            end else if (s_axi_arvalid && !s_axi_arready && !s_axi_rvalid) begin
                 case (s_axi_araddr[7:2])
                     6'h00: s_axi_rdata <= tx_ctrl;
                     6'h01: s_axi_rdata <= tx_fs_inc;
@@ -205,7 +321,7 @@ module hdmi_audio_regs #(
                     6'h08: s_axi_rdata <= {12'd0, acr_cts};
                     6'h0F: s_axi_rdata <= 32'h48415544;
                     6'h10: s_axi_rdata <= {8'd0, io_func};
-                    6'h11: s_axi_rdata <= {26'd0, io_out};
+                    6'h11: s_axi_rdata <= {18'd0, pwm_sel, led_r, fan, 2'd0, io_out};
                     6'h12: s_axi_rdata <= {26'd0, io_in};
                     6'h13: s_axi_rdata <= i2s_ctrl;
                     6'h14: s_axi_rdata <= i2s_inc;
@@ -219,6 +335,9 @@ module hdmi_audio_regs #(
                     6'h21: s_axi_rdata <= pcm_frames;
                     6'h22: s_axi_rdata <= {7'd0, thr1, 7'd0, thr0};
                     6'h23: s_axi_rdata <= {7'd0, thrc, 7'd0, thr2};
+                    6'h24: s_axi_rdata <= pwm_ctrl;
+                    6'h25: s_axi_rdata <= {8'd0, pwm_duty};
+                    6'h26: s_axi_rdata <= 32'h50574D31;
                     default: s_axi_rdata <= 0;
                 endcase
                 s_axi_rvalid <= 1'b1;

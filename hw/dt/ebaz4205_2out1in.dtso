@@ -1,0 +1,85 @@
+// ebaz4205_2out1in.dtso - device tree overlay for the ebaz4205_2out1in
+// variant (2026-10-27; ROADMAP.md sections 4 and 8). It loads the bitstream
+// into the fpga-full region of the base dtsi and adds generic-uio nodes, so
+// that debazd can wait for PL interrupts (read() on /dev/uioN) instead of
+// polling. dz_map finds the nodes by their address (maps/map0/addr); without
+// the overlay, everything still works through /dev/mem (polling).
+//
+// Build:  dtc -@ -I dts -O dtb -o ebaz4205_2out1in.dtbo hw/dt/ebaz4205_2out1in.dtso
+// Load:   copy <variant>.bit.bin and the .dtbo to /lib/firmware, then
+//         fpgautil -b ebaz4205_2out1in.bit.bin -o ebaz4205_2out1in.dtbo
+//         (firmware-name below must be the .bit.bin file name). Stop capture
+//         with a soft reset first (CLAUDE.md, S2MM wedge).
+// Needs:  bootargs uio_pdrv_genirq.of_id=generic-uio (set in system-user.dtsi);
+//         a bitstream from build `ev` (2026-10-27) or newer for the events node.
+//
+// Interrupts: IRQ_F2P[7:0] = GIC 61-68, IRQ_F2P[15:8] = GIC 84-91; the DT
+// number is GIC - 32. All are level high (4). interrupt-parent comes from the
+// root node (zynq-7000.dtsi: &intc); dtc warns "Missing interrupt-parent"
+// because it cannot see the base tree - expected.
+//
+//   IRQ_F2P  GIC  DT  source
+//   [1]      62   30  HDMI_1 VDMA MM2S (frame)
+//   [3]      64   32  VTC (HDMI_0/v_tc_0): debazd vsync, status bit 13
+//   [4]      65   33  HDMI_0 VDMA MM2S (frame)
+//   [5]      66   34  GPIO 0x4120_0000 (change on ch1: user I/O lines, HPD,
+//                     HDMI_2 lock, fan pin 3 inputs)
+//   [6]      67   35  HDMI_2 capture VDMA S2MM (frame)
+//   [7]      68   36  Linux PCM (hdmi_audio_regs page 0) - for the future
+//                     ALSA driver, NOT a UIO node here
+//   [8]      84   52  events (hdmi_audio_regs page 1, 0x43C6_1000)
+//   [0], [2]          not used (tied 0 / spare)
+//
+// uio_pdrv_genirq masks the line after each interrupt; the program clears
+// the source in the device and then writes 1 to /dev/uioN to unmask it.
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/fpga-full";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			firmware-name = "ebaz4205_2out1in.bit.bin";
+
+			vtc@43c20000 {
+				compatible = "generic-uio";
+				reg = <0x43c20000 0x10000>;
+				interrupts = <0 32 4>;
+			};
+
+			gpio@41200000 {
+				compatible = "generic-uio";
+				reg = <0x41200000 0x1000>;
+				interrupts = <0 34 4>;
+			};
+
+			vdma@43000000 {
+				compatible = "generic-uio";
+				reg = <0x43000000 0x10000>;
+				interrupts = <0 33 4>;
+			};
+
+			vdma@43010000 {
+				compatible = "generic-uio";
+				reg = <0x43010000 0x10000>;
+				interrupts = <0 30 4>;
+			};
+
+			vdma@43020000 {
+				compatible = "generic-uio";
+				reg = <0x43020000 0x10000>;
+				interrupts = <0 35 4>;
+			};
+
+			/* page 1 only: page 0 (0x43C6_0000, PCM + routing) is for
+			 * the ALSA driver */
+			events@43c61000 {
+				compatible = "generic-uio";
+				reg = <0x43c61000 0x1000>;
+				interrupts = <0 52 4>;
+			};
+		};
+	};
+};

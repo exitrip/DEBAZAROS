@@ -53,6 +53,16 @@ int dz_disp_parked(int d);				/* park index, or -1 */
  */
 int dz_vsync_latched(void);
 
+/*
+ * Vsync by interrupt: needs a UIO node with an interrupt for the VTC (the
+ * variant overlay, hw/dt/). dz_vsync_irq() = 1 if there is one.
+ * dz_vsync_wait() enables only the frame-sync source in the VTC IRQ_ENABLE,
+ * clears status bit 13 and waits for the next vsync: 1 = vsync, 0 = timeout,
+ * -1 = no interrupt (poll dz_vsync_latched instead). One caller only.
+ */
+int dz_vsync_irq(void);
+int dz_vsync_wait(int timeout_ms);
+
 /* S2MM (capture) channel registers. 0 or -1. */
 int dz_capture_regs(dz_vdma_regs *r);
 /*

@@ -5,8 +5,10 @@
 #include "dz_hw.h"
 #include "dz_map.h"
 
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 /* MM2S register offsets (PG020) */
 #define MM2S_CR		0x00
@@ -135,6 +137,7 @@ int dz_disp_parked(int d)
 
 #define VTC_ISR		0x04
 #define VTC_FRAME_BIT	(1u << 13)
+#define VTC_IER		0x0C
 
 int dz_vsync_latched(void)
 {
@@ -143,6 +146,41 @@ int dz_vsync_latched(void)
 	if (!r || !(r[VTC_ISR / 4] & VTC_FRAME_BIT))
 		return 0;
 	r[VTC_ISR / 4] = VTC_FRAME_BIT;		/* W1C */
+	return 1;
+}
+
+int dz_vsync_irq(void)
+{
+	return dz_regs(HW_HDMI_0_V_TC_0_BASE) && dz_regs_uio_fd(HW_HDMI_0_V_TC_0_BASE) >= 0;
+}
+
+int dz_vsync_wait(int timeout_ms)
+{
+	static int armed;
+	volatile uint32_t *r = dz_regs(HW_HDMI_0_V_TC_0_BASE);
+	int fd = dz_regs_uio_fd(HW_HDMI_0_V_TC_0_BASE);
+	uint32_t one = 1, count;
+	struct pollfd p = { .events = POLLIN };
+	int rc;
+
+	if (!r || fd < 0)
+		return -1;
+	if (!armed) {
+		r[VTC_IER / 4] = VTC_FRAME_BIT;	/* only this source drives the line */
+		armed = 1;
+	}
+	r[VTC_ISR / 4] = VTC_FRAME_BIT;		/* W1C: wait for the NEXT vsync */
+	if (write(fd, &one, sizeof(one)) != sizeof(one))	/* unmask (uio_pdrv_genirq) */
+		return -1;
+	p.fd = fd;
+	rc = poll(&p, 1, timeout_ms);
+	if (rc < 0)
+		return -1;
+	if (rc == 0)
+		return 0;
+	if (read(fd, &count, sizeof(count)) != sizeof(count))
+		return -1;
+	r[VTC_ISR / 4] = VTC_FRAME_BIT;
 	return 1;
 }
 

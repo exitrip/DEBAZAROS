@@ -203,6 +203,31 @@ check lfo-bad      "matches no field"              q /lfo/2/target nothing
 q /lfo/reset >/dev/null
 check lfo-reset    "/lfo/0 0 0"                    q /lfo/0
 
+# fan PWM (pwm.c): J3 = hardware registers (simulated), J5 = software edges;
+# other IO_OUT bits survive the thread
+q /led/red 1 >/dev/null
+check pwm-hw-start  "/fan/3/pwm 1000 0.25"          q /fan/3/pwm 1000 0.25
+check pwm-hw-period "/value \"/fan/3/pwm/period\" 100000" q /fan/3/pwm/period
+check pwm-hw-duty   "/value \"/fan/3/pwm/duty\" 25000"   q /fan/3/pwm/duty
+check pwm-hw-on     "/value \"/fan/3/pwm/on\" 1"         q /fan/3/pwm/on
+check pwm-hw-servo  "/fan/3/pwm 50 0.925"           q /fan/3/servo 0.5
+check pwm-hw-pulse  "/value \"/fan/3/pwm/duty\" 150000"  q /fan/3/pwm/duty
+check pwm-hw-inv    "/value \"/fan/3/pwm/invert\" 1"     q /fan/3/pwm/invert
+check pwm-hw-slow   "/fan/3/pwm 2 0.5"              q /fan/3/pwm 2 0.5
+check pwm-hw-off    "/value \"/fan/3/pwm/on\" 0"         q /fan/3/pwm/on
+q /fan/3/pwm 0 >/dev/null
+check pwm-sw-start  "/fan/5/pwm 50 0.25"            q /fan/5/pwm 50 0.25
+q /fan/pwm/stats >/dev/null
+sleep 0.5
+check pwm-sw-edges  "/fan/pwm/stats"                q /fan/pwm/stats
+check pwm-led       "/value \"/led/red\" 1"         q /led/red
+check pwm-sw-servo  "/fan/5/pwm 50 0.925"           q /fan/5/servo 0.5
+check pwm-sw-stop   "/fan/5/pwm 0"                  q /fan/5/pwm 0
+check pwm-sw-off    "/value \"/fan/5/out\" 0"       q /fan/5/out
+check pwm-bad-conn  "fan connector is 3 or 5"       q /fan/4/pwm 50 0.5
+check pwm-bad-hz    "/fan/<n>/pwm hz"               q /fan/5/pwm 5000 0.5
+q /led/red 0 >/dev/null
+
 kill $PID
 wait $PID 2>/dev/null
 if [ $FAIL -ne 0 ]; then

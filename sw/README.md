@@ -154,6 +154,12 @@ Full list in `lib/dz_draw.h`. Painting operations (Oct 2026):
 | `/draw/<s>/alpha` | 0..1 for later operations |
 | `/surface/<s>/grab` | [src slot] — copy the real slot content (live capture = 4, a playing movie) into the painting buffer: freeze it, then paint on it |
 | `/surface/<s>/peek` | x y — reply `/pixel s x y r g b` |
+| `/surface/<s>/save` | name — the painting buffer as `name.png` in `/home/ebaz/img`, encoded by a background ffmpeg (ready about 1 s later; `x.ppm` = PPM at once) |
+| `/img/<s>/load` | name [x y w h] — draw an image file back (scaled; whole frame by default) |
+
+The web app's Paint page has these as the **Image** card: "save as" (a time
+stamp name by default) and "recall" (the board's images, newest first; Load
+also updates the browser preview). Saved images show in Media too.
 
 Plus the older fills, gradients, images and movies (`lib/dz_draw.h`).
 Every operation stops a movie that plays into the same slot.
@@ -315,6 +321,45 @@ Names: in out scl sda sclk mosi miso cs0 cs1 txd rxd bclk lrclk dout din.
 The Linux devices need the PetaLinux image with the 2026-10-27 device tree.
 Do not press a button whose line is an output driving high (it shorts the
 output); use series resistors on add-on boards.
+
+## Fan connectors J3 / J5: inputs, outputs, PWM
+
+Needs the `fan` bitstream (2026-10-27) or newer. Pin 3 = input (active low),
+pin 4 = output through an opto (inverted, open collector, **pulled up to 12
+V on the board**: replace the pull-up before a servo or 5 V logic goes on it).
+The optos limit the rate to a few kHz (ROADMAP.md section 11).
+
+```sh
+dzctl /fan/3/in                   # pin 3 level (0 = pulled low outside)
+dzctl /fan/3/out 1                # opto on: pin 4 low
+dzctl /fan/3/vsync 1              # pin 4 = the vsync pulse (frame sync out)
+dzctl /fan/3/pwm 100 0.3          # software PWM: 100 Hz, opto on 30 % of the time
+dzctl /fan/3/duty 0.6             # new duty, same frequency and phase
+dzctl /fan/5/servo 0.5            # 50 Hz, pin 4 high for 1.5 ms (1..2 ms range)
+dzctl /fan/5/servo 0.5 0.6 2.4    # same, 0.6..2.4 ms range
+dzctl /fan/3/pwm 0                # stop, opto off
+dzctl /fan/pwm/stats              # max / mean lateness of the edges (us), edges
+dzctl /lfo/0/target "/fan/3/duty \$0"   # an LFO drives the duty (range 0..1)
+```
+
+**J3 = hardware PWM** (bitstream `pwm`, 2026-10-27, found by its ID): 6 Hz to
+100 kHz, exact to 10 ns, no CPU, glitch-free duty changes (taken at each
+period start). Below 6 Hz, with an older bitstream, and always on J5, the
+same commands use software. **J5 keeps the vsync output** (`/fan/5/vsync 1`)
+for frame sync to other units. Raw J3 fields:
+
+```sh
+dzctl /fan/3/pwm/lock 1           # restart the J3 period at each vsync start:
+dzctl /fan/3/pwm 120 0.1          #   e.g. 2 strobe pulses per 60 Hz frame, in phase
+dzctl /fan/3/pwm/period /fan/3/pwm/duty /fan/3/pwm/invert /fan/3/pwm/on
+```
+
+The software PWM: a real-time thread in debazd (priority 55, below the
+vsync thread). Up to 200 Hz it spins for the last 100 us before each edge
+(a few us of jitter, about 1 % CPU per channel at 50 Hz); above that it only
+sleeps (50-500 us of jitter). Run debazd as root for SCHED_FIFO.
+`/fan/pwm/stats` shows the result on the board. A write to `/fan/<n>/out`
+while the PWM runs lasts only to the next edge.
 
 ## Buttons and GPIO actions
 

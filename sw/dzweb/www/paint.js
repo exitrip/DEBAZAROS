@@ -2,7 +2,7 @@
 // coordinates (1280x720) and shows a local preview of what you draw; effects
 // that run on the board (grab, transforms) show on the display only.
 import * as net from "./net.js";
-import { h, card, row, hexToRgb, store } from "./ui.js";
+import { h, card, row, hexToRgb, store, toast } from "./ui.js";
 
 const W = 1280, H = 720;
 const MAXPTS = 13; // stroke: 5 fixed args + 13 points = 31 args (< 32)
@@ -341,6 +341,44 @@ export function init(root) {
   const fade = h("input", { type: "number", min: 0, max: 1, step: 0.05, value: 0.2 });
   const act = (label, fn) => h("button", { onclick: fn }, label);
 
+  // save / recall: the slot's paint buffer as <name>.png in /home/ebaz/img
+  // (debazd encodes it in the background, about 1 s), back with /img/<slot>/load
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = () => { const d = new Date();
+    return `paint-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-` +
+      `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
+  const clean = (n) => n.replace(/\.png$/i, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 92);
+  const saveName = h("input", { type: "text", value: stamp(), style: "width:210px",
+    title: "file name: A-Z a-z 0-9 . _ - (.png is added)" });
+  const imgSel = h("select", { title: "images on the board (/home/ebaz/img), newest first", style: "max-width:260px" });
+  const listImages = async (pick) => {
+    try {
+      const r = await fetch(`${net.httpBase()}/media`, { cache: "no-store" });
+      const files = (await r.json()).img.sort((a, b) => b.mtime - a.mtime);
+      imgSel.replaceChildren(...(files.length ? files.map((f) =>
+        h("option", { value: f.name, selected: f.name === pick }, f.name)) : [h("option", { value: "" }, "no images")]));
+    } catch {
+      imgSel.replaceChildren(h("option", { value: "" }, "list not available"));
+    }
+  };
+  const saveImage = () => {
+    const n = clean(saveName.value) || stamp();
+    net.msg(`/surface/${s.slot}/save`, n);
+    toast(`saving slot ${s.slot} as ${n}.png`);
+    setTimeout(() => listImages(`${n}.png`), 2500); // the encode takes about 1 s
+    saveName.value = stamp();
+  };
+  const loadImage = () => {
+    const n = imgSel.value;
+    if (!n) return;
+    net.msg(`/img/${s.slot}/load`, n);
+    const im = new Image(); // preview; PPM does not decode in a browser (board only)
+    im.crossOrigin = "anonymous";
+    im.onload = () => prevAll(() => cx.drawImage(im, 0, 0, W, H));
+    im.src = `${net.httpBase()}/media/img/${encodeURIComponent(n)}`;
+  };
+  listImages();
+
   const left = h("div.paint-left", {},
       h("div.row", {}, h("label", {}, "draw into"), slot,
         act("Show on display 0", () => net.msg("/disp/0/show", s.slot)),
@@ -393,6 +431,11 @@ export function init(root) {
           cx.globalAlpha = Number(fade.value); cx.globalCompositeOperation = "source-over"; cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H); })),
         row(null, act("Grab live input", () => net.msg(`/surface/${s.slot}/grab`, 4))),
         h("p.hint", {}, "Grab copies the live HDMI input into this slot: then paint on the frozen frame.")),
+      card("Image",
+        row("save as", saveName, act("Save", saveImage)),
+        row("recall", imgSel, act("Load", loadImage), act("↻", () => listImages(imgSel.value))),
+        h("p.hint", {}, "Save writes this slot's paint buffer (what you drew, also a grab) as a PNG on the board; " +
+          "Load draws a saved image back into the slot, scaled to the full frame. Images also show in Media.")),
       card("Fill",
         row(null,
           act("Solid", () => { net.msg(`${D()}/solid`, ...rgb());

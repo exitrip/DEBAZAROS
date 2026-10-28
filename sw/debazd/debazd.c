@@ -381,7 +381,7 @@ static void handle(dz_msg *m, void *ctx)
 		}
 	}
 	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || io_dispatch(m) ||
-	    audio_dispatch(m))
+	    audio_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
 		int bit, n0 = 0, press = 0;
@@ -578,6 +578,7 @@ int main(int argc, char **argv)
 	if (disp_init(sim) < 0)
 		fprintf(stderr, "debazd: no vsync thread\n");
 	lfo_init();
+	pwm_init();
 
 	next = now_ms();
 	{
@@ -627,6 +628,7 @@ int main(int argc, char **argv)
 	}
 	}
 	fprintf(stderr, "debazd: stopping\n");
+	pwm_close();
 	disp_close();
 	dz_draw_close();
 	dz_unmap_all();

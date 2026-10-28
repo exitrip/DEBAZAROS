@@ -60,6 +60,8 @@ static const uint32_t known_bases[] = {
 #endif
 #ifdef HW_HDMI_AUDIO_REGS_0_BASE
 	HW_HDMI_AUDIO_REGS_0_BASE,
+	HW_HDMI_AUDIO_REGS_0_BASE + 0x1000,	/* events page (own probe: older
+						 * bitstreams alias it onto page 0) */
 #endif
 };
 
@@ -69,6 +71,7 @@ static const uint32_t known_bases[] = {
 static const struct { uint32_t base, off, id; } probed[] = {
 #ifdef HW_HDMI_AUDIO_REGS_0_BASE
 	{ HW_HDMI_AUDIO_REGS_0_BASE, 0x3C, 0x48415544 },	/* "HAUD" */
+	{ HW_HDMI_AUDIO_REGS_0_BASE + 0x1000, 0x00, 0x45564E54 },	/* "EVNT" */
 #endif
 	{ 0, 0, 0 }
 };
@@ -78,6 +81,7 @@ typedef struct {
 	uint32_t           base;
 	volatile uint32_t *map;
 	int                fd;	/* UIO fd, -1 for /dev/mem */
+	size_t             len;	/* mapped length (a UIO node can be smaller than 64K) */
 	int                absent;	/* probe failed: not in the loaded bitstream */
 	char               via[16];
 } block;
@@ -102,15 +106,16 @@ static int probe(block *b)
 			break;
 	if (!probed[k].base)
 		return 0;
+	const uint32_t off = probed[k].off, id = probed[k].id;	/* not live across the longjmp */
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = probe_sigbus;
 	sigaction(SIGBUS, &sa, &old);
 	if (sigsetjmp(probe_jmp, 1) == 0)
-		v = b->map[probed[k].off / 4];
+		v = b->map[off / 4];
 	else
 		bad = 1;
 	sigaction(SIGBUS, &old, NULL);
-	if (bad || v != probed[k].id) {
+	if (bad || v != id) {
 		fprintf(stderr, "dz_map: block 0x%08X not in this bitstream (%s)\n",
 			(unsigned)b->base, bad ? "bus error" : "wrong ID");
 		return -1;
@@ -142,8 +147,9 @@ static int mem_open(void)
 	return mem_fd;
 }
 
-/* UIO node whose map0 address is base: open it, return fd or -1. */
-static int uio_find(uint32_t base, char *name, size_t nlen)
+/* UIO node whose map0 address is base: open it, return fd or -1; *len =
+ * the map size, at most BLOCK_MAP. */
+static int uio_find(uint32_t base, char *name, size_t nlen, size_t *len)
 {
 	DIR *d = opendir("/sys/class/uio");
 	struct dirent *e;
@@ -167,6 +173,18 @@ static int uio_find(uint32_t base, char *name, size_t nlen)
 		fclose(fp);
 		if (strtoul(buf, NULL, 0) != base)
 			continue;
+		*len = BLOCK_MAP;
+		snprintf(p, sizeof(p), "/sys/class/uio/%s/maps/map0/size", e->d_name);
+		fp = fopen(p, "r");
+		if (fp) {
+			if (fgets(buf, sizeof(buf), fp)) {
+				unsigned long sz = strtoul(buf, NULL, 0);
+
+				if (sz && sz < BLOCK_MAP)
+					*len = sz;
+			}
+			fclose(fp);
+		}
 		snprintf(p, sizeof(p), "/dev/%s", e->d_name);
 		fd = open(p, O_RDWR | O_SYNC);
 		if (fd >= 0)
@@ -197,6 +215,7 @@ volatile uint32_t *dz_regs(uint32_t base)
 
 	b->base = base;
 	b->fd = -1;
+	b->len = BLOCK_MAP;
 	if (sim) {
 		b->map = calloc(BLOCK_MAP / 4, sizeof(uint32_t));
 		snprintf(b->via, sizeof(b->via), "sim");
@@ -206,13 +225,13 @@ volatile uint32_t *dz_regs(uint32_t base)
 		return b->map;
 	}
 
-	b->fd = uio_find(base, b->via, sizeof(b->via));
+	b->fd = uio_find(base, b->via, sizeof(b->via), &b->len);
 	if (b->fd >= 0) {
-		m = mmap(NULL, BLOCK_MAP, PROT_READ | PROT_WRITE, MAP_SHARED, b->fd, 0);
+		m = mmap(NULL, b->len, PROT_READ | PROT_WRITE, MAP_SHARED, b->fd, 0);
 		if (m != MAP_FAILED) {
 			b->map = m;
 			if (probe(b) < 0) {
-				munmap(m, BLOCK_MAP);
+				munmap(m, b->len);
 				close(b->fd);
 				b->fd = -1;
 				b->map = NULL;
@@ -222,6 +241,7 @@ volatile uint32_t *dz_regs(uint32_t base)
 		}
 		close(b->fd);
 		b->fd = -1;
+		b->len = BLOCK_MAP;
 	}
 
 	if (mem_open() < 0)
@@ -475,7 +495,7 @@ void dz_unmap_all(void)
 			if (sim)
 				free((void *)b->map);
 			else
-				munmap((void *)b->map, BLOCK_MAP);
+				munmap((void *)b->map, b->len);
 		}
 		if (b->fd >= 0)
 			close(b->fd);

@@ -28,6 +28,7 @@
 #include "dz_hw.h"
 #include "dz_map.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -38,6 +39,7 @@
 #define MIX	HW_HDMI_0_MIXERMATRIX_MIXER_0_BASE
 #ifdef HW_HDMI_AUDIO_REGS_0_BASE
 #define AUD	HW_HDMI_AUDIO_REGS_0_BASE
+#define EVT	(HW_HDMI_AUDIO_REGS_0_BASE + 0x1000)	/* events page */
 #endif
 #define DDS0	HW_DDS_AXI_INTERFACE_0_BASE
 #define DDS1	HW_DDS_AXI_INTERFACE_1_BASE
@@ -83,6 +85,8 @@ static const dz_field static_fields[] = {
 	{ "/io/key/3",          IO, CH1,  3, 1, DZ_BOOL, DZ_F_RO, "PL_KEY3, 0 = pressed" },
 	{ "/hdmi/0/hpd",        IO, CH1,  8, 1, DZ_BOOL, DZ_F_RO, "HDMI_0 hot plug detect" },
 	{ "/hdmi/1/hpd",        IO, CH1,  9, 1, DZ_BOOL, DZ_F_RO, "HDMI_1 hot plug detect" },
+	{ "/fan/3/in",          IO, CH1, 15, 1, DZ_BOOL, DZ_F_RO, "J3 pin 3 level (0 = pulled low outside; active low)" },
+	{ "/fan/5/in",          IO, CH1, 16, 1, DZ_BOOL, DZ_F_RO, "J5 pin 3 level (0 = pulled low outside; active low)" },
 	{ "/capture/plocked",   IO, CH1, 10, 1, DZ_BOOL, DZ_F_RO, "dvi2rgb pLocked (MMCM lock, not alignment)" },
 	{ "/capture/alocked",   IO, CH1, 11, 1, DZ_BOOL, DZ_F_RO, "dvi2rgb aLocked" },
 	{ "/capture/overflow",  IO, CH1, 12, 1, DZ_BOOL, DZ_F_RO, "v_vid_in_axi4s FIFO overflow" },
@@ -135,6 +139,33 @@ static const dz_field static_fields[] = {
 	{ "/i2s/inc",         AUD, 0x50, 0, 32,  DZ_RAW,  0, "bit clock NCO: 2*64*fs*2^32/100 MHz (48 kHz: 263882791)" },
 	{ "/i2s/level",       AUD, 0x54, 0, 4,   DZ_RAW,  DZ_F_RO, "I2S TX FIFO level (0-8)" },
 	{ "/i2s/underruns",   AUD, 0x54, 8, 8,   DZ_RAW,  DZ_F_RO, "I2S TX frames without a sample (incl. pre-fill)" },
+	/* fan connectors J3/J5 (opto level shifters, 12 V side; gateware 2026-10-27) */
+	{ "/fan/3/out",       AUD, 0x44, 8, 1,   DZ_BOOL, 0, "J3 pin 4 opto on (pin 4 pulled to ground)" },
+	{ "/fan/5/out",       AUD, 0x44, 9, 1,   DZ_BOOL, 0, "J5 pin 4 opto on (pin 4 pulled to ground)" },
+	{ "/fan/3/vsync",     AUD, 0x44, 10, 1,  DZ_BOOL, 0, "J3 pin 4 follows the vsync pulse (frame sync out)" },
+	{ "/fan/5/vsync",     AUD, 0x44, 11, 1,  DZ_BOOL, 0, "J5 pin 4 follows the vsync pulse (frame sync out)" },
+	/* J3 hardware PWM (gateware build pwm 2026-10-27; /fan/3/pwm in pwm.c
+	 * sets these from Hz and duty) */
+	{ "/fan/3/pwm/on",     AUD, 0x44, 13, 1, DZ_BOOL, 0, "J3 pin 4 = hardware PWM (wins over /fan/3/out and /fan/3/vsync)" },
+	{ "/fan/3/pwm/period", AUD, 0x90, 0, 24, DZ_RAW,  0, "period in 10 ns counts (2000000 = 50 Hz)" },
+	{ "/fan/3/pwm/invert", AUD, 0x90, 30, 1, DZ_BOOL, 0, "active part = opto off = pin 4 high (servo pulses)" },
+	{ "/fan/3/pwm/lock",   AUD, 0x90, 31, 1, DZ_BOOL, 0, "restart the period at each vsync start" },
+	{ "/fan/3/pwm/duty",   AUD, 0x94, 0, 24, DZ_RAW,  0, "active counts at the start of each period" },
+	{ "/led/red",         AUD, 0x44, 12, 1,  DZ_BOOL, 0, "LED_RED pin W14 level (the LED may not be fitted)" },
+	/* events (page 0x1000; gateware 2026-10-27). Bits: [0] J3 pin 3, [1] J5
+	 * pin 3, [7:2] user I/O lines 0-5, [8] vsync. Times: 100 MHz counts */
+	{ "/ev/rise",         EVT, 0x10, 0, 9,   DZ_RAW,  0, "sources whose rising edges count as events" },
+	{ "/ev/fall",         EVT, 0x14, 0, 9,   DZ_RAW,  0, "sources whose falling edges count (pin 3 / buttons are active low)" },
+	{ "/ev/irq_en",       EVT, 0x0C, 0, 9,   DZ_RAW,  0, "pending events that raise the event interrupt (GIC 84)" },
+	{ "/ev/pend",         EVT, 0x08, 0, 9,   DZ_RAW,  DZ_F_RO, "events seen (write 1 to 0x43C6_1008 to clear)" },
+	{ "/ev/level",        EVT, 0x18, 0, 9,   DZ_RAW,  DZ_F_RO, "synchronized source levels now" },
+	{ "/ev/time",         EVT, 0x04, 0, 32,  DZ_RAW,  DZ_F_RO, "free-running 100 MHz counter (wraps every 42.9 s)" },
+	{ "/ev/ts/j3",        EVT, 0x20, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last enabled J3 pin 3 edge" },
+	{ "/ev/ts/j5",        EVT, 0x24, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last enabled J5 pin 3 edge" },
+	{ "/ev/ts/line",      EVT, 0x28, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last enabled edge of lines 0-5" },
+	{ "/ev/ts/vsync",     EVT, 0x2C, 0, 32,  DZ_RAW,  DZ_F_RO, "time of the last vsync start" },
+	{ "/dds/0/phase",     EVT, 0x34, 0, 32,  DZ_RAW,  DZ_F_RO, "HDMI_0 DDS phase now (2^32 = one cycle)" },
+	{ "/dds/0/phase_vs",  EVT, 0x30, 0, 32,  DZ_RAW,  DZ_F_RO, "HDMI_0 DDS phase at the last vsync start" },
 	/* Linux PCM (ALSA card; gateware build pcm 2026-10-27): the kernel driver
 	 * owns run/data/IRQ; these are routing + read-only status for debugging */
 	{ "/pcm/to_hdmi1",    AUD, 0x4C, 5, 1,   DZ_BOOL, 0, "HDMI_1 audio = Linux PCM 1 (wins over the other sources)" },
@@ -244,6 +275,11 @@ int dz_field_read(const dz_field *f, uint32_t *raw)
 	return 0;
 }
 
+/* One lock for every read-modify-write: fields share registers (IO_OUT holds
+ * GPIO outputs, fan bits and LED_RED), and debazd writes them from more than
+ * one thread (the fan PWM thread, the main loop). */
+static pthread_mutex_t rmw_mu = PTHREAD_MUTEX_INITIALIZER;
+
 int dz_field_write(const dz_field *f, uint32_t raw)
 {
 	volatile uint32_t *r = dz_regs(f->base);
@@ -254,10 +290,12 @@ int dz_field_write(const dz_field *f, uint32_t raw)
 	if (f->flags & DZ_F_RO)
 		return -2;
 	m = dz_field_mask(f) << f->lo;
+	pthread_mutex_lock(&rmw_mu);
 	v = (r[f->off / 4] & ~m) | ((raw & dz_field_mask(f)) << f->lo);
 	if (f->flags & DZ_F_DDS)
 		v |= 0x80000000u;
 	r[f->off / 4] = v;
+	pthread_mutex_unlock(&rmw_mu);
 	return 0;
 }
 

@@ -20,7 +20,7 @@ WWW     ?= /home/ebaz/www
 LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h)
-BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe $(OUT)/dzweb
+BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay
 SCRIPTS := tools/capstat.sh tools/plreload.sh tools/keytest.sh
 
 all: $(BINS) hdmi2
@@ -42,16 +42,19 @@ $(OUT)/debazd: $(DZDOBJ) $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ -lm -lpthread $(LDLIBS)
 
 $(OUT)/dzctl: $(OBJ)/dzctl/dzctl.o $(OUT)/libdz.a
-	$(CC) $(CFLAGS) -o $@ $^ -lm $(LDLIBS)
+	$(CC) $(CFLAGS) -o $@ $^ -lm -lpthread $(LDLIBS)
 
 $(OUT)/dzweb: $(OBJ)/dzweb/dzweb.o $(OUT)/libdz.a
-	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CFLAGS) -o $@ $^ -lpthread $(LDLIBS)
 
 $(OUT)/vsync_probe: $(OBJ)/tools/vsync_probe.o $(OUT)/libdz.a
-	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CFLAGS) -o $@ $^ -lpthread $(LDLIBS)
+
+$(OUT)/pcmplay: $(OBJ)/tools/pcmplay.o $(OUT)/libdz.a
+	$(CC) $(CFLAGS) -o $@ $^ -lm -lpthread $(LDLIBS)
 
 $(OUT)/fbfeed: $(OBJ)/fbfeed/fbfeed.o $(OUT)/libdz.a
-	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CFLAGS) -o $@ $^ -lpthread $(LDLIBS)
 
 # Copy, then move: overwriting a running binary in place fails (ETXTBSY).
 install: all

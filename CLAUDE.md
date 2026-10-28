@@ -18,7 +18,7 @@ Never hand-edit `.bd`/`.xci` files; treat `Vivado/` as regenerate-only via Vivad
 
 **Tcl flow (Oct 2026) — `hw/README.md`:** `hw/bd/<variant>.tcl` is now the BD
 source of truth (`ebaz4205_2out1in` = the live 2-out/1-in design).
-`hw/build.tcl <variant> project|build` regenerates `build/<variant>/` (git-ignored,
+`hw/build.tcl <variant> project|build [outdir]` regenerates `build/<variant>/` (git-ignored,
 deleted every run; normal GUI-openable .xpr) and writes .bit/.bit.bin/.xsa +
 `hw_map.h` (address map named by full hierarchy path). After any GUI BD edit:
 `hw/export_bd.tcl <variant>` (or `write_bd_tcl -force -include_layout`) → commit
@@ -36,6 +36,9 @@ batch scripts open a copy or the generated project read-write. Full Tcl build vs
 live impl_2: same util (LUT +1, FF −12, BRAM/DSP equal), same timing character
 (all fails in PXL_CLK_O @10 ns over-constraint + FCLK0→PXL GPIO crossings).
 Export round-trip is clean except assign_bd_address line ORDER (nondeterministic).
+Since Oct 27 2026 build.tcl runs phys_opt + post-route phys_opt (AggressiveExplore):
+at ~95 % slices FCLK2 has ~0.1 ns inside the capture VDMA S2MM datamover and
+the default flow failed it once (-0.39 ns). Always check FCLK2 in the report.
 
 ## Folder map (after the cleanup of Oct 25 2026)
 
@@ -249,7 +252,23 @@ U19/V20/T19/U20 (J7/DATA3). The other two GPIO lines = J9/DATA1 pins 19/17 =
 FPGA K17/E19. They are GPIO, not audio: the BD/XDC ports are still named
 `AUDIO_L/R` from an old PCB label. From the netlists (Oct 26): PL_KEY4 = K17
 (SW6, MRCC clock-capable), PL_KEY5 = E19 (SW5); 10 kΩ pull-ups, no capacitors
-(fit for MHz I2C/SPI/UART/I2S via EMIO). Not yet checked by pressing.
+(fit for MHz I2C/SPI/UART/I2S via EMIO). Pressed 2026-10-28 (event block, `_pwm`
+bitstream): PL_KEY0-3 give events on lines 0-3 in order; the 5th/6th press gave
+NOTHING on lines 4/5 (K17/E19) - SW5/SW6 fitted? mapping right? OPEN.
+**Fan connectors as I/O (Oct 27 2026, build `fan`, NOT yet on hardware):**
+BD ports J3P3_INPUT/J5P3_INPUT -> GPIO 0x4120_0000 ch1 [15]/[16] (raw, active
+low; the GPIO change interrupt GIC 66 covers them), J3P4_OUTPUT/J5P4_OUTPUT
+<- hdmi_audio_regs IO_OUT (0x43C6_0044) [9:8] opto on (= pin 4 low), [11:10]
+pin 4 = VTC vsync pulse (frame sync to other units). Reset = optos off.
+debazd `/fan/{3,5}/{in,out,vsync}`. **J3 hardware PWM (build `pwm`, Oct 27
+2026, simulated only):** IO_OUT [13] selects it; 0x90 PWM_CTRL ([23:0] period
+in 10 ns counts, [30] invert = active pin 4 high, [31] restart at each vsync
+start), 0x94 PWM_DUTY (active counts, taken at the period start), 0x98 ID
+"PWM1". J5 = level / vsync (+ software PWM). `sw/debazd/pwm.c`: `/fan/<n>/pwm
+hz duty`, `/fan/<n>/duty`, `/fan/<n>/servo pos [min max]` use the hardware on
+J3 (>= 6 Hz, if the ID reads) and an RT software thread otherwise
+(`/fan/pwm/stats`; spins the last 100 us at <= 200 Hz). dz_field_write now holds one mutex (fields share registers; the PWM
+thread writes IO_OUT).
 **Function select (Oct 27 2026, branch hdmi-audio, simulated — NOT yet on
 hardware):** `hw/rtl/pl_io/` (module ref `pl_io_0`, IOBUFs; the BD ports
 PL_KEY/AUDIO_L/AUDIO_R are now inout, names unchanged) gives each line one of:
@@ -303,8 +322,22 @@ hardcoded offsets were reverted to stock relative macros. Do not reintroduce
 absolute offsets in that driver.
 
 ### IRQ chain
-`HDMI_0` v_tc irq + vdma mm2s_introut (+ In3/In4/In5 spares) → concat → `HDMI_1` →
-concat → PS IRQ_F2P.
+`HDMI_0` concat (In0 v_tc, In1 VDMA, In2 GPIO, In3 capture S2MM, In4 PCM, In5
+events) → `HDMI_1` concat (In0 tied 0, In1 HDMI_1 VDMA, In2 spare, In3 = HDMI_0's
+6 bits) → PS IRQ_F2P[8:0]. IRQ_F2P[7:0] = GIC 61-68, [8] = GIC 84; DT number =
+GIC − 32: VTC <0 32 4>, GPIO 34, HDMI_0 VDMA 33, HDMI_1 VDMA 30, capture 35, PCM
+36, events 52. Table + generic-uio nodes: overlay `hw/dt/ebaz4205_2out1in.dtso`
+(dtc: `~/Xilinx/Vitis/2022.2/bin/dtc -@`). Linux used none of them until then:
+debazd polled. With the overlay, debazd's vsync thread sleeps on the VTC
+interrupt (`dz_vsync_wait`, sets VTC IRQ_ENABLE = bit 13 only), else it polls.
+**Events (build `ev`, Oct 27 2026, simulated only):** hdmi_audio_regs page 1
+(0x43C6_1000, own 4K for a UIO node; ID "EVNT"; dz_map probes it, since older
+bitstreams alias page 1 onto page 0): sources [0] J3 pin 3, [1] J5 pin 3, [7:2]
+user I/O lines, [8] vsync; RISE/FALL enables, PEND (W1C), IRQ_EN, 100 MHz
+EV_TIME, timestamps of the last J3 / J5 / line / vsync edge, HDMI_0 DDS phase
+now and at the last vsync. Map in hdmi_audio_regs.v; debazd `/ev/...`,
+`/dds/0/phase`, `/dds/0/phase_vs`. LED_RED (W14, maybe not fitted) = IO_OUT
+[12], `/led/red`.
 
 ### Address map (PS view)
 (verified against live BD, Aug 2026 — several old entries are GONE; poking a
@@ -784,9 +817,11 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
 4. **Resource budget** (impl_2, Jan 2026): slices 94% (binding), DSP 69/80, LUT 65%,
    FF 54% (19.2k: v_tc ×2 ≈ 6.5k, mixer reg file ≈ 4k incl. a redundant duplicate
    output-register stage on the same clock — REMOVED Oct 26 2026, VDMA ×2 ≈ 2.8k), BRAM 55%. Savings queue:
-   shared VTC (above); delete dead SDR clock tree (`PS/clk_wiz_128M` PLL,
-   `proc_sys_reset_128M`, `DivideBy2_50MHz`, `rst_ps7_0_64M` — outputs unconsumed at top;
-   KEEP `DivideBy4_25MHz` = ethernet PHY clock on U18); slim mixer register file;
+   shared VTC (above); the dead SDR clock tree (`PS/clk_wiz_128M` etc.) is NOT in
+   the Tcl BD any more (only `DivideBy4_25MHz` = ethernet PHY clock on U18 is left;
+   FCLK1 64 MHz is unused); the three VDMA memory interconnects lost their
+   packet data FIFO + register slice (Oct 27 2026, build `fan`: the VDMA line
+   buffers / S2MM store-and-forward and the HP FIFOs do that job); slim mixer register file;
    GPIO/interconnect consolidation (addresses change → update devmem scripts).
    Do NOT trim VDMA fstores (third-port constraint). DSP relief = time-multiplexed
    mixer MACs at 2× pixel clock (45→~23 DSPs, also fixes timing ceiling).

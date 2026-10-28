@@ -42,4 +42,9 @@ int  io_dispatch(const dz_msg *m);	/* 0 = not /io/pin or /io/pins */
 int  audio_dispatch(const dz_msg *m);	/* 0 = not an /audio/fs or /capture/replug address */
 void audio_tick(long ms);		/* from the monitor loop */
 
+/* ---- pwm.c: software PWM / servo pulses on the fan pin 4 outputs ---- */
+void pwm_init(void);			/* starts the PWM thread */
+void pwm_close(void);			/* stops it, optos off */
+int  pwm_dispatch(const dz_msg *m);	/* 0 = not /fan/<n>/pwm|duty|servo, /fan/pwm/stats */
+
 #endif /* DEBAZD_H */

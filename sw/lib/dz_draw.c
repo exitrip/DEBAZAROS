@@ -876,15 +876,13 @@ int dz_draw_movie_play(int i, const char *name)
 	return 0;
 }
 
-int dz_draw_save(int i, const char *name)
+/* PPM, written at once (debugging; also what older versions wrote) */
+static int save_ppm(surf_t *s, const char *name)
 {
-	surf_t *s = get(i);
 	char path[256];
 	FILE *fp;
 
-	if (!s || !name_ok(name))
-		return -1;
-	snprintf(path, sizeof(path), "%s/%s.ppm", DZ_IMG_DIR, name);
+	snprintf(path, sizeof(path), "%s/%.96s", DZ_IMG_DIR, name);	/* name_ok: <= 96 */
 	fp = fopen(path, "wb");
 	if (!fp)
 		return -1;
@@ -897,6 +895,69 @@ int dz_draw_save(int i, const char *name)
 	}
 	fclose(fp);
 	return 0;
+}
+
+/*
+ * PNG: copy the shadow to a raw file in /tmp (fast), then a background
+ * ffmpeg encodes it (about 1 s for 720p on the A9) to ".<name>.png" - hidden
+ * from the media list while it grows - and renames it to "<name>.png". The
+ * OSC loop does not wait. Double fork: no zombie, no SIGCHLD handler needed.
+ */
+static int save_png(surf_t *s, const char *base)
+{
+	static unsigned seq;
+	char raw[96], cmd[768];
+	FILE *fp;
+	pid_t pid;
+	size_t n = (size_t)s->w * s->h;
+
+	snprintf(raw, sizeof(raw), "/tmp/dz_save_%d_%u.raw", (int)getpid(), seq++);
+	fp = fopen(raw, "wb");
+	if (!fp)
+		return -1;
+	if (fwrite(s->shadow, 4, n, fp) != n) {	/* 0x..RRGGBB = bgr0 bytes */
+		fclose(fp);
+		unlink(raw);
+		return -1;
+	}
+	fclose(fp);
+	snprintf(cmd, sizeof(cmd),
+		 "ffmpeg -nostdin -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr0 "
+		 "-s %dx%d -i '%s' -frames:v 1 -pix_fmt rgb24 '%s/.%s.png' && "
+		 "mv -f '%s/.%s.png' '%s/%s.png'; rm -f '%s'",
+		 s->w, s->h, raw, DZ_IMG_DIR, base, DZ_IMG_DIR, base, DZ_IMG_DIR, base, raw);
+	pid = fork();
+	if (pid < 0) {
+		unlink(raw);
+		return -1;
+	}
+	if (pid == 0) {
+		if (fork() == 0) {
+			setsid();
+			execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+			_exit(127);
+		}
+		_exit(0);
+	}
+	waitpid(pid, NULL, 0);
+	return 0;
+}
+
+int dz_draw_save(int i, const char *name)
+{
+	surf_t *s = get(i);
+	char base[100];
+	size_t l;
+
+	if (!s || !name_ok(name))
+		return -1;
+	l = strlen(name);
+	if (l > 4 && !strcmp(name + l - 4, ".ppm"))
+		return save_ppm(s, name);
+	snprintf(base, sizeof(base), "%.96s", name);
+	if (l > 4 && !strcmp(base + l - 4, ".png"))
+		base[l - 4] = 0;
+	return save_png(s, base);
 }
 
 /* ---- OSC ------------------------------------------------------------------- */
@@ -1171,8 +1232,10 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			}
 			else if (!strcmp(op, "auto") && n >= 1)
 				dz_draw_set_auto(i, a[0].i);
-			else if (!strcmp(op, "save") && n >= 1 && a[0].type == 's')
-				dz_draw_save(i, a[0].s);
+			else if (!strcmp(op, "save") && n >= 1 && a[0].type == 's') {
+				if (dz_draw_save(i, a[0].s) < 0)
+					fails++;
+			}
 			else if (!strcmp(op, "grab")) {
 				if (dz_draw_grab(i, n >= 1 && a[0].type != 's' ? a[0].i : i) < 0)
 					fails++;

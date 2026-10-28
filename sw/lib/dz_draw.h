@@ -36,7 +36,9 @@
  *   /movie/<s>/stop
  *   /surface/<s>/present
  *   /surface/<s>/auto          0|1
- *   /surface/<s>/save          "name"     (PPM of the shadow, in DZ_IMG_DIR)
+ *   /surface/<s>/save          "name"     (the shadow as name.png in DZ_IMG_DIR,
+ *                                         ready about 1 s later; "x.ppm" = PPM
+ *                                         at once). Load it back: /img/<s>/load
  *   /surface/<s>/grab          [src]      copy slot src (default s) into the
  *                                         painting buffer: freeze the capture
  *                                         or a movie frame, then paint on it

@@ -126,29 +126,42 @@ static void *vsync_main(void *arg)
 {
 	struct sched_param sp = { .sched_priority = 60 };
 	double last = 0.0;
+	int irq;
 
 	(void)arg;
 	if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0)
 		dzd_log("disp: no real-time priority (not root?) - vsync jitter will be high\n");
+	irq = !sim && dz_vsync_irq();
+	dzd_log("disp: vsync by %s\n", irq ? "interrupt (VTC UIO)" : "polling");
 	while (run) {
 		double t = now(), deadline;
 		int got = 0;
 
-		if (vs_ok && last > 0.0 && last + period - 0.0015 > t)
-			sleep_until(last + period - 0.0015);
-		deadline = now() + (vs_ok ? 0.004 : 0.0);
-		do {				/* poll window around the expected vsync */
-			if (dz_vsync_latched()) {
-				got = 1;
-				break;
+		if (irq) {			/* sleep until the VTC interrupt */
+			int w = dz_vsync_wait(100);
+
+			if (w < 0) {
+				irq = 0;
+				dzd_log("disp: vsync interrupt failed - polling\n");
 			}
-		} while (now() < deadline);
+			got = w > 0;
+		} else {
+			if (vs_ok && last > 0.0 && last + period - 0.0015 > t)
+				sleep_until(last + period - 0.0015);
+			deadline = now() + (vs_ok ? 0.004 : 0.0);
+			do {			/* poll window around the expected vsync */
+				if (dz_vsync_latched()) {
+					got = 1;
+					break;
+				}
+			} while (now() < deadline);
+		}
 		if (!got) {
 			if (vs_ok && now() - last > 0.1) {
 				vs_ok = 0;
 				dzd_log("disp: vsync lost\n");
 			}
-			if (!vs_ok)
+			if (!vs_ok && !irq)
 				usleep(2000);	/* idle check, the bit stays latched */
 			continue;
 		}

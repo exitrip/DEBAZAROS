@@ -84,6 +84,13 @@ if {$phase eq "project"} {
 }
 
 # --- build ---------------------------------------------------------------------
+# The fabric is ~95 % full and FCLK2 (VDMA memory side, 145 MHz) has almost no
+# slack inside the capture VDMA's S2MM datamover (build pwm 2026-10-27: -0.39
+# ns with the default flow). Post-route phys_opt fixes such paths in place.
+set_property STEPS.PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
+set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
+set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
+set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
 launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1
 if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
