@@ -41,7 +41,10 @@ echo 0 > /sys/class/fpga_manager/fpga0/flags
 echo $BIN > /sys/class/fpga_manager/fpga0/firmware
 cat /sys/class/fpga_manager/fpga0/state
 sleep 1
-[ -n "$dza_dev" ] && echo "$dza_dev" > $DZA/bind
+if [ -n "$dza_dev" ]; then
+	echo "$dza_dev" > $DZA/bind
+	/usr/sbin/alsactl restore DEBAZ 2>/dev/null	# bind = controls back at Auto
+fi
 setsid nohup $D/hdmi2.elf "$@" > /tmp/hdmi2.log 2>&1 &
 sleep 4
 setsid nohup $D/debazd -v > /tmp/debazd.log 2>&1 &
