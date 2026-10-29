@@ -1331,6 +1331,30 @@ define an entity SyncAsync with different content, and in one library
 dvi2rgb becomes a black box (tested with axi_dynclk's renamed to
 SyncAsyncDynclk on the build machine only; not in the repo).
 
+Control sets (2026-10-29, routed osc_epo, `report_control_sets -verbose`):
+**1012 control sets** for 4400 slices (Xilinx rule of thumb for 7-series:
+~7.5 % of the slices = ~330), 639 of them with <= 9 registers. Registers
+share a slice only with the same clock / enable / set-reset, so small sets
+leave slices half used - this is why the slices are at 100 % with LUTs at
+78 % and FFs at 58 %. Per block (sets / sets with <= 9 regs / slices with
+registers / registers / registers per slice; 8 = full):
+mixer_0 265 / 263 / 532 / 2154 / 4.0; dz_osc2_0 75 / 51 / 291 / 1422 / 4.9;
+hdmi_audio_regs_0 59 / 43 / 222 / 909 / 4.1; HDMI_2 VDMA datamover 52 / 21 /
+249 / 1153 / 4.6; v_tc_0 45 / 5 / 202 / 1332 / 6.6; ps7_axi_periph S00 35 /
+10 / 189 / 823 / 4.4; axi_dynclk 32 / 30 / 47 / 281 / 6.0; dz_regs_0 31 /
+29 / 69 / 281 / 4.1.
+**The mixer register file is the largest single item:** 63 registers with a
+write enable PER BYTE (WSTRB) = ~252 control sets of 8 registers. Proposal
+(not done): word-only writes (accept WSTRB = 0xF only; the software writes
+the mixer only with 32-bit accesses: dz_fields read-modify-write, devmem
+32) -> 63 sets of 32 registers, ~270 slices instead of 532: **~260 slices
+(6 % of the chip) free**, no software change. Check with run_mixer_tb.sh
+(its AXI writes are full words?). Smaller: the same in hdmi_audio_regs
+(~40 small sets) and dz_osc2 (shadow registers with own enables); dz_regs
+keeps its byte writes (a feature, 29 small sets). Next to try after that:
+opt_design control-set merging (`-control_set_merge`,
+`report_qor_suggestions`).
+
 Board test (debaz-7130d5, 2026-10-29): both IDs "DOSC", PINC reset
 0x8000_0001, the phase runs at PINC x 100 MHz; /dds/0/hz, /dds/1/pinc and
 the event block phase work unchanged; on HDMI_1 (osc layer, gains 1):

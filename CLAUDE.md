@@ -955,6 +955,11 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
    buffers / S2MM store-and-forward and the HP FIFOs do that job); slim mixer register file;
    GPIO consolidation DONE Oct 29 2026 (dz_regs, build regs3: −226 LUT, −733 FF,
    3 crossbar ports, addresses unchanged; ROADMAP.md section 14).
+   Slices are limited by CONTROL SETS, not LUTs (Oct 29 2026, build osc: 1012
+   sets, 639 with <= 9 regs; slices 100 % at LUT 78 % / FF 58 %): the mixer
+   register file has a write enable per byte = ~252 sets, 532 slices at 4.0
+   regs/slice; word-only writes would free ~260 slices (ROADMAP.md section 14).
+   Synthesis AreaOptimized_high frees ~950 LUT but no slices (tested).
    Do NOT trim VDMA fstores (third-port constraint). DSP relief = time-multiplexed
    mixer MACs at 2× pixel clock (45→~23 DSPs, also fixes timing ceiling).
 
