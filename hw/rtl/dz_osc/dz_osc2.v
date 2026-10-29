@@ -13,7 +13,13 @@
 // an edge comes 2-3 FCLK0 clocks late and moves by at most 10 ns.
 `timescale 1ns / 1ps
 module dz_osc2 (
+    // the BD module reference finds the AXI clock / reset by these attributes
+    // (the ports are not called s_axi_aclk / s_axi_aresetn)
+    (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 clk CLK" *)
+    (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_axi, ASSOCIATED_RESET aresetn" *)
     input  wire        clk,        // FCLK0 = s_axi_aclk
+    (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 aresetn RST" *)
+    (* X_INTERFACE_PARAMETER = "POLARITY ACTIVE_LOW" *)
     input  wire        aresetn,
     // AXI4-Lite subordinate, 32 KB
     input  wire [14:0] s_axi_awaddr,

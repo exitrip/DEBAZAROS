@@ -184,13 +184,22 @@ gain stage — unsigned 16÷8 via a ceil(2^24/den) ROM-reciprocal multiply
 come from GPIO fields (see address map; all default to 1 = passthrough), so
 integer attenuation composes with the multiplication-based gains.
 HDMI_1 also gained a second osc gain stage (colorGainOscSin + colorGainOscPhase,
-c_addsub_3/4). Both DDS compilers run on FCLK0 (checked in the BD
-2026-10-29; an older note said HDMI_1's ran on PixelClk). Each compiler's
-sine uses 7 RAMB36 + 1 RAMB18 (15 BRAM tiles for both). Successor in
-progress: `hw/rtl/dz_osc/dz_osc2.v` + `dz_osc_ch.v` + `dz_sine_rom.v` (both
-channels on one AXI port, sequencer, raster sync, shapes, own sine, AWG;
-ROADMAP.md section 14), testbench `sh hw/sim/run_dz_osc_tb.sh`. Not in
-the BD yet.
+c_addsub_3/4). **Since build `osc` (Oct 29 2026) the two DDS compilers +
+dds_axi_interface_0/1 are replaced by `dz_osc2_0`** (`hw/rtl/dz_osc/dz_osc2.v`
++ `dz_osc_ch.v` + `dz_sine_rom.v`, FCLK0, top level; ROADMAP.md section 14;
+testbench `sh hw/sim/run_dz_osc_tb.sh`): both channels on one AXI port,
+sequencer, raster sync, shapes, own sine, AWG. wave<n> -> HDMI_<n>/osc_wave
+-> div16_8_recip_0/num (the old sine leg), phase<n> (= phase[31:16]) ->
+HDMI_<n>/osc_phase -> div16_8_recip_1/num (the old xlslice_4 leg),
+phase0_full -> hdmi_audio_regs dds_phase; the dividers' ce = an xlconstant 1
+(was the compiler TVALID); raster in = HDMI_0/vsync_out, hsync_out,
+active_video_out (RISING edges: with negative-polarity VTC modes that is
+the end of the sync pulse); ext_trig = 0 for now. BD edit:
+`hw/bd_edits/2026-10-29_dz_osc2.tcl`. The wrap/fold math after it is
+unchanged (intentional). Bench-tested on the board: old fields, square,
+bars (phase reset at hsync), checkerboard (sequencer) on HDMI_1. ⚠️ The MSB
+invert (CTRL[19]) is for the sine only: the other shapes are unsigned, and
+the flip makes a square almost invisible (0x8000 / 0x7FFF).
 
 The two channels cross-feed each other's final pixel output → the video-feedback
 architecture. **Known limitation (git log 2025-09-11): feedback loop only stable below
@@ -368,11 +377,10 @@ removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
 | 0x43C2_0000 | v_tc (shared, lives in HDMI_0) |
 | 0x43C4_0000 | axi_dynclk |
 | 0x43C5_0000 | HDMI_0 mixer_0 (the "nuMixer") |
-| 0x43D0_0000 | dds_axi_interface_0 → HDMI_0 DDS phase increment |
-| 0x44D0_0000 | dds_axi_interface_1 → HDMI_1 DDS phase increment |
+| 0x43D0_0000-0x43D0_7FFF | **dz_osc2_0** (build osc, Oct 29 2026; ps7_axi_periph M07 of 9): channel 0 (HDMI_0 DDS) at +0x0000, channel 1 (HDMI_1 DDS) at **+0x4000** (was dds_axi_interface_1 at 0x44D0_0000, GONE). Per channel +0 PINC (bit 31 valid, as before), +4 STATUS, +8 CTRL, ... +0x28 ID "DOSC"; map in `hw/rtl/dz_osc/dz_osc_ch.v`. Before build osc: dds_axi_interface_0 at 0x43D0_0000 (4K) + _1 at 0x44D0_0000 |
 | 0x43C6_0000 | hdmi_audio_regs_0 (Oct 26 2026, branch hdmi-audio; ps7_axi_periph M12, NUM_MI 12→13; since regs3 M09 of 10): HDMI audio TX ctrl / RX status, ID 0x3C = "HAUD". Not in bitstreams before it: dz_map probes the ID under a SIGBUS guard |
 
-REMOVED (do not touch): 0x4122_0000, 0x4124_0000 (old LED GPIO — LED is
+REMOVED (do not touch): 0x44D0_0000 (since build osc: DDS 1 is 0x43D0_4000), 0x4122_0000, 0x4124_0000 (old LED GPIO — LED is
 xlconstant-driven now; inside dz_regs since regs3 they read 0), 0x43C3_0000 (HDMI_1 VTC), 0x43D1_0000, 0x44D1_0000.
 
 VDMA memory ports: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture → S_AXI_HP1
@@ -500,8 +508,8 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   files of an IP (dvi2rgb's EDID/xdc/xci): the script now refuses; add the
   port element by hand for such IPs.
 
-**dds_axi_interface** (`hw/rtl/dds_axi_inteface.vhd` — note
-filename typo): single 32-bit reg at +0. Bit31 = TVALID enable, bits[30:0] = phase
+**dds_axi_interface** (bitstreams before build `osc`; `hw/rtl/dds_axi_inteface.vhd` — note
+filename typo; dz_osc2 keeps +0 PINC and +4 STATUS compatible): single 32-bit reg at +0. Bit31 = TVALID enable, bits[30:0] = phase
 increment to dds_compiler (100 MHz, 32-bit phase acc → f = PINC × 100e6/2³² ≈
 0.0233 Hz/LSB; PINC 0xa11 ≈ 60 Hz). Reg +0x4 (slv_reg_4 bit0; ADDR_LSB=2, index 1)
 reads back TVALID status (+0x10 was wrong). Reg +0 reads back. **A PINC written without

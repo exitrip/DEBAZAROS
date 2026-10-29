@@ -23,7 +23,11 @@
 //                       4 square, 5 pulse (phase < PWIDTH), 6 AWG
 //                  [19] invert the output MSB (two's complement <-> offset
 //                       binary; the sine is two's complement, as the old
-//                       DDS compiler's)
+//                       DDS compiler's). For the SINE only: saw, triangle,
+//                       square and pulse are unsigned (0x0000..0xFFFF), and
+//                       the flip turns a full square into 0x8000 / 0x7FFF
+//                       (a step of 1 in the upper byte: almost invisible,
+//                       seen on the board 2026-10-29)
 //   0x0C PRESCALE  [23:0] FCLK0 clocks per prescaler tick - 1
 //   0x10 POFF      phase offset
 //   0x14 LINESTEP  added to the phase at each hsync, cleared at vsync

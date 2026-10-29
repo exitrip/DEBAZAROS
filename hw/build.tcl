@@ -34,7 +34,8 @@ set ip_repos [list \
     $repo/IP_rgb2dvi]
 # RTL used by BD module references (DivideBy2N, div16_8_recip,
 # dds_axi_interface, hdmi_tx + hdmi_audio_regs + hdmi_rx, pl_io, fsync_gen,
-# dz_regs).
+# dz_regs, dz_osc2). The two dds_axi_interface files are only for projects
+# of BD sources from before dz_osc2 (2026-10-29).
 set rtl_dir $repo/hw/rtl
 set rtl [list \
     $rtl_dir/DivideBy2N.v \
@@ -54,7 +55,10 @@ set rtl [list \
     $rtl_dir/pl_io/dz_async_fifo.v \
     $rtl_dir/pl_io/dz_bram_fifo.v \
     $rtl_dir/fsync_gen.v \
-    $rtl_dir/dz_regs/dz_regs.v]
+    $rtl_dir/dz_regs/dz_regs.v \
+    $rtl_dir/dz_osc/dz_osc2.v \
+    $rtl_dir/dz_osc/dz_osc_ch.v \
+    $rtl_dir/dz_osc/dz_sine_rom.v]
 set xdc [list $repo/hw/xdc/ebaz4205.xdc]
 
 # --- project -------------------------------------------------------------------
@@ -94,6 +98,15 @@ set_property STEPS.PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
 set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
+# Optional, for timing closure at a full fabric (2026-10-29, dz_osc2 at 100 %
+# slices): DZ_PLACE_DIRECTIVE / DZ_ROUTE_DIRECTIVE, e.g. ExtraTimingOpt,
+# Explore, AggressiveExplore. Not set = the default directives.
+foreach {var step} {DZ_PLACE_DIRECTIVE PLACE_DESIGN DZ_ROUTE_DIRECTIVE ROUTE_DESIGN} {
+    if {[info exists ::env($var)] && $::env($var) ne ""} {
+        set_property STEPS.$step.ARGS.DIRECTIVE $::env($var) [get_runs impl_1]
+        puts "INFO: $step directive $::env($var)"
+    }
+}
 launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1
 if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {

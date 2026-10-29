@@ -4,10 +4,7 @@
 
 #define HW_VARIANT "ebaz4205_2out1in"
 
-#define HW_AXI_GPIO_HDMI_IN_PHASE0_DIV_GPHASE1_BASE       0x41200000  /* range 0x1000, /axi_gpio_hdmi_in_phase0_div_gPhase1/S_AXI/Reg */
-#define HW_HDMI_0_AXI_GPIO_MAING_SHIFT_MEMDELAY_BASE      0x41210000  /* range 0x10000, /HDMI_0/axi_gpio_mainG_shift_memdelay/S_AXI/Reg */
-#define HW_HDMI_1_AXI_GPIO_DIVOSC_GOSC_SHIFTPHASEOSC_BASE 0x41230000  /* range 0x1000, /HDMI_1/axi_gpio_divOsc_gosc_shiftPhaseOsc/S_AXI/Reg */
-#define HW_HDMI_1_AXI_GPIO_DIVPHASE_GMAIN_SHIFTPHASE_GFEEDBACK_BASE 0x41260000  /* range 0x1000, /HDMI_1/axi_gpio_divPhase_gmain_shiftPhase_gfeedback/S_AXI/Reg */
+#define HW_DZ_REGS_0_BASE                                 0x41200000  /* range 0x80000, /dz_regs_0/s_axi/reg0 */
 #define HW_HDMI_0_AXI_VDMA_0_BASE                         0x43000000  /* range 0x10000, /HDMI_0/axi_vdma_0/S_AXI_LITE/Reg */
 #define HW_HDMI_1_AXI_VDMA_0_BASE                         0x43010000  /* range 0x10000, /HDMI_1/axi_vdma_0/S_AXI_LITE/Reg */
 #define HW_HDMI_2_AXI_VDMA_0_BASE                         0x43020000  /* range 0x10000, /HDMI_2/axi_vdma_0/S_AXI_LITE/Reg */
@@ -15,7 +12,6 @@
 #define HW_AXI_DYNCLK_0_BASE                              0x43C40000  /* range 0x10000, /axi_dynclk_0/S_AXI_LITE/S_AXI_LITE_reg */
 #define HW_HDMI_0_MIXERMATRIX_MIXER_0_BASE                0x43C50000  /* range 0x10000, /HDMI_0/mixerMatrix/mixer_0/S00_AXI/S00_AXI_reg */
 #define HW_HDMI_AUDIO_REGS_0_BASE                         0x43C60000  /* range 0x10000, /hdmi_audio_regs_0/s_axi/reg0 */
-#define HW_DDS_AXI_INTERFACE_0_BASE                       0x43D00000  /* range 0x1000, /dds_axi_interface_0/ctrl_s_axi/reg0 */
-#define HW_DDS_AXI_INTERFACE_1_BASE                       0x44D00000  /* range 0x1000, /dds_axi_interface_1/ctrl_s_axi/reg0 */
+#define HW_DZ_OSC2_0_BASE                                 0x43D00000  /* range 0x8000, /dz_osc2_0/s_axi/reg0 */
 
 #endif

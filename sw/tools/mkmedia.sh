@@ -2,8 +2,12 @@
 # mkmedia.sh - convert media on the HOST into the board's formats and folder
 # layout (2026-10-28). Run on the laptop / build machine, not on the board.
 #
-#   bash sw/tools/mkmedia.sh [options] FILE|FOLDER ...
+#   bash sw/tools/mkmedia.sh [options] FILE|FOLDER|PATTERN ...
 #
+#   PATTERN   a glob, also in quotes: 'video*/test*.mov', 'shoot/**/*.mp4'
+#             (** = any depth); case is ignored (*.mov finds TEST.MOV); a
+#             folder that matches is searched as a folder; a file matched
+#             twice is converted once
 #   -o DIR    output root (default ./board-media): DIR/img, DIR/movies,
 #             DIR/audio - the media folders on the board (-m)
 #   -s WxH    display size (default 1280x720): movies are scaled to it,
@@ -16,7 +20,7 @@
 #   -n        movies: no audio at all
 #   -t secs   only the first secs seconds of movies and audio (tests)
 #   -F        convert again even when the output is newer than the input
-#   -u [HOST] upload to the board (default $DZ_BOARD or ebaz@10.42.0.68):
+#   -u [HOST] upload to the board HOST (user@ip), else $DZ_BOARD; no default:
 #             each file goes to MEDIA/{img,movies,audio} as soon as it
 #             is converted or found up to date (a background queue, one
 #             file at a time, while the next file transcodes; rsync skips a
@@ -41,8 +45,8 @@
 set -u
 
 out=./board-media size=1280x720 fps=25 q=4 fill=0 afmt=wav noaudio=0 dur=
-force=0 upload=0 board=${DZ_BOARD:-ebaz@10.42.0.68} rroot=/media/debaz reserve_mb=256
-usage() { sed -n '5,33p' "$0"; exit 2; }
+force=0 upload=0 board=${DZ_BOARD:-} rroot=/media/debaz reserve_mb=256
+usage() { sed -n '5,38p' "$0"; exit 2; }
 while getopts o:s:r:q:fa:nt:Fum:R:h opt; do
 	case $opt in
 	o) out=$OPTARG ;;
@@ -64,6 +68,10 @@ while getopts o:s:r:q:fa:nt:Fum:R:h opt; do
 done
 shift $((OPTIND - 1))
 [ $# -ge 1 ] || usage
+if [ $upload = 1 ] && [ -z "$board" ]; then
+	echo "-u needs the board: -u ebaz@<ip>, or export DZ_BOARD=ebaz@<ip>"
+	exit 2
+fi
 [[ $afmt == wav || $afmt == flac ]] || { echo "-a: wav or flac"; exit 2; }
 w=${size%x*} h=${size#*x}
 command -v ffmpeg > /dev/null && command -v ffprobe > /dev/null || { echo "needs ffmpeg + ffprobe"; exit 1; }
@@ -186,15 +194,36 @@ do_image() {	# in out
 
 # ---- collect the inputs --------------------------------------------------------
 declare -a files=()
+declare -A seen=()
+add_path() {	# a file, or a folder (recursive)
+	local f
+	if [ -d "$1" ]; then
+		while IFS= read -r -d '' f; do add_file "$f"; done < <(find "$1" -type f ! -name '.*' -print0 | sort -z)
+	elif [ -f "$1" ]; then
+		add_file "$1"
+	fi
+}
+add_file() {	# once per real file, even when two arguments match it
+	local k
+	k=$(realpath -e -- "$1" 2>/dev/null || printf '%s' "$1")
+	[ -n "${seen[$k]:-}" ] && return
+	seen[$k]=1
+	files+=("$1")
+}
+shopt -s globstar nocaseglob nullglob
 for arg in "$@"; do
-	if [ -d "$arg" ]; then
-		while IFS= read -r -d '' f; do files+=("$f"); done < <(find "$arg" -type f ! -name '.*' -print0 | sort -z)
-	elif [ -f "$arg" ]; then
-		files+=("$arg")
+	if [ -e "$arg" ]; then
+		add_path "$arg"
+	elif [[ $arg == *[*?[]* ]]; then	# a pattern the shell did not expand (quoted, or no match there)
+		# shellcheck disable=SC2206
+		matches=( $arg )
+		[ ${#matches[@]} -gt 0 ] || { echo "${Y}no match: $arg${N}"; continue; }
+		for m in "${matches[@]}"; do add_path "$m"; done
 	else
 		echo "${Y}not found: $arg${N}"
 	fi
 done
+shopt -u globstar nocaseglob nullglob
 total=${#files[@]}
 [ "$total" -gt 0 ] || { echo "nothing to convert"; exit 1; }
 mkdir -p "$out/img" "$out/movies" "$out/audio"
@@ -202,7 +231,7 @@ echo "${B}mkmedia${N}: $total file(s) -> $out/{img,movies,audio}   (display ${si
 t_start=$SECONDS
 
 # ---- upload queue: a background worker sends each finished file -------------------
-ssh_opt="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+ssh_opt="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
 ssh_cmd="ssh $ssh_opt"
 # rsync -e honours quotes: keeps the (empty) password one argument
 command -v sshpass > /dev/null && ssh_cmd="sshpass -p '${DZ_PASS:-}' ssh $ssh_opt"
@@ -214,6 +243,13 @@ ssh_arr=(ssh $ssh_opt)
 command -v sshpass > /dev/null && ssh_arr=(sshpass -p "${DZ_PASS:-}" ssh $ssh_opt)
 up_log= up_shown=0 up_pid=
 if [ $upload = 1 ]; then
+	# check the board before any conversion (2026-10-29: the default host was
+	# a board that was off, and every upload failed one by one)
+	if ! "${ssh_arr[@]}" "$board" "test -d '$rroot'" < /dev/null 2>/dev/null; then
+		echo "${R}upload: no connection to $board, or no $rroot there${N}"
+		echo "    give the host: -u ebaz@<ip>, or export DZ_BOARD=ebaz@<ip>"
+		exit 1
+	fi
 	up_dir=$(mktemp -d)
 	up_log=$up_dir/done
 	: > "$up_log"

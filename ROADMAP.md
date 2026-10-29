@@ -26,7 +26,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |
 | 14 | HDMI audio out (HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | WORKS on hardware 2026-10-26 (branch hdmi-audio, artifacts/..._20261026_audio): out, in, loop; 2026-10-27: HDMI_0 also hdmi_tx (own TX0_CTRL + audio source), simulated, built, not yet on hardware; open: software HPD; 1080p60 still needs the effects-chain pipelining (hdmi_tx itself: 10 ns) |
 | 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
-| 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); next: dz_osc2 into the BD, build, software |
+| 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); BD integration DONE + bench-tested 2026-10-29 (build osc: bars, checkerboard; slices 100 %, FCLK2 -0.017 ns: closure runs); next: timing, software presets |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -1275,7 +1275,8 @@ port ~30 LUT: **net ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles, 0 DSP.**
    (2 sines + 2 AWG = 3 tiles), **~12 tiles free**; minus the compilers and
    the old interfaces (~200 LUT, ~650 FF). Estimated net cost of the whole
    engine: ~+1150 LUT, ~+900 FF, -12 BRAM tiles, 0 DSP.
-3. **BD** (next): replace dds_axi_interface_0/1 + both dds_compiler_0 with the
+3. DONE 2026-10-29 (build `osc`, ON THE BOARD, details below the plan).
+   **BD**: replace dds_axi_interface_0/1 + both dds_compiler_0 with the
    module reference (dz_osc2: top level, FCLK0; build.tcl reads the three
    files); wire wave_out to the old sine leg (div16_8_recip_0
    num), phase_out to the old phase leg (div16_8_recip_1 via the slice), the
@@ -1291,6 +1292,35 @@ port ~30 LUT: **net ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles, 0 DSP.**
    raster-locked edges; costs logic in the congested region X1Y1) - only
    if the ~0.75 px shimmer is visible; the PWM as a channel of the engine
    (LED fades as ramp steps); HDMI_2 input vsync as a sync source.
+
+### Step 3 result: dz_osc2 in the BD (2026-10-29, build `osc`)
+
+`hw/bd_edits/2026-10-29_dz_osc2.tcl` (on the regs3 BD): the compilers, the
+two AXI interfaces and both 32-bit phase slices (xlslice_4) out; new pins
+HDMI_<n>/osc_wave, osc_phase; dividers' ce = xlconstant 1; dz_osc2_0 at the
+top level on M07, ps7_axi_periph 10 -> 9 ports (audio M09 -> M08); address
+0x43D0_0000, 32 KB. Software: sw/include/hw_map.h of build osc;
+sw/lib/dz_hw.h maps HW_DDS_AXI_INTERFACE_0/1_BASE onto HW_DZ_OSC2_0_BASE +
+0 / + 0x4000, so all old fields work (NEW software needs an osc bitstream:
+on older ones channel 1 at 0x43D0_4000 is a bus error).
+
+Build `osc` (default directives): LUT 12648 -> 13758 (+1110, as estimated),
+FF 19673 -> 20530, BRAM tiles 45.5 of 60, DSP 73, **slices 100.0 %**;
+FCLK0 +0.054, **FCLK2 -0.017 (1 endpoint, the capture S2MM datamover - the
+known weak path, not dz_osc2)**, FCLK3 +0.067, pixel -3.389 (31). Timing
+closure runs with other directives: build.tcl takes DZ_PLACE_DIRECTIVE /
+DZ_ROUTE_DIRECTIVE from the environment.
+
+Board test (debaz-7130d5, 2026-10-29): both IDs "DOSC", PINC reset
+0x8000_0001, the phase runs at PINC x 100 MHz; /dds/0/hz, /dds/1/pinc and
+the event block phase work unchanged; on HDMI_1 (osc layer, gains 1):
+square 0.5 Hz, vertical bars (square, 4 or 8 cycles per line, phase reset
+at hsync) and an 8-row checkerboard (sequencer, tick hsync, 2 steps of 90
+lines, step 1 PHASE 0x8000_0000, restart at vsync) - also cleanly on black
+with the HDMI_1 video and feedback gains at 0. The "green on / off" of the
+square over video = the packed-lane adders (intentional). Lesson: CTRL[19]
+(MSB invert) only for the sine; on the unsigned shapes it leaves a step of
+1 (0x8000 / 0x7FFF).
 
 ### Audit: how the old DDS outputs are used (2026-10-29, BD + generated netlist)
 

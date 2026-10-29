@@ -30,6 +30,19 @@
 #endif
 #endif
 
+/* The two DDS (dds_axi_interface_0/1 + dds_compiler) became one block,
+ * dz_osc2 (2026-10-29, hw/rtl/dz_osc/): channel 0 at +0x0000 (the old
+ * 0x43D0_0000), channel 1 at +0x4000 (was 0x44D0_0000). Register +0 PINC
+ * (bit 31 valid) and +4 STATUS are as before, so the old names keep working. */
+#ifdef HW_DZ_OSC2_0_BASE
+#ifndef HW_DDS_AXI_INTERFACE_0_BASE
+#define HW_DDS_AXI_INTERFACE_0_BASE	(HW_DZ_OSC2_0_BASE + 0x0000)
+#endif
+#ifndef HW_DDS_AXI_INTERFACE_1_BASE
+#define HW_DDS_AXI_INTERFACE_1_BASE	(HW_DZ_OSC2_0_BASE + 0x4000)
+#endif
+#endif
+
 /* ---- DDR frame slots ------------------------------------------------------
  * Reserved region (/boot/system.dtb, no-map): 0x0800_0000, 96 MB (128 MB is
  * rejected by the kernel on this board - PetaLinux/dtb/README.md).
