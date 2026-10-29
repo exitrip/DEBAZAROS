@@ -37,6 +37,9 @@ void dzd_send_template(const char *tpl);
 /* ---- fx.c: colour matrix (hue, map) and colour key on the HDMI_0 mixer ---- */
 int  fx_dispatch(const dz_msg *m);	/* 0 = not an /fx address */
 
+/* ---- dds.c: dz_osc2 patterns, step table, AWG (fields: dz_fields.c) ---- */
+int  dds_dispatch(const dz_msg *m);	/* 0 = not a /dds pattern / table address */
+
 /* ---- io.c: user I/O line functions by name ---- */
 int  io_dispatch(const dz_msg *m);	/* 0 = not /io/pin or /io/pins */
 

@@ -78,7 +78,19 @@ set wrapper [make_wrapper -files $bd -top]
 add_files -norecurse $wrapper
 set_property top [file rootname [file tail $wrapper]] [current_fileset]
 update_compile_order -fileset sources_1
+# DZ_SYNTH_MODE=global: synthesize the whole BD in synth_1 (no out-of-context
+# run per IP), so DZ_SYNTH_DIRECTIVE reaches every IP and optimisation can
+# cross IP boundaries. Default: out of context per IP (Vivado's default).
+if {[info exists ::env(DZ_SYNTH_MODE)] && $::env(DZ_SYNTH_MODE) eq "global"} {
+    set_property synth_checkpoint_mode None $bd
+    puts "INFO: BD synthesis global (one run)"
+}
 generate_target all $bd
+# the out-of-context run of each IP exists only from here (else launch_runs
+# makes them later, and DZ_SYNTH_* would reach synth_1 only)
+if {[get_property synth_checkpoint_mode $bd] ne "None"} {
+    create_ip_run $bd
+}
 
 # --- hw_map.h: PS-visible address map, one source of truth for C/scripts --------
 source $repo/hw/hw_map.tcl
@@ -98,14 +110,34 @@ set_property STEPS.PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
 set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
-# Optional, for timing closure at a full fabric (2026-10-29, dz_osc2 at 100 %
-# slices): DZ_PLACE_DIRECTIVE / DZ_ROUTE_DIRECTIVE, e.g. ExtraTimingOpt,
-# Explore, AggressiveExplore. Not set = the default directives.
-foreach {var step} {DZ_PLACE_DIRECTIVE PLACE_DESIGN DZ_ROUTE_DIRECTIVE ROUTE_DESIGN} {
-    if {[info exists ::env($var)] && $::env($var) ne ""} {
-        set_property STEPS.$step.ARGS.DIRECTIVE $::env($var) [get_runs impl_1]
-        puts "INFO: $step directive $::env($var)"
-    }
+# Directives (2026-10-29, dz_osc2 at 100 % slices). Defaults = the best of
+# a comparison on build osc (routing AggressiveExplore in all; FCLK0 / FCLK2
+# / FCLK3): ExtraPostPlacementOpt +0.191 / +0.268 / +0.619; Explore +0.431 /
+# +0.006; default -0.017 (FCLK2); ExtraTimingOpt -0.333; AltSpreadLogic_high
+# -0.426. The environment overrides them for a new comparison after a design
+# change ("" = Vivado's default): DZ_PLACE_DIRECTIVE, DZ_ROUTE_DIRECTIVE,
+# DZ_SYNTH_DIRECTIVE (e.g. AreaOptimized_high, PerformanceOptimized;
+# default: Vivado's), DZ_SYNTH_FLATTEN (rebuilt / full / none).
+# Synthesis comparison (same design, these impl defaults; LUT / slices /
+# FCLK0 / FCLK2): default 13760 / 4400 / +0.191 / +0.268; AreaOptimized_high
+# 12824 / 4390 / +0.028 / +0.008; global 13656 / 4392 / +0.344 / -0.073;
+# global + AreaOptimized_high 12687 / 4386 / +0.001 / +0.008. Area synthesis
+# saves ~7 % LUT but no slices (packing limits them) and eats the margins:
+# kept off. Global mode needs a rename first: dvi2rgb and axi_dynclk both
+# define an entity SyncAsync (different content; one library = a black box).
+set directives [list \
+    DZ_SYNTH_DIRECTIVE synth_1 SYNTH_DESIGN.ARGS.DIRECTIVE         "" \
+    DZ_SYNTH_FLATTEN   synth_1 SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY "" \
+    DZ_PLACE_DIRECTIVE impl_1  PLACE_DESIGN.ARGS.DIRECTIVE         ExtraPostPlacementOpt \
+    DZ_ROUTE_DIRECTIVE impl_1  ROUTE_DESIGN.ARGS.DIRECTIVE         AggressiveExplore]
+foreach {var run step def} $directives {
+    set v $def
+    if {[info exists ::env($var)]} { set v $::env($var) }
+    if {$v eq ""} continue
+    # synthesis settings go to every synthesis run (the per-IP runs too)
+    set runs [expr {$run eq "synth_1" ? [get_runs -filter {IS_SYNTHESIS}] : [get_runs $run]}]
+    foreach r $runs { set_property STEPS.$step $v $r }
+    puts "INFO: $step = $v ([llength $runs] run(s))"
 }
 launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1

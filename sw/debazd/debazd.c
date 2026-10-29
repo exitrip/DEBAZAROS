@@ -411,7 +411,7 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
-	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || io_dispatch(m) ||
+	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
 	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */

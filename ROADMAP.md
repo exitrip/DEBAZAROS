@@ -1309,7 +1309,27 @@ FF 19673 -> 20530, BRAM tiles 45.5 of 60, DSP 73, **slices 100.0 %**;
 FCLK0 +0.054, **FCLK2 -0.017 (1 endpoint, the capture S2MM datamover - the
 known weak path, not dz_osc2)**, FCLK3 +0.067, pixel -3.389 (31). Timing
 closure runs with other directives: build.tcl takes DZ_PLACE_DIRECTIVE /
-DZ_ROUTE_DIRECTIVE from the environment.
+DZ_ROUTE_DIRECTIVE from the environment. Four runs (routing AggressiveExplore
+in all), FCLK0 / FCLK2 / FCLK3:
+ExtraTimingOpt +0.079 / -0.333 / +0.389; Explore +0.431 / +0.006 / +0.485;
+AltSpreadLogic_high +0.011 / -0.426 / +0.090; **ExtraPostPlacementOpt
++0.191 / +0.268 / +0.619** (pixel -3.485, 30) = artifacts/..._osc_epo, ON
+THE BOARD. At 100 % slices the result depends on the run: every further
+addition needs resource savings first (or a smaller dz_osc2: 8 steps).
+Now the build.tcl defaults (place ExtraPostPlacementOpt, route
+AggressiveExplore). Synthesis comparison on the same design (build machine;
+LUT / FF / slices / FCLK0 / FCLK2 / pixel): default 13760 / 20530 / 4400 /
++0.191 / +0.268 / -3.485; AreaOptimized_high (all 73 per-IP runs) 12824 /
+20404 / 4390 / +0.028 / +0.008 / -3.587; global synthesis 13656 / 20376 /
+4392 / +0.344 / -0.073 / -3.365; global + AreaOptimized_high 12687 / 20237 /
+4386 / +0.001 / +0.008 / -3.833. So area synthesis frees ~950 LUT (7 %) but
+almost no slices - the slice count is packing / spreading, LUTs were at 78 %
+before - and the timing margins become thin: not the default, an option
+(DZ_SYNTH_DIRECTIVE) for a design that runs out of LUTs. Global synthesis
+(DZ_SYNTH_MODE=global) needs a rename first: dvi2rgb and axi_dynclk both
+define an entity SyncAsync with different content, and in one library
+dvi2rgb becomes a black box (tested with axi_dynclk's renamed to
+SyncAsyncDynclk on the build machine only; not in the repo).
 
 Board test (debaz-7130d5, 2026-10-29): both IDs "DOSC", PINC reset
 0x8000_0001, the phase runs at PINC x 100 MHz; /dds/0/hz, /dds/1/pinc and

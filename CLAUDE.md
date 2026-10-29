@@ -38,7 +38,7 @@ live impl_2: same util (LUT +1, FF −12, BRAM/DSP equal), same timing character
 Export round-trip is clean except assign_bd_address line ORDER (nondeterministic).
 Since Oct 27 2026 build.tcl runs phys_opt + post-route phys_opt (AggressiveExplore):
 at ~95 % slices FCLK2 has ~0.1 ns inside the capture VDMA S2MM datamover and
-the default flow failed it once (-0.39 ns). Always check FCLK2 in the report.
+the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Since dz_osc2 (build osc, Oct 29 2026) slices are at 100 %: the default directives failed FCLK2 (-0.017); `DZ_PLACE_DIRECTIVE=ExtraPostPlacementOpt DZ_ROUTE_DIRECTIVE=AggressiveExplore` (env, read by build.tcl) gave +0.268 (Explore: +0.006). Parallel runs: the PetaLinux build machine has Vivado 2022.2 too (sources in ~/dz-hwbuild, not its repo).
 
 ## Folder map (after the cleanup of Oct 25 2026)
 

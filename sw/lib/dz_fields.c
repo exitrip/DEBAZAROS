@@ -45,6 +45,10 @@
 #define DDS1	HW_DDS_AXI_INTERFACE_1_BASE
 #define CH1	0x0u
 #define CH2	0x8u
+#ifdef HW_DZ_OSC2_0_BASE
+#define OSC0	HW_DDS_AXI_INTERFACE_0_BASE	/* dz_osc2 channel 0 (dz_hw.h) */
+#define OSC1	HW_DDS_AXI_INTERFACE_1_BASE	/* dz_osc2 channel 1 */
+#endif
 
 /* r, g, b and rgb for one gain word, in display lane order */
 #define RGB4(p, base, off, what)						\
@@ -58,6 +62,29 @@
 	{ p "/pinc",   base, 0x0, 0,  31, DZ_RAW,  DZ_F_DDS, who " phase increment, raw (sets enable)" }, \
 	{ p "/enable", base, 0x0, 31, 1,  DZ_BOOL, 0,        who " TVALID enable, bit 31" }, \
 	{ p "/valid",  base, 0x4, 0,  1,  DZ_BOOL, DZ_F_RO,  who " TVALID readback" }
+
+/* dz_osc2 (build osc, 2026-10-29): the registers of one channel beside the
+ * old /dds/<n>/hz|pinc|enable|valid (hw/rtl/dz_osc/dz_osc_ch.v). CTRL reads
+ * back the written value (with commit on: the value that waits for vsync).
+ * The step and AWG tables are write-only: debazd's dds.c keeps their copy. */
+#define OSCX(p, base, who)							\
+	{ p "/seq",       base, 0x08,  0, 1,  DZ_BOOL, 0, who " sequencer on (step table 0..last)" }, \
+	{ p "/tick",      base, 0x08,  1, 3,  DZ_RAW,  0, who " step tick: 0 prescaler, 1 hsync, 2 vsync, 3 line start, 4 other ch step, 5 other ch wrap, 6 ext trigger, 7 none" }, \
+	{ p "/reset",     base, 0x08,  4, 2,  DZ_RAW,  0, who " phase reset: 0 none, 1 hsync, 2 vsync, 3 line start" }, \
+	{ p "/last",      base, 0x08,  8, 4,  DZ_RAW,  0, who " last step of the table (it loops 0..last)" }, \
+	{ p "/oneshot",   base, 0x08, 12, 1,  DZ_BOOL, 0, who " stop after the last step (keep its values)" }, \
+	{ p "/vsrestart", base, 0x08, 13, 1,  DZ_BOOL, 0, who " restart the step table at each vsync" }, \
+	{ p "/commit",    base, 0x08, 14, 1,  DZ_BOOL, 0, who " PINC, POFF, CTRL take effect at the next vsync (tear-free)" }, \
+	{ p "/shape",     base, 0x08, 16, 3,  DZ_RAW,  0, who " shape: 0 sine, 1 saw up, 2 saw down, 3 triangle, 4 square, 5 pulse, 6 AWG" }, \
+	{ p "/invert",    base, 0x08, 19, 1,  DZ_BOOL, 0, who " flip the output MSB: for the sine only (two's complement <-> offset binary)" }, \
+	{ p "/prescale",  base, 0x0C,  0, 24, DZ_RAW,  0, who " prescaler tick = (value + 1) x 10 ns" }, \
+	{ p "/poff",      base, 0x10,  0, 32, DZ_RAW,  0, who " phase offset (2^32 = one cycle)" }, \
+	{ p "/linestep",  base, 0x14,  0, 32, DZ_RAW,  0, who " added to the phase at each hsync, cleared at vsync (slants)" }, \
+	{ p "/framestep", base, 0x18,  0, 32, DZ_RAW,  0, who " added to the phase at each vsync (scrolling)" }, \
+	{ p "/pwidth",    base, 0x1C,  0, 32, DZ_RAW,  0, who " pulse shape: high while phase < pwidth" }, \
+	{ p "/inc_now",   base, 0x20,  0, 32, DZ_RAW,  DZ_F_RO, who " phase increment now (sequencer)" }, \
+	{ p "/step_now",  base, 0x04,  8, 4,  DZ_RAW,  DZ_F_RO, who " step now" }, \
+	{ p "/running",   base, 0x04, 16, 1,  DZ_BOOL, DZ_F_RO, who " sequencer running" }
 
 static const dz_field static_fields[] = {
 	RGB4("/hdmi/0/gain", G0, CH1, "HDMI_0 output gain"),
@@ -77,6 +104,11 @@ static const dz_field static_fields[] = {
 
 	DDS3("/dds/0", DDS0, "HDMI_0 DDS"),
 	DDS3("/dds/1", DDS1, "HDMI_1 DDS"),
+#ifdef HW_DZ_OSC2_0_BASE
+	OSCX("/dds/0", OSC0, "HDMI_0 DDS"),
+	OSCX("/dds/1", OSC1, "HDMI_1 DDS"),
+	{ "/dds/1/phase", OSC1, 0x24, 0, 32, DZ_RAW, DZ_F_RO, "HDMI_1 DDS phase now (2^32 = one cycle)" },
+#endif
 
 	{ "/io/raw",            IO, CH1,  0, 8, DZ_RAW,  DZ_F_RO, "user I/O lines [7:0] (PL_KEY[3:0] + K17/E19), active low" },
 	{ "/io/key/0",          IO, CH1,  0, 1, DZ_BOOL, DZ_F_RO, "PL_KEY0, 0 = pressed" },
