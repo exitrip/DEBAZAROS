@@ -161,6 +161,9 @@ set_max_delay -datapath_only 10.0 -from [get_cells -quiet -hier -filter {NAME =~
 ## events (hdmi_audio_regs page 1, 2026-10-27): vsync (pixel clock) and the
 ## fan pin 3 inputs into 2-FF synchronizers
 set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *hdmi_audio_regs_0/inst/ev_s1_reg[*]}]
+## dz_regs bank 0 input (2026-10-29): gpio_in comes from several clocks (HDMI_2
+## capture status, fid on FCLK2, user I/O pins) into a 2-FF synchronizer
+set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *dz_regs_0/inst/in_s1_reg[*]}]
 
 
 ## ---- output pixel clock (2026-10-28) ---------------------------------------

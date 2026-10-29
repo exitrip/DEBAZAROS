@@ -4,7 +4,8 @@
  *   dzweb [-p port] [-w wwwdir] [-m mediadir] [-d host] [-o oscport] [-v]
  *     -p PORT   HTTP port (default 8080)
  *     -w DIR    web app files (default /home/ebaz/www)
- *     -m DIR    media root with img/, movies/ and audio/ (default /home/ebaz)
+ *     -m DIR    media root with img/, movies/ and audio/ (default /media/debaz,
+ *               the exFAT media partition)
  *     -d HOST   debazd host (default 127.0.0.1), -o its UDP port (9000)
  *
  * HTTP:
@@ -18,7 +19,7 @@
  *   PUT    /media/<img|movies|audio>/<name>  upload (raw body, Content-Length)
  *   DELETE /media/<img|movies|audio>/<name>  delete
  *     Media folders are <media>/img, movies and audio (-m, default
- *     /home/ebaz), the folders debazd reads. Names: [A-Za-z0-9._-], as in
+ *     /media/debaz), the folders debazd reads. Names: [A-Za-z0-9._-], as in
  *     debazd. An upload goes to .<name>.part and is renamed when complete.
  *     Transfers move in chunks inside the poll loop, so other clients stay live.
  *
@@ -54,7 +55,7 @@
 
 static int  verbose;
 static char www[256] = "/home/ebaz/www";
-static char media[128] = "/home/ebaz";
+static char media[128] = "/media/debaz";
 static struct sockaddr_in dzd;		/* debazd address */
 static volatile sig_atomic_t stop;
 

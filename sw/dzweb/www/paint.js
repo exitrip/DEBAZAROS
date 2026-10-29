@@ -341,7 +341,7 @@ export function init(root) {
   const fade = h("input", { type: "number", min: 0, max: 1, step: 0.05, value: 0.2 });
   const act = (label, fn) => h("button", { onclick: fn }, label);
 
-  // save / recall: the slot's paint buffer as <name>.png in /home/ebaz/img
+  // save / recall: the slot's paint buffer as <name>.png in /media/debaz/img
   // (debazd encodes it in the background, about 1 s), back with /img/<slot>/load
   const pad = (n) => String(n).padStart(2, "0");
   const stamp = () => { const d = new Date();
@@ -350,7 +350,7 @@ export function init(root) {
   const clean = (n) => n.replace(/\.png$/i, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 92);
   const saveName = h("input", { type: "text", value: stamp(), style: "width:210px",
     title: "file name: A-Z a-z 0-9 . _ - (.png is added)" });
-  const imgSel = h("select", { title: "images on the board (/home/ebaz/img), newest first", style: "max-width:260px" });
+  const imgSel = h("select", { title: "images on the board (/media/debaz/img), newest first", style: "max-width:260px" });
   const listImages = async (pick) => {
     try {
       const r = await fetch(`${net.httpBase()}/media`, { cache: "no-store" });

@@ -2,7 +2,7 @@
 # avplay.sh - play video AND audio of one file on the board (test, 2026-10-28;
 # before debazd /movie and an ALSA driver do it). Run on the board as root.
 #
-#   sudo sh avplay.sh [-o 0|1] [-v] [-l] file.mkv | -k     (file from mkmovie.sh)
+#   sudo sh avplay.sh [-o 0|1] [-v] [-l] file.mkv | -k     (file from mkmedia.sh)
 #
 #   -o n   output: HDMI_n (PCB name = BD name; default 0 = J1 "HDMI0").
 #          Video goes to the slot that display n shows at home (0 or 2),
@@ -16,7 +16,7 @@
 # stdout -> fbfeed -y, audio as S16LE 48 kHz on fd 3 -> pcmplay. The PCM FIFO
 # drains at exactly 48 kHz; when a pipe is full, ffmpeg waits, so a slow
 # video path also stalls the audio (underruns in the pcmplay summary).
-# The movie size must be the display mode (mkmovie.sh -s).
+# The movie size must be the display mode (mkmedia.sh -s).
 set -e
 out=0 v= loop=
 while getopts o:vlk opt; do
@@ -37,7 +37,7 @@ while getopts o:vlk opt; do
 done
 shift $((OPTIND - 1))
 f=$1
-[ -f "$f" ] || f=/home/ebaz/movies/$1
+[ -f "$f" ] || f=/media/debaz/movies/$1
 [ -f "$f" ] || { echo "no file $1"; exit 1; }
 D=/home/ebaz/bin
 

@@ -200,15 +200,19 @@ static int set_source(int out, const char *src)
 	return 0;
 }
 
-/* debazd runs as root; dzweb (user ebaz) must be able to delete recordings */
+/* debazd runs as root; dzweb (user ebaz) must be able to delete recordings.
+ * On the exFAT media partition every file already belongs to the mount's
+ * user (and chown fails there): only change what differs. */
 static void own_like_dir(const char *file)
 {
 	char p[200];
-	struct stat st;
+	struct stat st, fs;
 
 	if (stat(DZ_AUDIO_DIR, &st) < 0)
 		return;
 	snprintf(p, sizeof(p), "%s/%s", DZ_AUDIO_DIR, file);
+	if (stat(p, &fs) < 0 || (fs.st_uid == st.st_uid && fs.st_gid == st.st_gid))
+		return;
 	if (chown(p, st.st_uid, st.st_gid) < 0)
 		dzd_log("sound: chown %s failed\n", p);
 }

@@ -13,6 +13,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +39,7 @@ typedef struct {
 	int       blend;		/* dz_blend                          */
 	int       autoflush;
 	pid_t     player;
+	pid_t     aplayer;		/* the movie's audio (own process) */
 } surf_t;
 
 static surf_t surf[DZ_SLOTS];
@@ -820,6 +822,8 @@ int dz_draw_movie_running(int i)
 {
 	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
 
+	if (s && s->aplayer > 0 && waitpid(s->aplayer, NULL, WNOHANG) == s->aplayer)
+		s->aplayer = 0;
 	if (!s || s->player <= 0)
 		return 0;
 	if (waitpid(s->player, NULL, WNOHANG) == s->player) {
@@ -833,6 +837,11 @@ int dz_draw_movie_stop(int i)
 {
 	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
 
+	if (s && s->aplayer > 0) {
+		kill(-s->aplayer, SIGKILL);	/* at once: no ALSA buffer play-out */
+		waitpid(s->aplayer, NULL, 0);
+		s->aplayer = 0;
+	}
 	if (!s || s->player <= 0)
 		return 0;
 	kill(-s->player, SIGTERM);
@@ -854,13 +863,17 @@ int dz_draw_movie_play_fps(int i, const char *name, float fps)
 /* the movie's audio track to ALSA card DEBAZ (2026-10-28): bit 0 = HDMI 0
  * (PCM 0), bit 1 = HDMI 1 (PCM 1), bit 2 = I2S (PCM 3). Several bits = the
  * same audio on several PCMs; the route controls choose what each output
- * plays (a swap = route changes only). A file without audio plays as
- * before: the shell checks for an audio stream (ffprobe) before it runs
- * ffmpeg, so this call does not wait. */
+ * plays (a swap = route changes only).
+ * The audio is a SECOND ffmpeg (same file, -re, same start, same loop) at
+ * SCHED_FIFO 20: in one ffmpeg the audio waited for every video frame, and
+ * with two movies + uploads (8 fps) it broke up (PCM in XRUN, 2026-10-28).
+ * Now the sound stays smooth; on an overloaded CPU the picture falls behind
+ * instead. A file without audio: the shell checks for an audio stream
+ * (ffprobe) and exits, so this call does not wait. */
 int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 {
 	surf_t *s = get(i);
-	char cmd[1280], path[256], dst[96], cap[32] = "", aud[400] = "";
+	char cmd[900], path[256], dst[96], cap[32] = "", aud[400] = "";
 	static const int pcm_of[3] = { 0, 1, 3 };
 	pid_t pid;
 
@@ -896,23 +909,32 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 		if (audio & (1 << k))
 			snprintf(aud + strlen(aud), sizeof(aud) - strlen(aud),
 				 " -map 0:a:0 -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d", pcm_of[k]);
-	if (aud[0])
-		snprintf(cmd, sizeof(cmd),
-			 "A=; ffprobe -v error -select_streams a:0 -show_entries stream=index "
-			 "-of csv=p=0 '%s' | grep -q . && A='%s'; "
+	if (aud[0]) {
+		char acmd[900];
+
+		snprintf(acmd, sizeof(acmd),
+			 "ffprobe -v error -select_streams a:0 -show_entries stream=index "
+			 "-of csv=p=0 '%s' | grep -q . || exit 0; "
 			 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
-			 "-i '%s' -map 0:v:0 -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p "
-			 "-f rawvideo pipe:1 $A "
-			 "| %s -y %s -w %d -h %d -s %u%s",
-			 path, aud, path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h,
-			 (unsigned)s->stride, movie_verbose ? " -v" : "");
-	else
-		snprintf(cmd, sizeof(cmd),
-			 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
-			 "-i '%s' -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p -f rawvideo pipe:1 "
-			 "| %s -y %s -w %d -h %d -s %u%s",
-			 path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
-			 movie_verbose ? " -v" : "");
+			 "-i '%s'%s", path, path, aud);
+		pid = fork();
+		if (pid == 0) {
+			struct sched_param sp = { .sched_priority = 20 };
+
+			setsid();
+			sched_setscheduler(0, SCHED_FIFO, &sp);	/* inherited by ffmpeg */
+			execl("/bin/sh", "sh", "-c", acmd, (char *)NULL);
+			_exit(127);
+		}
+		s->aplayer = pid > 0 ? pid : 0;
+	}
+	snprintf(cmd, sizeof(cmd),
+		 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
+		 "-i '%s' -map 0:v:0 -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p "
+		 "-f rawvideo pipe:1 "
+		 "| %s -y %s -w %d -h %d -s %u%s",
+		 path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+		 movie_verbose ? " -v" : "");
 	pid = fork();
 	if (pid < 0)
 		return -1;

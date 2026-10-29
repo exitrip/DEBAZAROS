@@ -46,10 +46,10 @@
 #define SCU_TIMER_ID XPAR_SCUTIMER_DEVICE_ID
 #define UART_BASEADDR XPAR_PS7_UART_1_BASEADDR
 
-#define NU_MIXER_0_ADDR XPAR_HDMI_0_MIXERMATRIX_MIXER_0_S00_AXI_BASEADDR
-
-#define TEST_GAIN_0_ADDR  XPAR_HDMI_0_COLORGAINMAIN_AXI_GPIO_0_BASEADDR
-#define TEST_GAIN_1_ADDR  XPAR_HDMI_1_COLORGAINMAIN_AXI_GAIN_1_BASEADDR
+/* No effect setup here (2026-10-29): mixer, gains, dividers and DDS belong
+ * to debazd. hdmi2 wrote 0x00ffffff / 0x00010101 into the 0x4121 / 0x4123
+ * banks at every start - values from before the DDS dividers, which set
+ * their den to 0 (sine legs stuck at 0xFFFF). */
 
 /* ------------------------------------------------------------ */
 /*				Global Variables								*/
@@ -218,13 +218,9 @@ static int phys_reserved(u32 phys, u32 len)
 	return ok;
 }
 // ... and for all the Vivado IP's needing to be configured
-mm_IP scu_timer_mm_IP;
 mm_IP vdma_0_mm_IP, vdma_1_mm_IP;
 mm_IP vtc_0_mm_IP;//, vtc_1_mm_IP;
 mm_IP dynclk_mm_IP;
-mm_IP testMix_IP[9];
-mm_IP testGain0_IP, testGain1_IP;
-mm_IP testLED_IP;
 
 /* ------------------------------------------------------------ */
 /*				Procedure Definitions							*/
@@ -706,41 +702,14 @@ int main(int argc, char *argv[])
 		}
 	}
 //	close(sockfd);
-	destroy_IP_driver(&scu_timer_mm_IP);
 	destroy_IP_driver(&fb_mm_IP);
 	destroy_IP_driver(&vdma_0_mm_IP);
 	destroy_IP_driver(&vdma_1_mm_IP);
 	destroy_IP_driver(&vtc_0_mm_IP);
 //	destroy_IP_driver(&vtc_1_mm_IP);
 	destroy_IP_driver(&dynclk_mm_IP);
-//	for (int i = 0; i < 9; i++) {
-//		destroy_IP_driver(&(testMix_IP[i]));
-//	}
-	destroy_IP_driver(&testMix_IP);
-	destroy_IP_driver(&testGain0_IP);
-	destroy_IP_driver(&testGain1_IP);
-	destroy_IP_driver(&testLED_IP);
 	return 0;
 }
-
-int gm[9][8] = {0};
-//int g1[8] = {0,0,0,
-//			0,0,0,
-//			0,0};
-//int g2[8] = {0,0,0,
-//			0,0,0,
-//			0,0};
-//int g6[8] = {0,0,0,
-//			0,0,0,
-//			0,0,0};
-//int g7[8] = {0,0,0,
-//			0,0,0,
-int gains[2] = {0x00ffffff, 0x00ffffff};
-//set rr, gg, bb to steady gain
-int cs1[9] = {0xf, 0x1, 0x1,
-		0x1, 0xf, 0x1,
-		0x1, 0x1, 0xf};
-
 
 void DemoInitialize()
 {
@@ -748,10 +717,10 @@ void DemoInitialize()
 	XAxiVdma_Config *vdma0Config, *vdma1Config;
 	//int i;
 
-	/*
-	 * Initialize a timer used for a simple delay
-	 */
-	TimerInitialize(&scu_timer_mm_IP, SCU_TIMER_ID);
+	/* No TimerInitialize (2026-10-29): it mapped the Cortex-A9 private timer
+	 * (0xF8F0_0600) and read-modify-wrote its control register - Linux uses
+	 * that timer as its per-CPU clock event (twd, GIC 29). TimerDelay was
+	 * unused (it SEGVed); hdmi2 uses usleep. */
 
 //
 //	testLED_IP.base_address = 0x41240000;
@@ -882,65 +851,6 @@ void DemoInitialize()
 
 	//GG DemoPrintTest(dispCtrl0.framePtr[dispCtrl0.curFrame], dispCtrl0.vMode.width, dispCtrl0.vMode.height, dispCtrl0.stride, DEMO_PATTERN_1);
 	//DemoPrintTest(pFramesVirtual0[dispCtrl0.curFrame], dispCtrl0.vMode.width, dispCtrl0.vMode.height, dispCtrl0.stride, DEMO_PATTERN_1);
-	testGain0_IP.base_address = TEST_GAIN_0_ADDR;
-	testGain0_IP.size_in_k = 64;
-	create_IP_driver(&testGain0_IP);
-	IP_driver_write(&testGain0_IP, 0, 0x00ffffff);
-
-
-	testGain1_IP.base_address = TEST_GAIN_1_ADDR;
-	testGain1_IP.size_in_k = 64;
-	create_IP_driver(&testGain1_IP);
-	IP_driver_write(&testGain1_IP, 0, 0x00010101);
-
-	testMix_IP[0].base_address = NU_MIXER_0_ADDR;
-	testMix_IP[0].size_in_k = 64;
-//	testMix_IP[1].base_address = TEST_MIXER_1_ADDR;
-//	testMix_IP[1].size_in_k = 64;
-//	testMix_IP[2].base_address = TEST_MIXER_2_ADDR;
-//	testMix_IP[2].size_in_k = 64;
-
-//	testMix_IP[3].base_address = TEST_MIXER_3_ADDR;
-//	testMix_IP[3].size_in_k = 64;
-//	testMix_IP[4].base_address = TEST_MIXER_4_ADDR;
-//	testMix_IP[4].size_in_k = 64;
-//	testMix_IP[5].base_address = TEST_MIXER_5_ADDR;
-//	testMix_IP[5].size_in_k = 64;
-//
-//	testMix_IP[6].base_address = TEST_MIXER_6_ADDR;
-//	testMix_IP[6].size_in_k = 64;
-//	testMix_IP[7].base_address = TEST_MIXER_7_ADDR;
-//	testMix_IP[7].size_in_k = 64;
-//	testMix_IP[8].base_address = TEST_MIXER_8_ADDR;
-//	testMix_IP[8].size_in_k = 64;
-
-
-//	for (int i = 0; i < 9; i++) {
-//		if (i != 1 && i != 2) {
-//			create_IP_driver(&(testMix_IP[i]));
-//			IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG8_OFFSET, cs[i]);
-//	////    IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG9_OFFSET, cs[1]);
-//			IP_driver_write(&(testMix_IP[i]), 0, gs[i]);
-//	//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG1_OFFSET, g2[i]);
-//	//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG2_OFFSET, g3[i]);
-//		}
-//	}
-	create_IP_driver(&testMix_IP);
-//	IP_driver_write(&testGain0_IP, 0, gains[0]);
-//	IP_driver_write(&testGain1_IP, 0, gains[1]);
-//	for (int i = 0; i < 9; i++) {
-//		create_IP_driver(&(testMix_IP[i]));
-//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG0_OFFSET, 0x0);
-//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG1_OFFSET, 0x0);
-//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG2_OFFSET, 0x0);
-//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG8_OFFSET, 0x3);
-//		IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG9_OFFSET, 0x0);
-//	}
-//
-//	IP_driver_write(&(testMix_IP[0]), MIXER_S00_AXI_SLV_REG0_OFFSET, 0xffff);
-//	IP_driver_write(&(testMix_IP[5]), MIXER_S00_AXI_SLV_REG0_OFFSET, 0xffff);
-//	IP_driver_write(&(testMix_IP[6]), MIXER_S00_AXI_SLV_REG0_OFFSET, 0xffff);
-
 	return;
 }
 
@@ -951,13 +861,7 @@ void DemoRun()
 	char userInput = 0;
 
 	int hold = 1;
-	/*
-	 * Initialize a timer used for a simple delay
-    */
-	// create the IP_driver for SCU Timer
-	// it will be set inside TimweInitialize
-	mm_IP scu_timer_mm_IP;
-	TimerInitialize(&scu_timer_mm_IP, SCU_TIMER_ID);
+	/* no TimerInitialize: see DemoInitialize (Linux's per-CPU timer) */
 
 
 	// Flush UART FIFO
@@ -1027,17 +931,6 @@ void DemoRun()
 //				}
 //			}
 //			break;
-		case 'f':
-			for (int h = 9000; h < 10000; h+=100) {
-				for (int i =0; i < 0xff; i++) {
-					IP_driver_write(&testGain0_IP, 0, (i << 16) + (i << 8) + i);
-					int j = 1280;
-					while(j--){
-						IP_driver_write(&testMix_IP, (j%9)*8, j&0xffff);
-					}
-				}
-			}
-			break;
 		case 'j':
 
 			yMid = dispCtrl1.vMode.height/2;
@@ -1121,20 +1014,6 @@ void DemoRun()
 					yInt = 2;
 				}
 			}
-			break;
-		case 'c':
-//			while (hold) {
-				//for i in $(seq 1 0xff); do devmem 0x43c50000 32 $i; done
-				for (int i = 0; i < 9; i++) {
-//					IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG8_OFFSET, cs[i]);
-////					IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG9_OFFSET, cs[1]);
-//					IP_driver_write(&(testMix_IP[i]), 0, g0[i]);
-//					IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG1_OFFSET, g0[i]);
-//					IP_driver_write(&(testMix_IP[i]), MIXER_S00_AXI_SLV_REG2_OFFSET, g0[i]);
-				}
-				IP_driver_write(&testGain0_IP, 0, gains[0]);
-				IP_driver_write(&testGain1_IP, 0, gains[1]);
-//			}
 			break;
 		case '1':
 			DemoChangeRes();

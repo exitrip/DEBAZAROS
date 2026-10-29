@@ -184,7 +184,13 @@ gain stage — unsigned 16÷8 via a ceil(2^24/den) ROM-reciprocal multiply
 come from GPIO fields (see address map; all default to 1 = passthrough), so
 integer attenuation composes with the multiplication-based gains.
 HDMI_1 also gained a second osc gain stage (colorGainOscSin + colorGainOscPhase,
-c_addsub_3/4). HDMI_0's DDS legs run on FCLK0; HDMI_1's on PixelClk.
+c_addsub_3/4). Both DDS compilers run on FCLK0 (checked in the BD
+2026-10-29; an older note said HDMI_1's ran on PixelClk). Each compiler's
+sine uses 7 RAMB36 + 1 RAMB18 (15 BRAM tiles for both). Successor in
+progress: `hw/rtl/dz_osc/dz_osc2.v` + `dz_osc_ch.v` + `dz_sine_rom.v` (both
+channels on one AXI port, sequencer, raster sync, shapes, own sine, AWG;
+ROADMAP.md section 14), testbench `sh hw/sim/run_dz_osc_tb.sh`. Not in
+the BD yet.
 
 The two channels cross-feed each other's final pixel output → the video-feedback
 architecture. **Known limitation (git log 2025-09-11): feedback loop only stable below
@@ -297,7 +303,13 @@ PL_KEY + an add-on board. SD0 = MIO 40-45 (CD MIO 34); NAND W29N01HV on the
 SMC (MIO 0, 2-14) = /dev/mtd0; no QSPI. Factory NAND dump: `original_flash/`.
 Debug bits readable at 0x4120_0000 GPIO ch1 (see address map; verified in BD
 Oct 2026). `sw/tools/capstat.sh [-w ms]` decodes them + capture DMASR + a
-frame-content checksum. Requires FCLK3 = 200 MHz
+frame-content checksum. ⚠️ debazd clears the S2MM FrmCnt bit (W1C) every
+poll: any second reader that also clears it (old capstat) shows "no frames"
+while the capture runs, and steals debazd's frame events (it then re-arms
+with a soft reset). capstat leaves DMASR alone while debazd holds
+/tmp/debazd.lock and prints debazd's state as `frm(d)` (Oct 29 2026); else
+use `dzctl /capture/status` (3rd value = frames). IntErr/SOFLate after an
+arm are stale latches. Requires FCLK3 = 200 MHz
 (see the FSBL clock trap above). hdmi2.elf CaptureInitialize prints per-step
 diagnostics; stdout is unbuffered so prints survive crashes.
 
@@ -345,10 +357,11 @@ removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
 
 | Base | Block |
 |---|---|
-| 0x4120_0000 | axi_gpio_hdmi_in_phase0_div_gPhase1 (renamed Aug 2026): ch1 @+0 INPUT = {[9:8] HPD[1:0], [10] pLocked, [11] aLocked, [12] vid_in overflow, [13] underflow, [14] fid; [7:0] dangling}; ch2 @+8 OUTPUT (default 0x0100_0000) = {[31:24] HDMI_0 DDS-phase divider den, [23:0] HDMI_1 gPhase} |
-| 0x4121_0000 | HDMI_0 axi_gpio_mainG_shift_memdelay (ch1 also feeds HDMI_0 DDS-sine divider den via slice) |
-| 0x4123_0000 | HDMI_1 axi_gpio_divOsc_gosc_shiftPhaseOsc (dual all-out, ch1 default 0x0101_0101; osc dividers + gains + shifts) |
-| 0x4126_0000 | HDMI_1 axi_gpio_divPhase_gmain_shiftPhase_gfeedback (ch1 default 0x01FF_FFFF, ch2 default 0x0080_8080) |
+| 0x4120_0000-0x4127_FFFF | **dz_regs_0** (Oct 29 2026, build regs3, `hw/rtl/dz_regs/dz_regs.v`; ps7_axi_periph M00): ONE block in place of the four AXI GPIOs below, which keep their addresses, register offsets (ch1 +0, ch2 +8, TRI +4/+C, bank 0 GIER 0x11C / ISR 0x120 toggle-on-write / IER 0x128) and reset values as banks 0/1/3/6 (bank = addr[18:16]). New: byte and halfword writes (WSTRB; the word address is decoded, so a byte store to +1..+3 works); free banks 0x4122/4/5/7 read 0 (no bus error); reads take one more FCLK0 clock. ROADMAP.md section 14 |
+| 0x4120_0000 | bank 0 (was axi_gpio_hdmi_in_phase0_div_gPhase1, renamed Aug 2026): ch1 @+0 INPUT = {[9:8] HPD[1:0], [10] pLocked, [11] aLocked, [12] vid_in overflow, [13] underflow, [14] fid; [5:0] user I/O lines, [15]/[16] fan pin 3 J3/J5; 2-FF synchronized, false path to in_s1 in the XDC}; ch2 @+8 OUTPUT (default 0x0100_0000) = {[31:24] HDMI_0 DDS-phase divider den, [23:0] HDMI_1 gPhase} |
+| 0x4121_0000 | bank 1 (was HDMI_0 axi_gpio_mainG_shift_memdelay; ch1 reset 0xFFFF_FFFF) (ch1 also feeds HDMI_0 DDS-sine divider den via slice) |
+| 0x4123_0000 | bank 3 (was HDMI_1 axi_gpio_divOsc_gosc_shiftPhaseOsc) (dual all-out, ch1 default 0x0101_0101; osc dividers + gains + shifts) |
+| 0x4126_0000 | bank 6 (was HDMI_1 axi_gpio_divPhase_gmain_shiftPhase_gfeedback) (ch1 default 0x01FF_FFFF, ch2 default 0x0080_8080) |
 | 0x4300_0000 | HDMI_0 VDMA (MM2S) |
 | 0x4301_0000 | HDMI_1 VDMA (MM2S) |
 | 0x4302_0000 | HDMI_2 capture VDMA (S2MM only, 3 fstores; S2MM regs at +0x30/+0xA0..AC) |
@@ -357,10 +370,10 @@ removed address bus-errors with SIGBUS "external abort", which crashed hdmi2)
 | 0x43C5_0000 | HDMI_0 mixer_0 (the "nuMixer") |
 | 0x43D0_0000 | dds_axi_interface_0 → HDMI_0 DDS phase increment |
 | 0x44D0_0000 | dds_axi_interface_1 → HDMI_1 DDS phase increment |
-| 0x43C6_0000 | hdmi_audio_regs_0 (Oct 26 2026, branch hdmi-audio; ps7_axi_periph M12, NUM_MI 12→13): HDMI audio TX ctrl / RX status, ID 0x3C = "HAUD". Not in bitstreams before it: dz_map probes the ID under a SIGBUS guard |
+| 0x43C6_0000 | hdmi_audio_regs_0 (Oct 26 2026, branch hdmi-audio; ps7_axi_periph M12, NUM_MI 12→13; since regs3 M09 of 10): HDMI audio TX ctrl / RX status, ID 0x3C = "HAUD". Not in bitstreams before it: dz_map probes the ID under a SIGBUS guard |
 
 REMOVED (do not touch): 0x4122_0000, 0x4124_0000 (old LED GPIO — LED is
-xlconstant-driven now), 0x43C3_0000 (HDMI_1 VTC), 0x43D1_0000, 0x44D1_0000.
+xlconstant-driven now; inside dz_regs since regs3 they read 0), 0x43C3_0000 (HDMI_1 VTC), 0x43D1_0000, 0x44D1_0000.
 
 VDMA memory ports: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture → S_AXI_HP1
 (all 256M window at 0). Capture writes slot 4 = 0x09FA_4000.
@@ -418,7 +431,7 @@ registered ALWAYS (1 px later than before, also with the key off; it also cuts
 the HDMI_0 → HDMI_1 feedback cone after the matrix). All new bits 0 = old
 behaviour (old bitstreams store and ignore them). The duplicate output-register
 stage of `mixer_v1_0_S00_AXI.v` (63 × 32-bit copies on the same AXI clock) is
-now continuous assigns (measured −311 FF, slices 4302 → 4209: synthesis had merged most copies already). `hw/sim/run_mixer_tb.sh`: the new mixer equals the
+now continuous assigns (measured −311 FF, slices 4302 → 4209: synthesis had merged most copies already). **coreRevision 23 (Oct 29 2026, build regs3):** the AXI write is registered (enable, word index, data, strobes; max_fanout 16) and taken one FCLK0 clock after the handshake: the decode + 63 × 32 clock enables from axi_awaddr failed FCLK0 by 0.29 ns (9 ns of routing). Same behaviour (run_mixer_tb ALL PASS, read-back included). `hw/sim/run_mixer_tb.sh`: the new mixer equals the
 4e2d1820 mixer on 12,000 random pixel clocks × 9 channels (all modes, random
 gains/thresholds/streams), plus directed key tests. OSC: `/mixer/<c>/key`,
 `/mixer/<c>/src`, `/key/invert`, `/key/stream`, `/fx/key/color 0xRRGGBB [tol]`,
@@ -465,6 +478,11 @@ loop; laptop i915 needs a >= 15 s unplug after PL reloads (HPD storm → polling
   0x08 RX_CTRL ([0] loop, [1] clear peaks), 0x0C TX0_CTRL (HDMI_0, as TX_CTRL), 0x10 RX_STATUS, 0x14 samples, 0x18 peak R|L, 0x1C N,
   0x20 CTS, 0x3C ID. OSC fields `/audio/...` (`sw/lib/dz_fields.c`).
   RX_CTRL [2] = HDMI_2 HPD low. 0x40-0x54 = pl_io (user I/O + I2S).
+- **Media root = `/media/debaz/{img,movies,audio}` (2026-10-28):** the exFAT
+  partition DEBAZMEDIA made at first boot (debaz-firstboot.sh, ROADMAP §10),
+  or a folder on the root without free space; `/home/ebaz/{img,movies,audio}`
+  are symlinks. Never rsync -r INTO /home/ebaz/<kind> (it would replace the
+  symlink with a folder): mkmedia uploads to /media/debaz.
 - **ALSA card DEBAZ (driver debaz-audio, 2026-10-28, WORKS on the board):**
   playback HDMI 0/1 + capture HDMI 2 In tested (ROADMAP.md section 13 for
   results and lessons). Route controls Auto/Linux/Other per output. The
@@ -511,8 +529,13 @@ Digilent dynclk/display_ctrl) on Linux by mmapping /dev/mem (`src/IP_Driver.c`,
 `mm_IP` struct). Default mode 1280x720@30 both channels. Framebuffers: physical
 0x0800_0000, 2 frames per display, frame size `DEMO_MAX_FRAME = 1920*1080*4`;
 disp0 frames 0-1, disp1 frames 2-3. Has vestigial commented-out UDP server (port 8888)
-and a menu mode (`-m`). CLI: `-r <res>`. Note: `TimerDelay` via scutimer SEGVs (commented
-out); LED GPIO hardcoded 0x41240000 (removed block; the code is commented out).
+and a menu mode (`-m`). CLI: `-r <res>`. **Since 2026-10-29 hdmi2 is a video-only CLI
+tool** (mode set, displays, test patterns, capture when debazd is not running): it no
+longer writes the GPIO banks (it set the sine dividers den = 0 at every start), the
+mixer or the gains (debazd / plreload do that), and it no longer maps the Cortex-A9
+private timer 0xF8F0_0600 (TimerInitialize did a read-modify-write of Linux's per-CPU
+clock-event timer; a possible cause of hangs). Verified on debaz-7130d5: after a restart
+0x4121_0000 / 0x4123_0000 keep their values, both display VDMAs run.
 ⚠️ Boot mode (no `-m`, as debazarosit.sh starts it) runs "Loop furever": it redraws
 display 1's frame (slot 2) EVERY 10 s — with only 16 MB reserved that is 3.4 MB of
 Linux RAM (see Device tree). sw/hdmi2 now refuses frames outside reserved memory
@@ -922,7 +945,8 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
    FCLK1 64 MHz is unused); the three VDMA memory interconnects lost their
    packet data FIFO + register slice (Oct 27 2026, build `fan`: the VDMA line
    buffers / S2MM store-and-forward and the HP FIFOs do that job); slim mixer register file;
-   GPIO/interconnect consolidation (addresses change → update devmem scripts).
+   GPIO consolidation DONE Oct 29 2026 (dz_regs, build regs3: −226 LUT, −733 FF,
+   3 crossbar ports, addresses unchanged; ROADMAP.md section 14).
    Do NOT trim VDMA fstores (third-port constraint). DSP relief = time-multiplexed
    mixer MACs at 2× pixel clock (45→~23 DSPs, also fixes timing ceiling).
 

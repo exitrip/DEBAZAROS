@@ -65,3 +65,6 @@ build-*/
 /original_flash/*.bin
 /original_flash/parts/
 /original_flash/extracted/
+
+# mkmedia.sh output (converted media for the board)
+board-media/

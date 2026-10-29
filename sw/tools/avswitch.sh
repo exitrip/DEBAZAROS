@@ -4,7 +4,7 @@
 # swapped every few seconds; the audio follows the picture. On the board,
 # as root, with debazd running and an HDMI source (with audio) on HDMI2:
 #
-#   sudo sh avswitch.sh [-p secs] [-n swaps] file.mkv     (file from mkmovie.sh)
+#   sudo sh avswitch.sh [-p secs] [-n swaps] file.mkv     (file from mkmedia.sh)
 #
 # Video: the movie plays into slot 1 (display 0's back slot), the live
 # input is slot 4; a swap = /disp/0/show and /disp/1/show (applied by debazd
@@ -22,7 +22,7 @@ while getopts p:n: opt; do
 done
 shift $((OPTIND - 1))
 f=$1
-[ -f "$f" ] || f=/home/ebaz/movies/$1
+[ -f "$f" ] || f=/media/debaz/movies/$1
 [ -f "$f" ] || { echo "no file $1"; exit 1; }
 D=/home/ebaz/bin
 Z="$D/dzctl -t 5"		# do not wait 400 ms for more replies

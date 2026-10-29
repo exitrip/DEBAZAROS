@@ -4,9 +4,9 @@ import * as net from "./net.js";
 import { h, card, row, hexToRgb, toast } from "./ui.js";
 
 const KINDS = {
-  img: { title: "Images", dir: "/home/ebaz/img", accept: "image/*,.ppm" },
-  movies: { title: "Movies", dir: "/home/ebaz/movies", accept: "video/*,.mkv,.ts" },
-  audio: { title: "Audio", dir: "/home/ebaz/audio", accept: "audio/*,.wav,.mp3,.flac,.ogg,.mkv" },
+  img: { title: "Images", dir: "/media/debaz/img", accept: "image/*,.ppm" },
+  movies: { title: "Movies", dir: "/media/debaz/movies", accept: "video/*,.mkv,.ts" },
+  audio: { title: "Audio", dir: "/media/debaz/audio", accept: "audio/*,.wav,.mp3,.flac,.ogg,.mkv" },
 };
 let lists = {}, uploads = {}, freeEl, spriteId, slotSel, info, movieAudio, audioOut;
 let state = { free: -1, keep: 0, max: 0, img: [], movies: [], audio: [] };
@@ -21,8 +21,13 @@ function cleanName(n) {
   return n.slice(-96) || "file";
 }
 
+// default slot 0 (display 0's home): a movie in a slot no display shows
+// still costs CPU (2026-10-28: a hidden movie in slot 6 took ~55 % of a core)
+const SLOT_NOTE = { 0: "display 0", 2: "display 1", 4: "capture", 11: "black" };
 function slotPicker() {
-  return h("select", {}, [...Array(12).keys()].map((i) => h("option", { value: i, selected: i === 6 }, `slot ${i}`)));
+  return h("select", { title: "only slots a display shows are visible: 0 = display 0, 2 = display 1 at home" },
+    [...Array(12).keys()].map((i) => h("option", { value: i, selected: i === 0 },
+      `slot ${i}${SLOT_NOTE[i] ? ` (${SLOT_NOTE[i]})` : ""}`)));
 }
 
 async function refresh() {

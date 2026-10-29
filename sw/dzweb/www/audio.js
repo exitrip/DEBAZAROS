@@ -26,7 +26,7 @@ async function loadFiles() {
   const r = await net.collect(net.message("/files", "audio"), "/file", "/file/end").catch(() => []);
   files = r.map((a) => a[0]).sort();
   fileSel.replaceChildren(...(files.length ? files.map((f) => h("option", { value: f }, f))
-    : [h("option", { value: "" }, "no files in /home/ebaz/audio")]));
+    : [h("option", { value: "" }, "no files in /media/debaz/audio")]));
 }
 
 function poll() {
@@ -82,7 +82,7 @@ export function init(root) {
       row(null,
         h("button.danger", { onclick: () => net.msg("/audio/rec", recName.value, parseFloat(recSecs.value) || 0) }, "● Record"),
         h("button", { onclick: () => net.msg("/audio/rec/stop") }, "Stop"), recState),
-      h("p.hint", {}, "48 kHz 16 bit stereo WAV into /home/ebaz/audio (11 MB per minute).")),
+      h("p.hint", {}, "48 kHz 16 bit stereo WAV into /media/debaz/audio (11 MB per minute).")),
     card("HDMI 2 input level",
       row("left", meters.l.el), row("right", meters.r.el), row(null, meters.state))));
 

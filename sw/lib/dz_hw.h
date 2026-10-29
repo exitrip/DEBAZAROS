@@ -11,6 +11,25 @@
 #include <stdint.h>
 #include "hw_map.h"
 
+/* The four AXI GPIO register banks became one block, dz_regs (2026-10-29,
+ * hw/rtl/dz_regs/dz_regs.v), at the same addresses: bank n at +n x 64K with
+ * the old register offsets. hw_map.h of such a bitstream names only the
+ * block; the old names keep working (dz_map maps each as its 64K window). */
+#ifdef HW_DZ_REGS_0_BASE
+#ifndef HW_AXI_GPIO_HDMI_IN_PHASE0_DIV_GPHASE1_BASE
+#define HW_AXI_GPIO_HDMI_IN_PHASE0_DIV_GPHASE1_BASE		(HW_DZ_REGS_0_BASE + 0x00000)
+#endif
+#ifndef HW_HDMI_0_AXI_GPIO_MAING_SHIFT_MEMDELAY_BASE
+#define HW_HDMI_0_AXI_GPIO_MAING_SHIFT_MEMDELAY_BASE		(HW_DZ_REGS_0_BASE + 0x10000)
+#endif
+#ifndef HW_HDMI_1_AXI_GPIO_DIVOSC_GOSC_SHIFTPHASEOSC_BASE
+#define HW_HDMI_1_AXI_GPIO_DIVOSC_GOSC_SHIFTPHASEOSC_BASE	(HW_DZ_REGS_0_BASE + 0x30000)
+#endif
+#ifndef HW_HDMI_1_AXI_GPIO_DIVPHASE_GMAIN_SHIFTPHASE_GFEEDBACK_BASE
+#define HW_HDMI_1_AXI_GPIO_DIVPHASE_GMAIN_SHIFTPHASE_GFEEDBACK_BASE (HW_DZ_REGS_0_BASE + 0x60000)
+#endif
+#endif
+
 /* ---- DDR frame slots ------------------------------------------------------
  * Reserved region (/boot/system.dtb, no-map): 0x0800_0000, 96 MB (128 MB is
  * rejected by the kernel on this board - PetaLinux/dtb/README.md).

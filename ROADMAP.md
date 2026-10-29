@@ -26,6 +26,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |
 | 14 | HDMI audio out (HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | WORKS on hardware 2026-10-26 (branch hdmi-audio, artifacts/..._20261026_audio): out, in, loop; 2026-10-27: HDMI_0 also hdmi_tx (own TX0_CTRL + audio source), simulated, built, not yet on hardware; open: software HPD; 1080p60 still needs the effects-chain pipelining (hdmi_tx itself: 10 ns) |
 | 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
+| 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); next: dz_osc2 into the BD, build, software |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -522,6 +523,22 @@ works; per-unit identity lives in small files, not in the image.
 | 3 | ext4 `data` | 256 MB | `/data` | per-unit state that must survive: ssh host keys, machine-id, unit settings, presets, logs |
 | 4 | FAT32 `DEBAZMEDIA` | rest of the card | `/media/debaz` | `img/`, `movies/`, `fonts/`: load media with any card reader |
 
+- **DONE 2026-10-28 (in the image config, built, not yet on a card):**
+  `sw/tools/debaz-firstboot.sh` (debaz-firstboot.service, every boot,
+  idempotent): with >= 2 GiB free after p2 it appends p3 `DEBAZDATA` (ext4,
+  256 MiB, `/data`) and p4 `DEBAZMEDIA` (**exFAT**, the rest,
+  `/media/debaz`, uid/gid ebaz, fmask 0133 / dmask 0022) with sfdisk
+  --append + partx -a (no reboot), writes the fstab lines (by label,
+  nofail), makes `/media/debaz/{img,movies,audio}`, moves files from
+  `/home/ebaz/{img,movies,audio}` there and leaves symlinks, then runs
+  debaz-mac.sh --firstboot. Without free space `/media/debaz` stays a
+  folder on the root (the second board: root grown by hand). All software
+  uses `/media/debaz` (DZ_MEDIA_DIR, dzweb -m default, avplay/avswitch,
+  mkmedia -m). Tested on a loop-device copy of the layout on the board
+  (partitions, labels, idempotent second run, exFAT writable by ebaz) and
+  for real in the no-space case on the second board; the fstab mount step
+  runs first on a fresh card. The WIC image has p1 2 GiB + p2 4 GiB, so a
+  16 GB card gets ~9 GiB of media.
 - The image file holds partitions 1-3 only (small, quick to flash).
   A first-boot service makes partition 4 in the free space (`parted` +
   `mkfs.vfat -n DEBAZMEDIA`) and creates the media folders. A 16 GB card
@@ -1154,4 +1171,210 @@ Gateware 1-4 + simulation (a testbench with a model of the driver's FIFO
 writes) -> build -> driver + recipe -> `aplay -D hw:DEBAZ,0 tone.wav` on the
 HDMI audio extractor, `arecord -D hw:DEBAZ,2` from the laptop, `amixer -c
 DEBAZ` for the routing, `alsactl store`.
+
+## 14. DDS pattern engine `dz_osc` (design 2026-10-29)
+
+Why: the plan of record was to make complex DDS patterns ("FM" patterns,
+checkerboards) from the CPU, by writing the DDS increment many times per
+frame. That does not work: an 8x8 checkerboard at 720p60 needs row edges
+every 90 lines with about one line (22 us) of accuracy, and the wake-up
+jitter of a 5.15 PREEMPT userspace thread is about 50-200 us (milliseconds
+under movie / upload load); exact timing would need busy-waiting through
+every frame (a whole A9 core). Edges inside a line (13 ns per pixel) are
+impossible from the CPU. The CPU stays right for PER-FRAME control
+(debazd's vsync thread, lfo.c: 60 writes/s); everything per line or per
+pixel goes into the PL.
+
+Facts (BD, 2026-10-29): both DDS compilers run on FCLK0 (100 MHz; CLAUDE.md
+said HDMI_1's ran on PixelClk - not in this BD). The pixel clock comes from
+FCLK0 (dynclk MMCM reference), so the DDS and the raster are frequency-locked
+(rational ratio), not phase-locked: patterns roll unless reset by the raster.
+Measured in the routed `fs` design: each DDS compiler uses **7 RAMB36 + 1
+RAMB18** for its sine (32-bit phase, 16-bit output: 15 of the 58 BRAM tiles
+for two sines), 67-75 LUT, 167-199 FF; each dds_axi_interface 28-30 LUT,
+140 FF (a useless 2-FF synchronizer: both sides on FCLK0).
+
+Decisions (user, 2026-10-29): 100 MHz (FCLK0) is the base clock; the DDS
+gets the streaming control scheme (the phase every clock); the remaining
+BRAM goes to a waveshaper / AWG; nothing is removed yet; one AXI port for
+both DDS. The mixer MAC matrix + per-pixel feedback path is the core of the
+device: never a candidate for removal (optimise it instead).
+
+### Files (2026-10-29)
+
+`hw/rtl/dz_osc/`: `dz_osc2.v` (top: one AXI-Lite port of 32 KB, channel 0
+at +0x0000, channel 1 at +0x4000; shared raster synchronizers; the chain
+inputs of each channel are the other channel's step / wrap pulses),
+`dz_osc_ch.v` (one channel; register map in its header), `dz_sine_rom.v`
+(GENERATED by `gen_sine.py`: quarter-wave 1024 x 16, registered case ROM,
+no .mem file). Outputs per channel: wave (old sine leg), phase[31:16] (old
+phase leg), the full phase without delay (event block); 3 clocks from the
+phase. The DDS compiler is no longer needed (sine inside).
+
+### Function (per channel)
+
+- Owns the phase accumulator: phase = acc + POFF + line offset + frame
+  offset + step phase; streams it every clock.
+- **Segment sequencer**, 16 steps {START, DELTA (signed, per tick), LEN |
+  KEEP | RST, PHASE}: square / pulse width / ramp / triangle are special
+  cases; KEEP continues from the current increment; RST restarts the
+  phase; one shot; restart at vsync.
+- **Tick sources**: 24-bit prescaler on FCLK0 (the second divided
+  frequency), hsync, vsync, line start (DE), the other channel's step or
+  wrap (divider chains, cross-modulation), an external trigger.
+- **Raster sync**: phase reset at hsync / vsync / line start (standing
+  patterns), LINESTEP (per line: slants, diagonals), FRAMESTEP (per frame:
+  scrolling), commit at vsync for PINC / POFF / CTRL (tear-free changes).
+  Syncs come into FCLK0 through 2 FF: an edge moves by at most 10 ns
+  (~0.75 px at 74 MHz).
+- **Shapes**: sine, saw up / down, triangle, square, pulse (phase < PWIDTH),
+  **AWG** (2048 x 16 table, indexed by phase[31:21]); output MSB flip
+  (two's complement <-> offset binary); all aligned with the sine latency.
+- Registers +0 PINC (bit 31 valid; a write without it is IGNORED, as
+  before; reset 0x8000_0001) and +4 STATUS bit 0 stay compatible: all
+  existing software keeps working. Full map in the file header. Step and
+  AWG tables are write-only (one RAM port each; the software keeps a copy).
+- Example, 8x8 checkerboard with no CPU: PINC = 8 cycles per line, phase
+  reset at hsync, tick = hsync, steps {P,0,rows} {P,0,rows | PHASE 180 deg}.
+
+Test: `sh hw/sim/run_dz_osc_tb.sh` (Verilator; ALL PASS 2026-10-29, both
+channels): IDs and reset values of both channels, the old PINC rule,
+square / ramp+triangle (KEEP) / one shot tick by tick, phase reset at
+hsync, line and frame steps, commit at vsync, all shapes (own sine against
+the gen_sine.py formula with the quadrant logic) and the phase outputs
+clock-exact, AWG through AXI, channel 1 stepping on channel 0's step
+pulses, external trigger, step RST.
+
+Resources, one channel out of context (XC7Z010, placed + routed, 10 ns):
+first version 877 LUT / 964 FF / 319 slices / 2 BRAM tiles (the AWG had 3
+ports and was duplicated); after write-only tables, one table read address
+(DELTA latched), 16-bit phase leg, commit shadows only for PINC/POFF/CTRL,
+fewer pipeline registers: **677 LUT (84 LUTRAM, 19 SRL) / 784 FF / ~236
+slices / 1 BRAM tile / 0 DSP, WNS +0.90 ns**.
+**Both channels (`dz_osc2`, own sine): 1361 LUT (184 LUTRAM) / 1508 FF /
+~469 slices / 2.5 BRAM tiles (2 AWG RAMB36 + ONE RAMB18: Vivado merged the
+two identical sine ROMs into one dual-port RAMB18) / 0 DSP, WNS +0.71 ns.**
+Against the parts it replaces (routed `fs`): 2 DDS compilers 142 LUT /
+366 FF / 15 BRAM tiles, 2 dds_axi_interface 58 LUT / 280 FF, one crossbar
+port ~30 LUT: **net ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles, 0 DSP.**
+
+### Plan
+
+1. DONE in RTL: **dual-channel top, one AXI port** (`dz_osc2`): one 32 KB subordinate at
+   0x43D0_0000, channel 0 at +0x0000 (the old HDMI_0 address), channel 1 at
+   **+0x4000** (0x44D0_0000 disappears: the two windows are 16 MB apart, an
+   AXI window must be aligned to its size). One AXI handshake, one set of
+   raster synchronizers, internal chaining; one ps7_axi_periph port less
+   (the crossbar costs ~30 LUT per port; a free M port suits the third-port
+   rule). Software: libdz / dz_fields take bases from hw_map.h (generated);
+   dz_fields gets channel 1's new offset; the old debazarosit.sh (not used)
+   still writes 0x44D0_0000.
+2. DONE in RTL: **own sine table**: a quarter-wave table, 1024 x 16 in one RAMB18 per
+   channel (4096 points, spurs ~ -72 dBc: invisible), then the DDS
+   compilers go entirely. Net with both channels: BRAM ~15 tiles -> 3
+   (2 sines + 2 AWG = 3 tiles), **~12 tiles free**; minus the compilers and
+   the old interfaces (~200 LUT, ~650 FF). Estimated net cost of the whole
+   engine: ~+1150 LUT, ~+900 FF, -12 BRAM tiles, 0 DSP.
+3. **BD** (next): replace dds_axi_interface_0/1 + both dds_compiler_0 with the
+   module reference (dz_osc2: top level, FCLK0; build.tcl reads the three
+   files); wire wave_out to the old sine leg (div16_8_recip_0
+   num), phase_out to the old phase leg (div16_8_recip_1 via the slice), the
+   full phase to hdmi_audio_regs dds_phase (event block), VTC vsync / hsync
+   / active_video in (shared VTC, discrete nets - see the IPI interface
+   gotcha). Build, timing (FCLK0 has +0.5 ns; FCLK2 is the tight clock),
+   hardware test.
+4. **Software**: debazd fields + OSC presets that compute PINC from the
+   measured pixel clock: /dds/<n>/square, /ramp, /triangle, /pulse,
+   /checker cols rows, /seq/<i>, /sync, /linestep, /framestep, /shape,
+   /awg (load a table from a file or a formula); a web card.
+5. Later, by need: phase accumulator in the pixel clock domain (exactly
+   raster-locked edges; costs logic in the congested region X1Y1) - only
+   if the ~0.75 px shimmer is visible; the PWM as a channel of the engine
+   (LED fades as ramp steps); HDMI_2 input vsync as a sync source.
+
+### Audit: how the old DDS outputs are used (2026-10-29, BD + generated netlist)
+
+- HDMI_0 (DDS + dividers on FCLK0, adder + mixer on the pixel clock): sine
+  (16 bit, two's complement) -> div16_8_recip_0 (UNSIGNED 16/8, den
+  0x4121_0000 ch1[31:24]) -> c_addsub_0 (signed 16+16 -> 16, wraps; offset
+  0x4121_0000 ch2[15:0]) -> mixer din3; phase[31:16] -> div16_8_recip_1
+  (den 0x4120_0008[31:24]) -> mixer din4; phase[31:0] -> event block.
+- HDMI_1 (DDS on FCLK0; dividers, adders, gains on the PIXEL clock): sine ->
+  div0 (den 0x4123_0000 ch1[31:24]) -> c_addsub_0 (+ 0x4123_0000 ch2[15:0])
+  -> colorGainOscSin; phase[31:16] -> div1 (den 0x4126_0000 ch1[31:24]) ->
+  c_addsub_3 (+ 0x4123_0000 ch2[31:16]) -> colorGainOscPhase; per lane
+  osc16 (signed) x gain8 (unsigned) -> lane = product[15:8] = (osc g / 256)
+  mod 256; c_addsub_4 = OscSin + OscPhase; c_addsub_2 = feedback sum +
+  c_addsub_4 -> hdmi_tx. (colorGainMain / colorGainFeedback1: 8x8, lane =
+  product[15:8] = pixel g / 256.)
+- **INTENTIONAL (user, 2026-10-29): the overflow / clipping / wrapping math
+  is a feature** - it lets users make more complex waveforms from the
+  inputs. These stages stay as playable "sliders" after the generators,
+  even where the AWG / sequencer of dz_osc2 overlaps them: never "fix" them.
+- Effects that come from the widths, not from "gain" / "divider":
+  (1) the divider is unsigned on a signed sine: for den > 1 the negative
+  half folds (only den = 1 passes the sine unchanged); (2) the oscillator
+  gain wraps (g = 2 = bits [14:7] with a fold: a brightness fold /
+  multiplier); (3) the offset adders wrap; (4) the 24-bit adders add three
+  packed 8-bit lanes as one number: carries cross from G into B and from B
+  into R (colour bleed); (5) clock crossings with no synchronizer: HDMI_1's
+  16-bit DDS buses (FCLK0) into pixel-clock dividers, HDMI_0's divider
+  outputs (FCLK0) into the pixel-clock adder: a torn sample = single-pixel
+  noise (invisible on fast oscillators, rare sparkle on slow patterns).
+- dz_osc2 fits bit for bit: wave = two's complement sine like the
+  compiler's, phase_out = phase[31:16] like xlslice_4, so (1)-(4) and all
+  current settings look the same. New: CTRL[19] gives an offset-binary sine
+  (the divider then scales it without the fold); the other shapes are
+  unsigned. (5) stays while the oscillator runs on FCLK0 (plan step 5).
+
+### GPIO consolidation: `dz_regs` (2026-10-29)
+
+The four AXI GPIOs that serve as register banks cost (routed `fs`) 63 / 63
+/ 63 / 160 LUT and 222 / 222 / 222 / 453 FF (~1119 FF for ~260 FF of real
+registers: the rest is AXI glue), plus four crossbar ports. `hw/rtl/dz_regs/
+dz_regs.v` is one subordinate over 0x4120_0000-0x4127_FFFF (512 KB) with
+the old GPIO addresses and register offsets inside (bank = addr[18:16]: 0,
+1, 3, 6; reset values as the IPs; bank 0 ch1 = the input with 2-FF sync
+and the change interrupt, GIER / toggle-on-write ISR / IER, to GIC 66; free
+banks read 0 instead of a bus error), so software and the address contract
+stay. New: byte / halfword writes (WSTRB) - nearly every field is byte- or
+halfword-aligned, so one 8/16-bit store changes one field. Test: `sh
+hw/sim/run_dz_regs_tb.sh` (ALL PASS). BD: `hw/bd_edits/2026-10-29_dz_regs.tcl`
+(records every slice the GPIOs drove, replaces the GPIOs, new hierarchy
+pins regs_main_ch1/2 (HDMI_0), regs_osc_ch1/2 and regs_fb_ch1/2 (HDMI_1),
+ps7_axi_periph 13 -> 10 master ports; addresses unchanged). Software:
+sw/lib/dz_hw.h maps the old HW_*_AXI_GPIO_* names onto HW_DZ_REGS_0_BASE
++ bank x 64K. Built and tested ON ITS OWN, before dz_osc2 goes into the BD.
+
+Result (2026-10-29, build `regs3` = artifacts/..._20261029_regs3, ON THE
+BOARD): three builds were necessary to get the timing back to the level of
+`edid2`:
+
+- `regs` (first): FCLK0 -1.6 ns, PS7 MAXIGP0 WDATA -> registers with no
+  logic level: `S00_HAS_REGSLICE {4}` on ps7_axi_periph fixed it (+0.008).
+  This build also decoded address bits [1:0], so CPU byte stores to +1..+3
+  were ignored (found on the board): now the word address is decoded and
+  WSTRB selects the bytes (testbench covers unaligned stores).
+- `regs2`: FCLK0 -0.29 ns (71 endpoints) in the mixer AXI register file
+  (axi_awaddr -> 63 x 32 clock enables, 9 ns of routing): mixer coreRevision
+  23 registers the write (enable, word index, data, strobes; max_fanout 16)
+  one clock after the handshake. Then dz_regs' read mux on ARADDR failed
+  (-0.27 ns): the read address is now latched at accept, data one clock later.
+- The bank 0 input crossings (HDMI_2 status, fid on FCLK2) need a false path
+  to `dz_regs_0/inst/in_s1_reg[*]` (XDC; the AXI GPIO did not show them).
+
+`regs3`: FCLK0 +0.396, FCLK2 +0.123, FCLK3 +0.228, no failing crossings;
+pixel -3.388 (52 endpoints, the HDMI_0 matrix cone as in edid2); LUT 12648,
+FF 19673, slices 98.75 %. Board tests (two boards): reset values, word /
+byte / halfword writes at +0..+3, free banks read 0, the status inputs
+follow hot-plug and lock, ISR set by a change; HDMI_0 goes black with
+0x4121_0000 = 0 and loses only red with a byte store of 0 to 0x4121_0002
+(seen on the monitor). Capture 1600x1200@30 and 1080p30 work (user, video
+wall via dzweb).
+
+Fit: slices are at 99.6 % with LUTs at 72.6 % (partly filled slices), so
+Vivado can usually pack ~1000 more LUT, but placement and timing get
+harder; FCLK0 logic is not region-locked (unlike the pixel clock in X1Y1).
+If it does not fit: 8 steps instead of 16, or the per-channel options
+(line/frame step) as build parameters.
 

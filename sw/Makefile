@@ -21,7 +21,7 @@ LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h)
 BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay
-SCRIPTS := tools/capstat.sh tools/plreload.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh
+SCRIPTS := tools/capstat.sh tools/plreload.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
 
 all: $(BINS) hdmi2
 

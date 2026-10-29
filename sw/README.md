@@ -297,11 +297,35 @@ dzctl /audio/rx/rate         # HDMI_2 input samples per second (48000 = healthy)
 dzctl /audio/rx/auto 0       # watchdog off (default on: replug when the rate is off by > 2 % for 3 s)
 ```
 
+## Preparing media on the laptop (sw/tools/mkmedia.sh)
+
+```sh
+bash sw/tools/mkmedia.sh ~/show-media                 # a folder of mixed files -> ./board-media/{img,movies,audio}
+bash sw/tools/mkmedia.sh -o /tmp/out -u clip.mov a.mp3 # files; -u = upload to the board (default ebaz@10.42.0.68 or $DZ_BOARD)
+bash sw/tools/mkmedia.sh -h                            # all options
+```
+
+Movies -> MPEG-4 1280x720 at most 25 fps, audio PCM 48 kHz 16 bit (left
+out when the source has none or it is silent); audio files -> WAV (or
+`-a flac`) 48 kHz 16 bit stereo; images -> PNG fitted into the display
+size. Names change to the board's A-Z a-z 0-9 . _ -. Files that are up to
+date are skipped (`-F` = convert again); `-m` = the media root on the board
+(default `/media/debaz`), `-R MB` = space to keep free there (default 256:
+a file that does not fit is skipped and listed, and the final sync is left
+out); Ctrl-C also stops the upload worker; a progress bar per file on a
+terminal, a summary at the end. With `-u` each file is uploaded (rsync, one
+at a time, in the background) as soon as it is converted, while the next
+one transcodes; a final rsync of the whole output tree then sends what is
+missing on the board (also files that were up to date here). Nothing on
+the board is deleted.
+
 ## Audio: sources, files, recording (debazd sound.c, ALSA card DEBAZ)
 
 Outputs: 0 = HDMI 0, 1 = HDMI 1, 2 = I2S out. Files live in
-`/home/ebaz/audio` (the web app's Media tab uploads there; the Audio tab
-has all of this as controls).
+`/media/debaz/audio` (all media: `/media/debaz/{img,movies,audio}`, the
+exFAT media partition made at first boot; `/home/ebaz/{img,movies,audio}`
+are symlinks there). The web app's Media tab uploads there; the Audio tab
+has all of this as controls.
 
 ```sh
 dzctl /audio/out/0/source auto     # auto | linux | input | i2s | tone | off (I2S: auto|linux|input|off)
@@ -314,6 +338,11 @@ dzctl /audio/status                # /audio/out out file loop source (x3), /audi
 dzctl /files audio
 dzctl /movie/0/play clip.mkv 0 3   # a movie's own audio: 1 HDMI 0, 2 HDMI 1, 3 both, 4 I2S
 ```
+
+A movie's audio (`/movie/<s>/play name fps mask`) is a second ffmpeg at
+SCHED_FIFO 20 that reads only the audio track: the sound stays smooth when
+the video decode falls behind (two movies: 0 underruns in 38 s; in one
+ffmpeg the audio broke up), and on an overloaded CPU the picture lags.
 
 `auto` = the output plays Linux audio while something plays on it, else
 the HDMI 2 input; every source but `off` switches an HDMI output to HDMI

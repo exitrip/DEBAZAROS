@@ -1,9 +1,11 @@
-# debaz-firstboot.service (2026-10-28): commissions a new SD card once - a
-# MAC from the card's CID into /boot/uEnv.txt and the hostname, then one
-# reboot (debaz-mac.sh --firstboot; nothing to do on later boots). Before
-# the network, so the DHCP request of the next boot has the new MAC.
+# debaz-firstboot.service (2026-10-28): per-card setup (debaz-firstboot.sh):
+# the data + exFAT media partitions in the free space of a new card, fstab,
+# the media folders /media/debaz/{img,movies,audio}, then the MAC from the
+# card's CID (debaz-mac.sh --firstboot: one reboot). Every step checks
+# first, so later boots do nothing. Before the network, so the DHCP request
+# after the reboot has the new MAC.
 [Unit]
-Description=DEBAZAROS first boot: per-card MAC and hostname
+Description=DEBAZAROS first boot: media partition, media folders, MAC, hostname
 DefaultDependencies=no
 RequiresMountsFor=/boot
 After=local-fs.target
@@ -12,7 +14,8 @@ Wants=network-pre.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/debaz-mac.sh --firstboot
+ExecStart=/usr/sbin/debaz-firstboot.sh
+TimeoutStartSec=300
 StandardOutput=journal+console
 
 [Install]

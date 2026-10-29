@@ -62,14 +62,21 @@
 #ifndef DZ_FBFEED
 #define DZ_FBFEED	"/home/ebaz/bin/fbfeed"
 #endif
+/* media folders (2026-10-28): on the exFAT media partition (label
+ * DEBAZMEDIA, mounted by debaz-firstboot / fstab); without it /media/debaz
+ * is a plain folder on the root file system. /home/ebaz/{img,movies,audio}
+ * are symlinks here (old paths keep working). */
+#ifndef DZ_MEDIA_DIR
+#define DZ_MEDIA_DIR	"/media/debaz"
+#endif
 #ifndef DZ_MOVIE_DIR
-#define DZ_MOVIE_DIR	"/home/ebaz/movies"
+#define DZ_MOVIE_DIR	DZ_MEDIA_DIR "/movies"
 #endif
 #ifndef DZ_AUDIO_DIR
-#define DZ_AUDIO_DIR	"/home/ebaz/audio"
+#define DZ_AUDIO_DIR	DZ_MEDIA_DIR "/audio"
 #endif
 #ifndef DZ_IMG_DIR
-#define DZ_IMG_DIR	"/home/ebaz/img"
+#define DZ_IMG_DIR	DZ_MEDIA_DIR "/img"
 #endif
 
 typedef struct { int x, y, w, h; } dz_rect;	/* w == 0: whole surface */

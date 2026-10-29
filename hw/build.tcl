@@ -33,7 +33,8 @@ set ip_repos [list \
     $repo/IP_dvi2rgb \
     $repo/IP_rgb2dvi]
 # RTL used by BD module references (DivideBy2N, div16_8_recip,
-# dds_axi_interface, hdmi_tx + hdmi_audio_regs + hdmi_rx, pl_io).
+# dds_axi_interface, hdmi_tx + hdmi_audio_regs + hdmi_rx, pl_io, fsync_gen,
+# dz_regs).
 set rtl_dir $repo/hw/rtl
 set rtl [list \
     $rtl_dir/DivideBy2N.v \
@@ -52,7 +53,8 @@ set rtl [list \
     $rtl_dir/pl_io/dz_i2s.v \
     $rtl_dir/pl_io/dz_async_fifo.v \
     $rtl_dir/pl_io/dz_bram_fifo.v \
-    $rtl_dir/fsync_gen.v]
+    $rtl_dir/fsync_gen.v \
+    $rtl_dir/dz_regs/dz_regs.v]
 set xdc [list $repo/hw/xdc/ebaz4205.xdc]
 
 # --- project -------------------------------------------------------------------

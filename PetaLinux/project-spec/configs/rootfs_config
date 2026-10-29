@@ -3890,11 +3890,6 @@ CONFIG_Init-manager-systemd=y
 # CONFIG_Init-manager-sysvinit is not set
 
 #
-# apps 
-#
-CONFIG_debaz-firstboot=y
-
-#
 # modules 
 #
 CONFIG_debaz-audio=y
@@ -3902,6 +3897,7 @@ CONFIG_debaz-audio=y
 #
 # user packages 
 #
+CONFIG_debaz-firstboot=y
 CONFIG_exfat-utils=y
 CONFIG_htop=y
 CONFIG_luajit=y
