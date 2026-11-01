@@ -110,11 +110,10 @@
  (fp_line (start 5.026 -1.521) (end 5.026 1.521) (layer F.SilkS) (width 0.152)) 
  (fp_line (start 5.026 1.521) (end -5.026 1.521) (layer F.SilkS) (width 0.152)) 
  (fp_circle (center -4.445 0.769) (end -4.295 0.769) (layer F.SilkS) (width 0.3)) 
- (fp_circle (center -5.207 2.667) (end -5.057 2.667) (layer F.SilkS) (width 0.3)) 
- (model ${KIPRJMOD}/kicad_lceda.3dshapes/SOIC-16_L9.9-W3.9-H1.8-LS6.0-P1.27.step 
-   (offset (xyz -880.237 861.822 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)) 
-  ) (model ${KIPRJMOD}/kicad_lceda.3dshapes/SOIC-16_L9.9-W3.9-H1.8-LS6.0-P1.27.wrl 
-   (offset (xyz -880.237 861.822 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)) 
-  ) 
- 
+ (fp_circle (center -5.207 2.667) (end -5.057 2.667) (layer F.SilkS) (width 0.3))
+  (model "${KICAD10_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-16_3.9x9.9mm_P1.27mm.step"
+    (offset (xyz 0 0 0))
+    (scale (xyz 1 1 1))
+    (rotate (xyz 0 0 -90))
+  )
 )

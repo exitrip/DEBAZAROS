@@ -51,6 +51,11 @@
 
 #include "dz_yuv.h"
 
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
+#include <poll.h>
+
 #define DEF_DEV	   "/dev/mem"
 #define DEF_ADDR   0x08FD2000UL	/* HDMI_1 slot = 2 * DEMO_MAX_FRAME */
 #define DEF_WIDTH  1280
@@ -71,6 +76,122 @@ static double now_s(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* ---- frame memory effects on the yuv420p input (2026-11-01) ----
+ * trails d: luma = max(new, old * d) (as ffmpeg lagfun, which the A9 runs
+ *           at ~10 fps at 720p); the chroma comes from whichever pixel won
+ *           the luma, so a trail keeps its colour
+ * ghost k:  every plane = old * k + new * (1 - k) (an echo of the motion)
+ * Both run on the frame in a cached buffer before the conversion: about
+ * 1 ms per 720p frame with NEON. Live control: -L fifo, lines "trails d",
+ * "ghost k", "off" (debazd /movie/<s>/trails, /ghost). */
+static int    fx_mode;			/* 0 off, 1 trails, 2 ghost */
+static unsigned fx_k8;			/* d or k as 0..256 */
+static uint8_t *fx_prev;		/* the last output frame (i420) */
+static int    fx_valid;
+static int    ctl_fd = -1;
+static const char *ctl_path;
+
+static void fx_set(int mode, double v)
+{
+	v = v < 0 ? 0 : v > 1 ? 1 : v;
+	fx_k8 = (unsigned)(v * 256.0 + 0.5);
+	fx_mode = fx_k8 ? mode : 0;
+	if (!fx_mode)
+		fx_valid = 0;
+}
+
+static void ctl_poll(void)
+{
+	static char buf[256];
+	static size_t len;
+	struct pollfd p = { .fd = ctl_fd, .events = POLLIN };
+
+	if (ctl_fd < 0 || poll(&p, 1, 0) <= 0)
+		return;
+	ssize_t n = read(ctl_fd, buf + len, sizeof(buf) - 1 - len);
+	if (n <= 0)
+		return;
+	len += (size_t)n;
+	buf[len] = 0;
+	for (char *nl; (nl = strchr(buf, '\n'));) {
+		char word[16];
+		double v = 0;
+
+		*nl = 0;
+		if (sscanf(buf, "%15s %lf", word, &v) >= 1) {
+			if (!strcmp(word, "trails"))
+				fx_set(1, v);
+			else if (!strcmp(word, "ghost"))
+				fx_set(2, v);
+			else if (!strcmp(word, "off"))
+				fx_set(0, 0);
+		}
+		len -= (size_t)(nl + 1 - buf);
+		memmove(buf, nl + 1, len + 1);
+	}
+	if (len == sizeof(buf) - 1)
+		len = 0;
+}
+
+/* in = the new frame; returns the frame to show (fx_prev, or in when off) */
+static const uint8_t *fx_frame(const uint8_t *in, int w, int h)
+{
+	size_t ny = (size_t)w * h, nc = ny / 4;
+
+	if (!fx_mode || !fx_prev)
+		return in;
+	if (!fx_valid) {			/* the first frame: nothing to remember */
+		memcpy(fx_prev, in, ny + 2 * nc);
+		fx_valid = 1;
+		return fx_prev;
+	}
+	uint8_t *py = fx_prev, *pu = py + ny, *pv = pu + nc;
+	const uint8_t *iy = in, *iu = iy + ny, *iv = iu + nc;
+	unsigned k = fx_k8, nk = 256 - k;
+
+	if (fx_mode == 2) {			/* ghost: blend every byte */
+		size_t n = ny + 2 * nc, i = 0;
+#if defined(__ARM_NEON)
+		uint8x8_t vk = vdup_n_u8((uint8_t)(k > 255 ? 255 : k)), vn = vdup_n_u8((uint8_t)(nk > 255 ? 255 : nk));
+		for (; i + 16 <= n; i += 16) {
+			uint8x16_t o = vld1q_u8(py + i), a = vld1q_u8(iy + i);
+			uint16x8_t lo = vmlal_u8(vmull_u8(vget_low_u8(o), vk), vget_low_u8(a), vn);
+			uint16x8_t hi = vmlal_u8(vmull_u8(vget_high_u8(o), vk), vget_high_u8(a), vn);
+			vst1q_u8(py + i, vcombine_u8(vrshrn_n_u16(lo, 8), vrshrn_n_u16(hi, 8)));
+		}
+#endif
+		for (; i < n; i++)
+			py[i] = (uint8_t)((py[i] * k + iy[i] * nk + 128) >> 8);
+		return fx_prev;
+	}
+	/* trails: chroma first (it needs the old luma), from the luma winner */
+	for (int y = 0; y < h / 2; y++) {
+		const uint8_t *oy = py + (size_t)(2 * y) * w, *nyr = iy + (size_t)(2 * y) * w;
+		size_t c = (size_t)y * (w / 2);
+
+		for (int x = 0; x < w / 2; x++)
+			if (((oy[2 * x] * k) >> 8) <= nyr[2 * x]) {
+				pu[c + x] = iu[c + x];
+				pv[c + x] = iv[c + x];
+			}
+	}
+	size_t i = 0;
+#if defined(__ARM_NEON)
+	uint8x8_t vk = vdup_n_u8((uint8_t)(k > 255 ? 255 : k));
+	for (; i + 16 <= ny; i += 16) {
+		uint8x16_t o = vld1q_u8(py + i), a = vld1q_u8(iy + i);
+		uint8x16_t d = vcombine_u8(vshrn_n_u16(vmull_u8(vget_low_u8(o), vk), 8),
+					   vshrn_n_u16(vmull_u8(vget_high_u8(o), vk), 8));
+		vst1q_u8(py + i, vmaxq_u8(a, d));
+	}
+#endif
+	for (; i < ny; i++) {
+		unsigned d = (py[i] * k) >> 8;
+		py[i] = (uint8_t)(iy[i] > d ? iy[i] : d);
+	}
+	return fx_prev;
 }
 
 /* Read exactly len bytes.  Returns 0 on EOF, 1 on success, -1 on error. */
@@ -265,6 +386,9 @@ static void usage(const char *me)
 "  -y, --yuv           input is yuv420p (I420, 1.5 bytes/px): converted here\n"
 "                      (NEON), much cheaper than ffmpeg -pix_fmt bgra\n"
 "  -m, --matrix 709|601  YUV matrix for -y (default 709)\n"
+"  -T, --trails D      -y: trails, luma = max(new, old * D), D 0..1\n"
+"  -G, --ghost K       -y: ghost, frame = old * K + new * (1 - K)\n"
+"  -L, --ctl FIFO      control FIFO (made here): trails D | ghost K | off\n"
 "      --selftest      check the YUV converter (NEON vs C) and exit\n"
 "      --help          this text\n",
 		me, DEF_DEV, DEF_ADDR, DEF_WIDTH, DEF_HEIGHT);
@@ -296,13 +420,16 @@ int main(int argc, char **argv)
 		{ "force",   no_argument,       NULL, 'f' },
 		{ "yuv",     no_argument,       NULL, 'y' },
 		{ "matrix",  required_argument, NULL, 'm' },
+		{ "trails",  required_argument, NULL, 'T' },
+		{ "ghost",   required_argument, NULL, 'G' },
+		{ "ctl",     required_argument, NULL, 'L' },
 		{ "selftest", no_argument,      NULL, 2   },
 		{ "help",    no_argument,       NULL, 1   },
 		{ 0, 0, 0, 0 }
 	};
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "d:a:o:w:h:s:c:vfym:", lopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "d:a:o:w:h:s:c:vfym:T:G:L:", lopts, NULL)) != -1) {
 		switch (opt) {
 		case 'd': dev = optarg; break;
 		case 'a': addr = strtoul(optarg, NULL, 0); break;
@@ -315,6 +442,9 @@ int main(int argc, char **argv)
 		case 'f': force = 1; break;
 		case 'y': yuv = 1; break;
 		case 'm': matrix = atoi(optarg) == 601 ? DZ_YUV_BT601 : DZ_YUV_BT709; break;
+		case 'T': fx_set(1, atof(optarg)); break;
+		case 'G': fx_set(2, atof(optarg)); break;
+		case 'L': ctl_path = optarg; break;
 		case 2:   return yuv_selftest();
 		case 1:   usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
@@ -398,6 +528,16 @@ int main(int argc, char **argv)
 				    : row_bytes * (size_t)height;
 	uint8_t *frame = malloc(in_bytes);
 
+	if (yuv)				/* trails / ghost memory */
+		fx_prev = malloc(in_bytes);
+	if (yuv && ctl_path) {
+		unlink(ctl_path);
+		if (mkfifo(ctl_path, 0600) == 0) {
+			ctl_fd = open(ctl_path, O_RDONLY | O_NONBLOCK);
+			open(ctl_path, O_WRONLY | O_NONBLOCK);	/* never EOF */
+		}
+	}
+
 	if (!frame) {
 		fprintf(stderr, "fbfeed: out of memory\n");
 		munmap(map, map_len);
@@ -434,7 +574,8 @@ int main(int argc, char **argv)
 
 		/* Sequential writes: best case for write-combining. */
 		if (yuv) {
-			dz_i420_frame(frame, width, height, dst, stride, matrix);
+			ctl_poll();
+			dz_i420_frame(fx_frame(frame, width, height), width, height, dst, stride, matrix);
 		} else if (stride == row_bytes) {
 			memcpy(dst, frame, row_bytes * (size_t)height);
 		} else {
@@ -465,6 +606,9 @@ int main(int argc, char **argv)
 	}
 
 	free(frame);
+	free(fx_prev);
+	if (ctl_path && ctl_fd >= 0)
+		unlink(ctl_path);
 	munmap(map, map_len);
 	close(fd);
 	return rc;

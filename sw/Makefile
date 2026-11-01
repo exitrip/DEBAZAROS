@@ -19,9 +19,9 @@ WWW     ?= /home/ebaz/www
 
 LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
-HDRS    := $(wildcard lib/*.h include/*.h)
-BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay
-SCRIPTS := tools/capstat.sh tools/plreload.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
+HDRS    := $(wildcard lib/*.h include/*.h debazd/*.h)
+BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/dzmosh $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay
+SCRIPTS := tools/capstat.sh tools/plreload.sh tools/dzstart.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
 
 all: $(BINS) hdmi2
 
@@ -36,7 +36,6 @@ $(OUT)/libdz.a: $(LIBOBJ)
 	$(AR) rcs $@ $^
 
 DZDOBJ  := $(patsubst %.c,$(OBJ)/%.o,$(wildcard debazd/*.c))
-HDRS    += $(wildcard debazd/*.h)
 
 $(OUT)/debazd: $(DZDOBJ) $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ -lm -lpthread $(LDLIBS)
@@ -52,6 +51,9 @@ $(OUT)/vsync_probe: $(OBJ)/tools/vsync_probe.o $(OUT)/libdz.a
 
 $(OUT)/pcmplay: $(OBJ)/tools/pcmplay.o $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ -lm -lpthread $(LDLIBS)
+
+$(OUT)/dzmosh: $(OBJ)/dzmosh/dzmosh.o
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 $(OUT)/fbfeed: $(OBJ)/fbfeed/fbfeed.o $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ -lpthread $(LDLIBS)

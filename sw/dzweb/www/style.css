@@ -170,3 +170,20 @@ input[type="range"] { accent-color: var(--accent); flex: 1 1 120px; min-width: 1
   .paint > * { order: 1; }
   .paint .paint-ops { order: 2; margin-top: 0; }
 }
+
+/* fxdialog.js: effect parameters */
+dialog.fxdlg {
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 18px; width: min(480px, calc(100vw - 32px));
+}
+dialog.fxdlg::backdrop { background: rgb(0 0 0 / 0.5); }
+dialog.fxdlg h2 { margin: 0 0 6px; font-size: 1rem; }
+.fxrow { display: grid; grid-template-columns: 9.5em 1fr 3.5em; gap: 8px; align-items: center; margin: 6px 0; }
+.fxrow select { grid-column: 2 / 4; }
+code.fxchain { word-break: break-all; color: var(--accent); }
+
+/* cues.js */
+.cuestat { font-size: 1.05em; margin: 4px 0 10px; }
+pre.insp { max-height: 360px; overflow: auto; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px; font-size: 12px; white-space: pre; }
+.mixer tr.on td { background: color-mix(in srgb, var(--accent) 18%, transparent); }

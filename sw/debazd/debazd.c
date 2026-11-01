@@ -53,6 +53,7 @@
 #include "dz_fields.h"
 #include "dz_hw.h"
 #include "dz_sprite.h"
+#include "dz_text.h"
 #include "dz_map.h"
 #include "dz_osc.h"
 #include "dz_vdma.h"
@@ -69,6 +70,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -139,6 +141,56 @@ static void send_to(const struct sockaddr_in *to, const char *path, const char *
 		sendto(sock, buf, n, 0, (const struct sockaddr *)to, sizeof(*to));
 }
 
+/* The replies to one received packet go out as OSC bundles of up to 8 KB
+ * (2026-11-01): a /state dump is ~477 replies, and as single datagrams the
+ * receiver dropped ~15 % of them. dzctl and the web app read bundles. */
+static uint8_t bun[DZ_OSC_MAX_PKT];
+static size_t  bun_len;
+static int     batching;
+
+static void bun_flush(void)
+{
+	if (bun_len > 16)
+		sendto(sock, bun, bun_len, 0, (const struct sockaddr *)&cur_from, sizeof(cur_from));
+	bun_len = 0;
+}
+
+static void out_msg(const uint8_t *msg, size_t n)
+{
+	if (!batching) {
+		sendto(sock, msg, n, 0, (const struct sockaddr *)&cur_from, sizeof(cur_from));
+		return;
+	}
+	if (bun_len && bun_len + 4 + n > sizeof(bun))
+		bun_flush();
+	if (16 + 4 + n > sizeof(bun)) {		/* too large for a bundle: alone */
+		sendto(sock, msg, n, 0, (const struct sockaddr *)&cur_from, sizeof(cur_from));
+		return;
+	}
+	if (!bun_len) {				/* "#bundle", time tag 1 = at once */
+		memcpy(bun, "#bundle\0\0\0\0\0\0\0\0\1", 16);
+		bun_len = 16;
+	}
+	bun[bun_len++] = (uint8_t)(n >> 24);
+	bun[bun_len++] = (uint8_t)(n >> 16);
+	bun[bun_len++] = (uint8_t)(n >> 8);
+	bun[bun_len++] = (uint8_t)n;
+	memcpy(bun + bun_len, msg, n);
+	bun_len += n;
+}
+
+void dzd_reply_args(const char *path, const dz_arg *a, int n)
+{
+	uint8_t buf[DZ_OSC_MAX_PKT];
+	size_t len;
+
+	if (cur_internal || sock < 0)
+		return;
+	len = dz_osc_build_args(buf, sizeof(buf), path, a, n);
+	if (len)
+		out_msg(buf, len);
+}
+
 void dzd_reply(const char *path, const char *tags, ...)
 {
 	uint8_t buf[DZ_OSC_MAX_PKT];
@@ -151,7 +203,7 @@ void dzd_reply(const char *path, const char *tags, ...)
 	n = dz_osc_vbuild(buf, sizeof(buf), path, tags, ap);
 	va_end(ap);
 	if (n)
-		sendto(sock, buf, n, 0, (const struct sockaddr *)&cur_from, sizeof(cur_from));
+		out_msg(buf, n);
 }
 
 void dzd_log(const char *fmt, ...)
@@ -307,6 +359,38 @@ static void do_list(const dz_msg *m)
 	reply("/entry/end", "i", count);
 }
 
+
+/* /files fonts: the TrueType / OpenType files under dir (depth levels of
+ * subfolders), one /file reply each (bare names: the text ops find a font
+ * by name in any subfolder) */
+static int list_fonts(const char *dir, int depth)
+{
+	DIR *d = opendir(dir);
+	struct dirent *e;
+	int count = 0;
+
+	while (d && (e = readdir(d)) != NULL) {
+		size_t n = strlen(e->d_name);
+
+		if (e->d_name[0] == '.')
+			continue;
+		if (e->d_type == DT_DIR && depth > 0) {
+			char p[512];
+
+			snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+			count += list_fonts(p, depth - 1);
+		} else if (n > 4 && (!strcasecmp(e->d_name + n - 4, ".ttf") ||
+				     !strcasecmp(e->d_name + n - 4, ".otf") ||
+				     !strcasecmp(e->d_name + n - 4, ".ttc"))) {
+			reply("/file", "s", e->d_name);
+			count++;
+		}
+	}
+	if (d)
+		closedir(d);
+	return count;
+}
+
 static void handle(dz_msg *m, void *ctx)
 {
 	int hits = 0;
@@ -347,6 +431,13 @@ static void handle(dz_msg *m, void *ctx)
 		reply("/field/end", "i", count);
 		return;
 	}
+	if (!strcmp(m->path, "/files") && m->n >= 1 && m->a[0].type == 's' &&
+	    !strcmp(m->a[0].s, "fonts")) {
+		int count = list_fonts(DZ_FONT_DIR, 3);
+
+		reply("/file/end", "i", count);
+		return;
+	}
 	if (!strcmp(m->path, "/files")) {
 		const char *which = (m->n >= 1 && m->a[0].type == 's') ? m->a[0].s : "";
 		const char *dir = !strcmp(which, "movies") ? DZ_MOVIE_DIR :
@@ -357,7 +448,7 @@ static void handle(dz_msg *m, void *ctx)
 		int count = 0;
 
 		if (!dir) {
-			reply("/error", "ss", "/files needs img, movies or audio", m->path);
+			reply("/error", "ss", "/files needs img, movies, audio or fonts", m->path);
 			return;
 		}
 		while (d && (e = readdir(d)) != NULL) {
@@ -411,7 +502,7 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
-	if (lfo_dispatch(m) || disp_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
+	if (lfo_dispatch(m) || disp_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
 	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
@@ -455,11 +546,46 @@ static void handle(dz_msg *m, void *ctx)
 		return;
 	}
 	hits += do_fields(m);
+	{	/* /movie/<s>/fx -> /movie/<s>/fx i:running i:mosh i:bloom f:corrupt i:pause
+		 * (the hold states as last sent: what a cue stores) */
+		int sl, off = 0, mo, bl, pa, run;
+		float co, tr, gh;
+
+		if (!hits && m->n == 0 && sscanf(m->path, "/movie/%d/%n", &sl, &off) == 1 &&
+		    (!strcmp(m->path + off, "vf") || !strcmp(m->path + off, "af"))) {
+			reply(m->path, "s", m->path[off] == 'v' ? dz_draw_movie_vf(sl) : dz_draw_movie_af(sl));
+			return;
+		}
+		off = 0;
+		if (!hits && sscanf(m->path, "/movie/%d/fx%n", &sl, &off) == 1 && !m->path[off]) {
+			run = dz_draw_movie_fx(sl, &mo, &bl, &co, &pa);
+			dz_draw_movie_memfx_get(sl, &tr, &gh);
+			reply(m->path, "iiififf", run, mo, bl, co, pa, tr, gh);
+			return;
+		}
+	}
 	if (!hits) {
 		hits += dz_draw_dispatch(m, verbose);
-		if (hits && dz_draw_take_fails())
-			reply("/error", "ss", "draw failed (slot outside reserved memory, "
-			      "or file missing)", m->path);
+		if (hits && dz_draw_take_fails()) {
+			const char *op = strrchr(m->path, '/');
+
+			if (!strncmp(m->path, "/movie/", 7) &&
+			    (strstr(m->path, "/vf/") || strstr(m->path, "/af/")))
+				reply("/error", "ss", "live filter refused: /movie/<s>/vf|af/<filter>/<option> "
+				      "<number or word>, names a-z 0-9 _", m->path);
+			else if (!strncmp(m->path, "/movie/", 7) && op &&
+			    (!strcmp(op, "/vf") || !strcmp(op, "/af")))
+				reply("/error", "ss", "filter refused: a preset name, or letters digits "
+				      "= : . , _ + - * / ( ) | only, no file filters", m->path);
+			else if (!strncmp(m->path, "/movie/", 7) && op &&
+			    (!strcmp(op, "/mosh") || !strcmp(op, "/bloom") ||
+			     !strcmp(op, "/corrupt") || !strcmp(op, "/pause")))
+				reply("/error", "ss", "no movie through dzmosh on this slot "
+				      "(none playing, not MPEG-4, or just started)", m->path);
+			else
+				reply("/error", "ss", "draw failed (slot outside reserved memory, "
+				      "or file missing)", m->path);
+		}
 	}
 	if (!hits) {
 		reply("/error", "ss", "no such address", m->path);
@@ -528,6 +654,7 @@ static void monitor(void)
 		for (int s = 0; s < DZ_SLOTS; s++)
 			dz_draw_movie_stop(s);
 		disp_crop_reset();
+		audio_rx_hold();
 		event("/event/mode", "iii", dz_geom_w(), dz_geom_h(), (int)dz_geom_stride());
 	}
 }
@@ -761,13 +888,21 @@ int main(int argc, char **argv)
 
 			if (read(pfd[1].fd, &k, sizeof(k)) == sizeof(k)) {
 				t = now_ms();
+				trans_tick((t - last_tick) / 1000.0);	/* before the LFOs: they win */
+				cue_tick((t - last_tick) / 1000.0);
 				lfo_tick((t - last_tick) / 1000.0);
+				ascii_tick();
+				dz_draw_movie_tick();
 				last_tick = t;
 				next_tick = t + 50;	/* fallback if vsync stops */
 			}
 		} else if (now_ms() >= next_tick) {
 			t = now_ms();
+			trans_tick((t - last_tick) / 1000.0);	/* before the LFOs: they win */
+			cue_tick((t - last_tick) / 1000.0);
 			lfo_tick((t - last_tick) / 1000.0);
+			ascii_tick();
+			dz_draw_movie_tick();
 			last_tick = t;
 			next_tick = t + (disp_vsync_ok() ? 50 : 16);
 		}
@@ -777,8 +912,12 @@ int main(int argc, char **argv)
 			ssize_t n = recvfrom(sock, buf, sizeof(buf), 0,
 					     (struct sockaddr *)&cur_from, &fl);
 
-			if (n > 0)
+			if (n > 0) {
+				batching = 1;	/* its replies as bundles */
 				dz_osc_walk(buf, (size_t)n, handle, NULL);
+				bun_flush();
+				batching = 0;
+			}
 		}
 		if (now_ms() >= next) {
 			monitor();

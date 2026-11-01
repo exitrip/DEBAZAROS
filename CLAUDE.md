@@ -9,8 +9,10 @@ mixers/oscillators via `devmem` for generative feedback effects.
 **What it is NOT:** the top-level `README.md`, `docs/`, and most folders describe the
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
-Working branch: `clanker` (remote `debaz`). `nuMix` and the other branches are old.
-Current work plan and status: `ROADMAP.md` (Oct 2026).
+Working branch (Nov 1 2026): `hdmi-audio` (remote `debaz`, pushed) — all work since
+Oct 26 2026 is there, 23 commits ahead of `clanker`. `clanker` is the last stable
+point; `nuMix` and the other branches are old.
+Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
 
 ⚠️ **The Vivado project is fragile.** Recent history includes a broken/recovered build
 ("recovered a decent build... after breaking trying out frame buffer read IP").
@@ -47,12 +49,13 @@ the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Si
 | `hw/` | Gateware as Tcl: `hw/bd/<variant>.tcl` (BD source of truth), `hw/rtl/` (4 module-ref RTL files), `hw/xdc/ebaz4205.xdc`, `build.tcl`, `export_bd.tcl`, `repackage_ip.tcl`, `hw_map.tcl`, `patches/` (dvi2rgb vs Digilent f4613ff). See `hw/README.md` |
 | `ip_repo/if/`, `ip_repo/mixer_1_0/` | Digilent TMDS interface def (vendored); custom mixer IP, vlnv `user.org:user:mixer:2.0` (folder name says 1_0) |
 | `IP_dvi2rgb/`, `IP_rgb2dvi/`, `IP_axi_dynclk/` | Digilent IP repos used by the build (dvi2rgb = local fork, see `hw/patches/`) |
-| `artifacts/` | Bitstreams/XSA in use (BOOT fallback 20250916, legacy dev 20261019_dvi2ms, first Tcl build 20261025 = hardware-tested) + README |
+| `artifacts/` | Bitstreams/XSA in use + README (one row per build, always current): BOOT fallback 20250916, legacy dev 20261019_dvi2ms, first Tcl build 20261025, and the dev bitstream in use = `ebaz4205_2out1in_20261029_osc_epo` (= _osc with closed timing). Read that README for the build chain and which build a board runs |
 | `sw/` | All userspace code: debazd, dzctl, dzweb (web app), libdz, hdmi2, fbfeed. Plain make. See `sw/README.md` |
 | `PetaLinux/` | PetaLinux 2022.2 project-spec + `dtb/`. The project itself is built on the build machine (see below) |
-| `pcb/` | 3xHDMI adapter PCB (KiCad) |
+| `pcb/` | 3xHDMI adapter PCB (KiCad); `pcb/3xHDMI/datasheets/` = connector datasheets (untracked, LCSC part numbers as file names) |
 | `debazarosit.sh`, `debazit.service` | Old boot runtime: systemd oneshot (disabled on the bench board) → shell script in `/home/ebaz/` |
 | `FLEET.md`, `ROADMAP.md` | Fleet/time-sync/transport design; work plan |
+| `debazaros-v2.drawio` | Signal-flow diagram of the live design (Oct 30 2026, untracked): summed / modulated / pass-through channel, matrix modulator, colour key, pixel delay, `dz_osc2` detail |
 
 REMOVED Oct 25 2026 (all still in branch `legacy-vivado-project`, commit f2f0b80c; untracked
 files of those folders + SD images moved to `~/Documents/github/DEBAZAROS-archive-20261025/`):
@@ -736,6 +739,17 @@ H.264 18.5 fps) and even H.264 + dd hog -> 0 events, 0 underflows.
 0's VDMA (`dz_geom_w/h/stride`, fallback 1280x720); surfaces restart on a mode
 change, movies stop; hdmi2 boot mode no longer redraws slot 2 every 10 s;
 movie scaling fast_bilinear; vsync thread wakes 0.4 ms early (was 1.5).
+**Output mode from OSC (Nov 1 2026, on the board):** `/video/mode` -> w h hz
+name; `/video/mode <name>` (names = `/video/modes` = hdmi2 -r names) stops
+hdmi2.elf by pid and starts `/home/ebaz/bin/hdmi2.elf -r <name>` (double
+fork, all fds closed: the OSC socket + debazd.lock flock; `DZ_HDMI2` = other
+program for host tests); the main loop then sees the geometry (/event/mode).
+Not saved: the boot mode stays HDMI2_ARGS in dzstart.conf. Wall tab: Output
+card (mode select + Apply), per-display source range, "Fit" grid. Each
+switch relocks the output dynclk, and the capture resets hang off its
+LOCKED: after 640x480 -> 720p the HDMI_2 audio rate read 46235/s for 3 s,
+audio.c replugged, and the laptop then sent a clock with no picture. Now no
+audio-rate replug for 10 s after a mode change (audio_rx_hold).
 **Crops / video wall (Oct 28 2026, software only):** ONE fixed line pitch of
 7680 bytes (1920 px) for every slot, VDMA and mode (hdmi2 DISPLAY_STRIDE,
 libdz DZ_STRIDE); `/disp/<d>/crop x y` shows the mode-sized window at x, y of
@@ -911,6 +925,141 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   sprites (dz_sprite.c), text (dz_text.c: Terminus-derived pixel font OFL + stb_truetype),
   transforms (dz_xform.c: double buffer + row-wise present, 22-29 ms full frame idle).
   dzctl: getopt "+" so negative values after the /address work.
+- **Bring-up after a reboot (Oct 29 2026): `sudo sh /home/ebaz/bin/dzstart.sh`**
+  (sw/tools/dzstart.sh; config /home/ebaz/dzstart.conf: BITSTREAM, HDMI2_ARGS,
+  WEB): plreload of the dev bitstream (hdmi2, debazd, mixer setup) + dzweb as
+  ebaz (setpriv: `su` kills it at session end; remove the old /tmp/dzweb.log
+  first, root may not write ebaz's file in sticky /tmp), then checks; runs
+  itself detached (setsid), log /tmp/dzstart.log; `-n` = no PL load. The card
+  starts NONE of the software at boot, and the installed debazd needs the dev
+  bitstream (osc map: DDS 1 at 0x43D0_4000 is a bus error on the boot PL).
+- **Oct 29 2026 web/draw additions:** tab DDS (sw/dzweb/www/dds.js: patterns,
+  step table, AWG draw panel; hover = OSC address), tab Wall (wall.js: crop
+  tiles + exerciser that counts /event/video, PASS = 0 events); debazd
+  `/dds/<n>/shift f` (LINESTEP only, LFO target "/dds/1/shift $f0");
+  `/draw/<s>/text ... [angle]`, `/draw/<s>/ttf ... ["font"] [angle]` (rotated
+  about the text centre, dz_text.c put_rotated); in-place transforms
+  (rotozoom/scroll/mirror/wave/transform) grab the frame of a movie playing on
+  the slot first. ⚠️ The Oct 28 image has NO TrueType fonts (/usr/share/fonts
+  missing: /draw/<s>/ttf fails "file missing"). Nov 1: `sw/tools/pushfonts.sh
+  -u ebaz@<host>` copies 9 free fonts + licences from the laptop's Debian
+  packages to /usr/share/fonts/debaz (debaz-7130d5 has them; the image still
+  needs a font package). TrueType text and ASCII chars fall back per
+  character to DejaVuSans, FreeSerif, DroidSansFallbackFull (dz_text.c
+  font_with; ✫ ✌ were missing in LiberationSans and the ASCII picture
+  showed only " ." - the "." drawn as a square); `/files fonts` lists the
+  fonts; ASCII card has a font picker; /ascii/<d>/status ends i:drawn
+  i:chars.
+- **dzmosh (Oct 30 2026; ON THE BOARD Nov 1, debaz-7130d5):** MPEG-4 Part 2
+  movies (what mkmedia makes) now play as ffmpeg `-c:v copy -f m4v` -> `dzmosh`
+  (paces at the file's rate, so no -re; FIFO `/tmp/dzmosh.<slot>`) -> ffmpeg
+  decode (`-use_wallclock_as_timestamps 1 -vsync passthrough`, loglevel fatal:
+  corrupt = one error line per frame) -> fbfeed; other codecs use the old
+  one-ffmpeg path. OSC `/movie/<s>/mosh N` (drop key frames, -1 = all),
+  `bloom N` (-1 = hold), `corrupt p`, `pause [1|0]` (audio ffmpeg SIGSTOP/CONT).
+  Board ffmpeg = stock Yocto 4.4-r0, --disable-gpl, no freetype/zmq/libcaca:
+  m4v mux/demux, dump_extra, -vsync, -use_wallclock_as_timestamps all there
+  (drawtext and zmq filters are NOT). Measured Nov 1: a 24 fps 720p movie at
+  23 fps through the chain (copy ffmpeg 5 % CPU, dzmosh 5 %, decoder 130 %,
+  fbfeed 30 %); mosh/bloom/smear/corrupt/pause all work; pause = audio PCM
+  XRUN, resumes by itself. A stop logs one harmless "Broken pipe" line. Scrub/seek/ff are NOT
+  planned (user, Oct 30): render it into the media or use an HDMI source.
+  `/movie/<s>/fx` = state for cues. Web: Media tab "Datamosh" card (movfx.js).
+- **Movie filters (Nov 1 2026, on the board):** board ffmpeg 4.4 filter speed
+  at 720p (decode alone 60 fps): swapuv / random / shuffleframes ~59, hflip /
+  chromashift / hue ~43, negate / lutyuv / noise ~36, tblend ~20, lagfun 10,
+  tmix 6, colorchannelmixer 3, rgbashift 1; working at 640x360 does NOT pay
+  (down + up scale alone = 22 fps); eq/boxblur missing (GPL). 96 audio
+  filters + 13 visualizers (showcqt, showspectrum, showwaves, avectorscope..)
+  are in; rubberband/LADSPA/LV2 not. `/movie/<s>/vf` / `/af` "preset|chain"
+  (dz_draw.c filter_chain: strict character set, no file filters; a playing
+  movie restarts). TRAILS / GHOST are done in fbfeed instead (NEON on the
+  yuv420p frame, ~10 % of a core, live via FIFO /tmp/fbfeed.<slot>):
+  `/movie/<s>/trails d` (luma max(new, old*d), colour from the winner),
+  `/movie/<s>/ghost k`; `/movie/<s>/fx` ends f:trails f:ghost. Web: Media
+  tab "Movie effects" card; choosing a video / audio effect opens a parameter
+  dialog (sw/dzweb/www/fxdialog.js: ranges, defaults, chain builder; Apply =
+  restart) or a custom chain. ffmpeg options that can change while running
+  ("T" flag in `ffmpeg -h filter=x`): hue h/s/b, chromashift, scale w/h,
+  lagfun decay, tblend mode/opacity, low/highpass f, acrusher, volume,
+  atempo; NOT negate, noise, edgedetect, echo, chorus, flanger, phaser,
+  tremolo, vibrato. LIVE (Nov 1 2026, on the board): the decoder reads the
+  video from fd 3 (`-i /dev/fd/3`: a "pipe:" name would turn ffmpeg's command
+  input off) and its stdin is the FIFO /tmp/ffv.<slot> (`0<>`: read-write,
+  never blocks / EOF); the audio ffmpeg has /tmp/ffa.<slot> (no -nostdin).
+  `/movie/<s>/vf|af/<filter>/<option> v` -> ffmpeg's "c<filter> -1 <opt>
+  <val>"; ffmpeg reads stdin only every 100 ms, so debazd queues (latest value
+  per option, one line per 110 ms, dz_draw_movie_tick) and also writes the
+  value into the stored chain. Those ffmpegs' stderr goes to /dev/null (a
+  reply line per command). Proof on the board: "q" into each FIFO quit it.
+  Web: ⚙ next to each effect list = the running effect's dialog, ● sliders
+  act live.
+- **ASCII picture (Oct 30 2026, host-tested only):** `sw/debazd/ascii.c`,
+  `/ascii/<d>/run src` draws slot src as text into slot d each k frames;
+  modes ascii (pixel font), shade/braille/half (drawn, no font), chars
+  (any UTF-8 via TrueType: ttf text is UTF-8 since Oct 30); `/status` =
+  all settings + ms per frame. Nov 1: only CHANGED cells are drawn and
+  copied (key per cell, colours rounded to 32 steps, full redraw every 120
+  frames / after a setting); 4 uncached reads per cell (8 braille/half,
+  ~200 ns each). A9, still source: 160 cols 9 ms, 80 cols 2.5, 40 cols 1,
+  braille 160 17 (the first full-frame version: 22-44 ms). Next to a movie
+  the wall time varies a lot (both cores decode). Main loop: blocks OSC
+  while it draws.
+  ASCII never draws into a slot with a movie: /run is refused there, and a
+  movie started on the target stops the ASCII run (dz_surf() stops movies).
+- **Spawn race FIXED (Nov 1 2026, hung debazd on the board):** a movie stop
+  right after a start sent kill(-pid) before the child's setsid() (no group
+  yet: ESRCH), then waitpid(pid) waited for a movie that kept running ->
+  debazd blocked in do_wait, no OSC replies. Now dz_spawn() (dz_draw.c, also
+  used by sound.c) returns only after the child's exec (CLOEXEC pipe), and
+  dz_kill_group() falls back to the pid. Diagnose such hangs:
+  /proc/<debazd>/task/*/wchan + /proc/<pid>/syscall (wait4 arg0 = the pid).
+  Recover: SIGTERM the PIPE'S dzmosh by plain PID (`sudo /bin/kill -s TERM
+  <pid>`); never `sudo kill -TERM -<pgid>` on the board: procps kill hit the
+  ssh session instead. Effects tab: "Cross-fade (HDMI_1)" card first. Web: Media
+  tab "ASCII" card.
+- **Single-value OSC setters (Nov 1 2026; for LFO targets, scripts, cues):**
+  `/disp/<d>/crop/x|y i`, `/fx/hue/deg f` + `/fx/hue/gain f` (+ `/fx/hue` query;
+  `/fx/hue deg` without gain now KEEPS the last gain, was 1.0), `/fx/key/tol i`
+  (+ `/fx/key/color` without tol keeps the last tol; query with no args),
+  `/fx/matrix/<out><in> f` (r|g|b; the row normalisation still applies with
+  wrap off), `/lfo/<n>/min|max f`, `/dds/<n>/count|cols|rows` (re-apply the
+  last bars/hbars/slant/checker; `/dds/<n>/pattern` -> its parameters). Web:
+  every control's hover text shows its OSC message (Paint: the draw message
+  the setting goes into).
+- **Cues / transitions (plan ROADMAP.md section 15, Oct 30 2026):** step 1 =
+  `sw/debazd/trans.c`: field ramps in the frame tick (before the LFOs),
+  `/fx/xfade t [s] [smooth]` (HDMI_1 own <-> HDMI_0 output, own + feedback
+  = G exactly per lane: one paired ramp, never 256 = wrap), `/trans/field`,
+  `/trans/stop`, `/trans/status`. On the board Nov 1. Plan REVISED Nov 1:
+  keyframe + delta cues with tracking (a scene starts with a keyframe; a
+  keyframe holds ALL targets); state = flat list of single-value OSC
+  targets from one state_dump(); ROADMAP.md section 15 data model + steps.
+  Step 2 DONE on the board (sw/debazd/state.c): `/state` dump (~467
+  targets), `/state/snap|recall|diff [name]`; recall < 60 ms. Step 3 DONE
+  on the board (sw/debazd/cue.c): `/cue/record <scene> <n> keyframe|delta
+  [name]`, `/cue/go`, `/next`, `/back`, `/list`, `/get`, `/resolve`,
+  `/scene/...`, `/show/new|save|load|list` (JSON in /data/shows). A cue go
+  changes only what differs; filter chains that differ only in live options
+  switch without a movie restart. Step 4 DONE on the board: transitions
+  cut | fade | dip per cue (`/cue/fade <scene> <n> secs [smooth] [dip]`, or
+  given in /cue/go | next), `/cue/stop`. The web Cues tab (step 5) is next.
+  LFOs are free running (decided): cues set them up / on / off, they may
+  compete with fades. Tracked state added (pause, audio players + sources,
+  fan PWM incl. software, /fx/wrap, auto flags): ~477 targets. A cue go
+  4.8-6.2 ms (hash index; was 30-58 ms), debazd 4-7 % CPU. ALL replies to
+  one packet are OSC bundles now (a dump as single datagrams lost ~15 %).
+  sw/Makefile: a debazd/*.h change now rebuilds debazd (it did not).
+  Step 5 DONE (Nov 1): show FOLDERS /data/shows/<show>/{show.json,
+  baseline.json, looks/*.json}, looks by reference, decimal cue numbers,
+  record into the cue only, `/look/save|update|apply|list|get|delete`,
+  `/cue/look <scene> <n> add|remove <look>`, `/cue/move`, `/show/check`,
+  `/show/reload`, `/show/baseline`, mtime guard ("force"); key = address for
+  every target; fixed apply order by kind (state.c rank_of). Web tab Cues.
+  Headless-Chromium screenshots of tabs that list things: use real time over
+  CDP (scratchpad cdpshot.mjs pattern: --remote-debugging-port, Page.navigate,
+  wait, captureScreenshot), not --virtual-time-budget (lists come back
+  empty); the snap Chromium ignores kill: close it with CDP Browser.close.
 - **dzweb (Oct 24, sw/README.md "Web app")**: board-side HTTP + WebSocket→UDP OSC bridge
   (port 8080, runs as ebaz, pages in /home/ebaz/www, `make install` copies them). One UDP
   socket per browser; WS frame = OSC packet. `/units` = LAN /info broadcast, dedupe by MAC

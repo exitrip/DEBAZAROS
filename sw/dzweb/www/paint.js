@@ -210,20 +210,23 @@ function down(e) {
     drawing = true;
     start = end = p;
     rotating = null;
-  } else if (s.tool === "text") {
-    net.msg(`${D()}/text`, r, g, b, p[0], p[1], s.text, s.scale | 0, 16);
+  } else if (s.tool === "text" || s.tool === "ttf") {
+    // angle: the shared "angle" slider, clockwise about the centre of the text
+    // (as the shapes); the click point stays the top-left of the unrotated text
+    if (s.tool === "text")
+      net.msg(`${D()}/text`, r, g, b, p[0], p[1], s.text, s.scale | 0, 16, net.float(s.angle));
+    else
+      net.msg(`${D()}/ttf`, r, g, b, p[0], p[1], s.ttf | 0, s.text, net.float(s.angle));
     previewStyle();
     cx.fillStyle = s.color;
-    cx.font = `${16 * s.scale}px monospace`;
+    cx.font = s.tool === "text" ? `${16 * s.scale}px monospace` : `${s.ttf}px sans-serif`;
     cx.textBaseline = "top";
-    cx.fillText(s.text, p[0], p[1]);
-  } else if (s.tool === "ttf") {
-    net.msg(`${D()}/ttf`, r, g, b, p[0], p[1], s.ttf | 0, s.text);
-    previewStyle();
-    cx.fillStyle = s.color;
-    cx.font = `${s.ttf}px sans-serif`;
-    cx.textBaseline = "top";
-    cx.fillText(s.text, p[0], p[1]);
+    const tw = cx.measureText(s.text).width, th = s.tool === "text" ? 16 * s.scale : s.ttf;
+    cx.save();
+    cx.translate(p[0] + tw / 2, p[1] + th / 2);
+    cx.rotate(rad(s.angle));
+    cx.fillText(s.text, -tw / 2, -th / 2);
+    cx.restore();
   } else if (s.tool === "sprite") {
     net.msg(`/sprite/${s.sprite}/draw`, s.slot, p[0], p[1], net.float(s.sscale), net.float(s.angle), net.float(s.alpha));
     cx.strokeStyle = s.color;
@@ -301,7 +304,7 @@ function up(e) {
 
 function slider(key, min, max, step, label, onset) {
   const out = h("span.hint", {}, String(s[key]));
-  const el = h("input", { type: "range", min, max, step, value: s[key],
+  const el = h("input", { type: "range", min, max, step, value: s[key], title: `${label}: a value of the draw message`,
     oninput: () => { s[key] = Number(el.value); out.textContent = el.value; save(); onset?.(); } });
   return row(label, el, out);
 }
@@ -315,10 +318,13 @@ export function init(root) {
   ov = h("canvas.overlay", { width: W, height: H });
   ox = ov.getContext("2d");
 
-  const slot = h("select", { onchange: () => { s.slot = parseInt(slot.value); save(); } },
+  const slot = h("select", { title: "target slot: /draw/<slot>/..., /surface/<slot>/...", onchange: () => { s.slot = parseInt(slot.value); save(); } },
     [...Array(12).keys()].map((i) => h("option", { value: i, selected: i === s.slot }, `slot ${i}`)));
   const tools = ["brush", "line", "rect", "ellipse", "shape", "gradient", "text", "ttf", "sprite"].map((t) =>
-    h("button", { onclick: () => { s.tool = t; save(); tools.forEach((b) => b.classList.toggle("on", b.textContent === t)); } }, t));
+    h("button", { title: { brush: "/draw/<slot>/brush, /stroke", line: "/draw/<slot>/line", rect: "/draw/<slot>/rect",
+      ellipse: "/draw/<slot>/ellipse", shape: "/draw/<slot>/polygon, /star, /starpoly", gradient: "/draw/<slot>/gradient/...",
+      text: "/draw/<slot>/text (pixel font)", ttf: "/draw/<slot>/ttf (TrueType, UTF-8)", sprite: "/sprite/<id>/draw <slot> x y ..." }[t],
+      onclick: () => { s.tool = t; save(); tools.forEach((b) => b.classList.toggle("on", b.textContent === t)); } }, t));
   tools.forEach((b) => b.classList.toggle("on", b.textContent === s.tool));
   const pick = (key, title) => {
     const el = h("input", { type: "color", value: s[key], title, oninput: () => { s[key] = el.value; save(); } });
@@ -326,7 +332,7 @@ export function init(root) {
   };
   const color = pick("color", "colour");
   const color2 = pick("color2", "second colour (gradients)");
-  const fill = h("input", { type: "checkbox", checked: s.fill, onchange: () => { s.fill = fill.checked; save(); } });
+  const fill = h("input", { type: "checkbox", checked: s.fill, title: "filled shapes (thickness 0) or outlines", onchange: () => { s.fill = fill.checked; save(); } });
   const swap = h("button", { title: "swap colours", onclick: () => {
     [s.color, s.color2] = [s.color2, s.color]; color.value = s.color; color2.value = s.color2; save(); } }, "⇄");
   const num = (key, step, title, min, max) => {
@@ -335,11 +341,22 @@ export function init(root) {
     return el;
   };
   const prevAll = (fn) => { cx.globalAlpha = 1; cx.globalCompositeOperation = "source-over"; fn(); };
-  const blend = h("select", { onchange: () => { s.blend = blend.value; save(); net.msg(`${D()}/blend`, s.blend); } },
+  const blend = h("select", { title: "/draw/<slot>/blend normal|add|lighten|multiply", onchange: () => { s.blend = blend.value; save(); net.msg(`${D()}/blend`, s.blend); } },
     ["normal", "add", "lighten", "multiply"].map((b) => h("option", { value: b, selected: b === s.blend }, b)));
-  const text = h("input", { type: "text", value: s.text, oninput: () => { s.text = text.value; save(); } });
-  const fade = h("input", { type: "number", min: 0, max: 1, step: 0.05, value: 0.2 });
-  const act = (label, fn) => h("button", { onclick: fn }, label);
+  const text = h("input", { type: "text", value: s.text, title: "the text of /draw/<slot>/text and /ttf (UTF-8 for ttf)",
+    oninput: () => { s.text = text.value; save(); } });
+  const fade = h("input", { type: "number", min: 0, max: 1, step: 0.05, value: 0.2, title: "/draw/<slot>/fade <amount 0..1>" });
+  // hover text = the OSC message the button sends (<slot> = the target slot above)
+  const ACT_TIP = { "Clear": "/draw/<slot>/clear r g b", "Clear black": "/draw/<slot>/clear 0 0 0",
+    "Fade": "/draw/<slot>/fade <amount 0..1>", "Solid": "/draw/<slot>/solid r g b",
+    "Test bars": "/draw/<slot>/bars", "Radial": "/draw/<slot>/gradient/radial r1 g1 b1 r2 g2 b2",
+    "Angle": "/draw/<slot>/gradient/angle <deg> r1 g1 b1 r2 g2 b2",
+    "Corners": "/draw/<slot>/gradient/corners tl(3) tr(3) bl(3) br(3)",
+    "Save": "/surface/<slot>/save \"<name>\" (PNG in /media/debaz/img)", "Load": "/img/<slot>/load \"<name>\"",
+    "Grab live input": "/surface/<slot>/grab 4 (the capture into the paint buffer)",
+    "Show on display 0": "/disp/0/show <slot>", "Show on display 1": "/disp/1/show <slot>",
+    "Quad": "/draw/<slot>/mirror quad", "↻": "dzweb HTTP GET /media" };
+  const act = (label, fn, title = ACT_TIP[label]) => h("button", { onclick: fn, title }, label);
 
   // save / recall: the slot's paint buffer as <name>.png in /media/debaz/img
   // (debazd encodes it in the background, about 1 s), back with /img/<slot>/load
@@ -402,7 +419,7 @@ export function init(root) {
           return row("rotation", rotEl, rotOut);
         })(),
         row("shape",
-          h("select", { onchange: (e) => { s.pstyle = e.target.value; save(); } },
+          h("select", { title: "/draw/<slot>/polygon | /star | /starpoly", onchange: (e) => { s.pstyle = e.target.value; save(); } },
             [["polygon", "polygon"], ["star", "star"], ["starpoly", "star polygon {n/k}"]].map(([v, t]) =>
               h("option", { value: v, selected: v === s.pstyle }, t))),
           h("span.hint", {}, "n"), num("sides", 1, "sides / points (n)", 3, 64),
@@ -452,8 +469,8 @@ export function init(root) {
         row("gradient",
           act("Radial", () => { net.msg(`${D()}/gradient/radial`, ...rgb(), ...rgb2());
             previewRadial(W / 2, H / 2, Math.hypot(W, H) / 2); }),
-          act("H", () => { net.msg(`${D()}/gradient/h`, ...rgb(), ...rgb2()); previewGradient(0, s.color, s.color2); }),
-          act("V", () => { net.msg(`${D()}/gradient/v`, ...rgb(), ...rgb2()); previewGradient(90, s.color, s.color2); }),
+          act("H", () => { net.msg(`${D()}/gradient/h`, ...rgb(), ...rgb2()); previewGradient(0, s.color, s.color2); }), "/draw/<slot>/gradient/h r1 g1 b1 r2 g2 b2",
+          act("V", () => { net.msg(`${D()}/gradient/v`, ...rgb(), ...rgb2()); previewGradient(90, s.color, s.color2); }), "/draw/<slot>/gradient/v r1 g1 b1 r2 g2 b2",
           num("gangle", 1, "angle in degrees (0 = left to right, 90 = top to bottom)", -360, 360),
           act("Angle", () => { net.msg(`${D()}/gradient/angle`, net.float(s.gangle), ...rgb(), ...rgb2());
             previewGradient(s.gangle, s.color, s.color2); })),
@@ -473,17 +490,17 @@ export function init(root) {
         h("p.hint", {}, "Colour 1 → colour 2. The gradient tool: drag on the canvas, the drag direction sets the angle.")),
       card("Transforms",
         row("rotozoom", num("rz", 0.5, "angle per step (deg)", -180, 180), num("zoom", 0.01, "zoom per step", 0.1, 4),
-          act("Step", () => net.msg(`${D()}/rotozoom`, net.float(s.rz), net.float(s.zoom)))),
+          act("Step", () => net.msg(`${D()}/rotozoom`, net.float(s.rz), net.float(s.zoom)), "/draw/<slot>/rotozoom <deg> <zoom>")),
         row("scroll", num("dx", 1, "dx px", -1280, 1280), num("dy", 1, "dy px", -720, 720),
-          act("Step", () => net.msg(`${D()}/scroll`, s.dx | 0, s.dy | 0))),
-        row("mirror", act("H", () => net.msg(`${D()}/mirror`, "h")), act("V", () => net.msg(`${D()}/mirror`, "v")),
+          act("Step", () => net.msg(`${D()}/scroll`, s.dx | 0, s.dy | 0), "/draw/<slot>/scroll <dx> <dy>")),
+        row("mirror", act("H", () => net.msg(`${D()}/mirror`, "h"), "/draw/<slot>/mirror h"), act("V", () => net.msg(`${D()}/mirror`, "v"), "/draw/<slot>/mirror v"),
           act("Quad", () => net.msg(`${D()}/mirror`, "quad"))),
         row("wave",
           h("select", { title: "axis", onchange: (e) => { s.waxis = Number(e.target.value); save(); } },
             h("option", { value: 0, selected: s.waxis === 0 }, "rows"),
             h("option", { value: 1, selected: s.waxis === 1 }, "columns")),
           num("wamp", 1, "amplitude px", 0, 200), num("wper", 1, "period px", 4, 2000),
-          act("Step", () => net.msg(`${D()}/wave`, s.waxis | 0, net.float(s.wamp), net.float(s.wper), net.float(Math.random())))),
+          act("Step", () => net.msg(`${D()}/wave`, s.waxis | 0, net.float(s.wamp), net.float(s.wper), net.float(Math.random())), "/draw/<slot>/wave <axis> <amp> <period> <phase>")),
         h("p.hint", {}, "Each Step runs once on the board. For motion, give an LFO a target, e.g. " +
           "/draw/6/rotozoom $f0 1.02 (every 2 frames)."))));
 }

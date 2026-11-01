@@ -27,6 +27,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 14 | HDMI audio out (HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | WORKS on hardware 2026-10-26 (branch hdmi-audio, artifacts/..._20261026_audio): out, in, loop; 2026-10-27: HDMI_0 also hdmi_tx (own TX0_CTRL + audio source), simulated, built, not yet on hardware; open: software HPD; 1080p60 still needs the effects-chain pipelining (hdmi_tx itself: 10 ns) |
 | 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
 | 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); BD integration DONE + bench-tested 2026-10-29 (build osc: bars, checkerboard; slices 100 %, FCLK2 -0.017 ns: closure runs); next: timing, software presets |
+| 17 | Cues, scenes, shows: snapshot / recall of the state with transitions, OSC-driven (section 15) | 16 | DOING: step 1 DONE 2026-10-30 (trans.c: field ramps in the frame tick, /fx/xfade, /trans/field; host-tested); next: field flags, LFO getter, cJSON, cues |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -510,6 +511,14 @@ VDMA MM2S (window: start, HSIZE, VSIZE, STRIDE) -> subset converter
   (task 2).
 
 ## 10. SD card image and software deploy (plan, 2026-10-25)
+
+Open points found 2026-10-29: (a) no TrueType fonts in the image
+(/usr/share/fonts missing; dz_text ttf fails) - add a font package
+(e.g. Liberation) to the rootfs; (b) nothing starts the software at boot:
+sw/tools/dzstart.sh does the bring-up by hand (plreload of the dev
+bitstream + dzweb + checks); a systemd unit that runs it after
+debaz-firstboot is the next step (the dev bitstream must be in
+/lib/firmware and named in /home/ebaz/dzstart.conf).
 
 Goal: one image for every card (16 GB or larger). Flash it, and the unit
 works; per-unit identity lives in small files, not in the image.
@@ -1355,6 +1364,24 @@ keeps its byte writes (a feature, 29 small sets). Next to try after that:
 opt_design control-set merging (`-control_set_merge`,
 `report_qor_suggestions`).
 
+**Tried 2026-10-29 (mixer coreRevision 24, word-only writes) - REVERTED.**
+The change works (run_mixer_tb ALL PASS + a byte / halfword store is
+ignored) and after opt_design the design is smaller: control sets 1012 ->
+823, LUT 14645 -> 14451. But placement became unreliable: 5 of 6 runs
+failed with "Placer could not place all instances" / "failed to commit all
+instances" (directives ExtraPostPlacementOpt, Explore, EarlyBlockPlacement,
+Default, AltSpreadLogic_medium); only ExtraTimingOpt placed, with FCLK2
+-0.022 ns, slices still 100 % (the placer spreads over the whole chip: all
+four clock regions 1100 / 1100 slices used in both designs). place_design on
+the opt checkpoint lists no unplaced cell (only the logical VCC): the
+legalization at the end fails, not one cell without room. The same
+design before the change (osc) placed in 5 of 5 runs. Conclusion: at this
+fill level a small change of the netlist decides between fits / does not
+fit; the saving is kept as `hw/patches/mixer_word_writes_rev24.patch`
+(git apply, then hw/repackage_ip.tcl ip_repo/mixer_1_0) for the day it
+comes together with a real saving (pixel clock on BUFG, time-multiplexed
+mixer MACs, an 8-step dz_osc2).
+
 Board test (debaz-7130d5, 2026-10-29): both IDs "DOSC", PINC reset
 0x8000_0001, the phase runs at PINC x 100 MHz; /dds/0/hz, /dds/1/pinc and
 the event block phase work unchanged; on HDMI_1 (osc layer, gains 1):
@@ -1452,3 +1479,237 @@ harder; FCLK0 logic is not region-locked (unlike the pixel clock in X1Y1).
 If it does not fit: 8 steps instead of 16, or the per-channel options
 (line/frame step) as build parameters.
 
+## 15. Cues, scenes and shows (plan 2026-10-30)
+
+Goal (user): debazd stores the state as a **cue** (snapshot of the
+registers and the higher-level state), recalls it, and moves between cues
+with a transition. A **scene** is a group of cues and a **show** a group of
+scenes - organisation only, no transitions between scenes. Media (A/V) is
+part of a cue. Driven by any OSC client; the web app is only a client.
+No easing zoo: cut, linear fade, one smooth curve, dip to black.
+
+### Data model (revised 2026-11-01: keyframes + deltas)
+
+**State = a flat list of targets.** A target is one OSC address of debazd
+with one value: a register field by name (`/mixer/3/k`, `/hdmi/1/gain/rgb`),
+or a higher-level setting that has a single-value address (`/fx/hue/deg`,
+`/disp/1/show`, `/disp/0/crop/x`, `/movie/0/file`, `/movie/0/vf`,
+`/movie/0/vf/hue/h`, `/movie/0/trails`, `/ascii/2/cols`, `/dds/1/count`,
+`/lfo/4/rate`, ...). The single-value setters of 2026-11-01 exist for this.
+debazd gets ONE internal `state_dump()`: every subsystem lists its targets
+as (address, typed value), in a fixed order (media before effects, so a
+recall starts a movie before it sets that movie's filters). A recall =
+those messages, dispatched inside debazd (the same code as from the
+network). A diff = the targets whose value differs.
+
+**Cue kinds** (decisions of the user, 2026-11-01):
+- **keyframe**: ALL targets (registers, displays, media, movie effects,
+  ASCII, DDS, LFOs) = a complete reset point. The first cue of every scene
+  MUST be a keyframe: any scene starts on its own and in any order.
+- **delta**: only the targets that differ from the resolved state of the
+  cue before it. **Tracking**: a change stays until a later cue changes it
+  again; editing an early delta changes the result of the later deltas up
+  to the next keyframe (as on a lighting console).
+
+**Resolve**: state(cue N) = the last keyframe at or before N in the scene
++ every delta after it up to N, applied in order (as I and P frames).
+- `/cue/go <scene> <cue>` (any cue, any order): resolve, then apply the
+  WHOLE resolved state (a fade moves only what differs from now).
+- `/cue/next`: in order, apply only that cue's delta (a keyframe: all).
+- `/cue/record <scene> <cue> keyframe|delta [name]`: keyframe = the dump;
+  delta = dump minus resolve(previous cue), only the differences.
+- `/cue/update`: re-record in the same kind; `/cue/resolve <scene> <cue>`
+  -> the resolved targets (one reply each, debugging and the web app).
+
+One JSON file per show, `/data/shows/<show>.json` (ext4 /data: small files
+written often; the exFAT media partition is for media), parser cJSON (MIT,
+one file, beside third_party/stb):
+
+    { "show": "name", "bitstream": "...osc_epo", "scenes": [
+      { "name": "intro", "cues": [
+        { "name": "dark", "kind": "keyframe", "fade": 2.0, "curve": "linear",
+          "targets": { "/mixer/0/k": 32768, "/disp/0/show": 0,
+                       "/movie/0/file": "Moving_Left.mkv", "/fx/hue/deg": 30.0 } },
+        { "name": "hue up", "kind": "delta", "fade": 4.0,
+          "targets": { "/fx/hue/deg": 120.0 } } ] } ] }
+
+Targets by group (what state_dump() lists; the sources exist except where
+noted):
+
+| Group | Targets | Source |
+|---|---|---|
+| fields | register fields by NAME, one canonical field per bit range, no action fields (issues 1, 2) | dz_fields read-back |
+| displays | /disp/<d>/show, blank, seq, seq/rate, crop/x, crop/y | disp.c |
+| media | /movie/<s>/file (+ fps, audio), /img/<s>/load (last image), /audio/play per output | dz_draw / sound.c (file-name state: new) |
+| movie fx | /movie/<s>/vf, af (chains), trails, ghost, mosh, bloom (hold states), corrupt | dz_draw (as last sent) |
+| ascii | /ascii/<d>/run (src or off), cols, mode, chars, font, color, fg, bg, level, invert, every | ascii.c |
+| fx | /fx/hue/deg, gain; /fx/key/color, tol, source; /fx/wrap (matrix and key bits are fields) | fx.c |
+| dds | /dds/<n>/pattern (count, rows, shift, shape), steps, AWG points | dds.c (tables: issue 8) |
+| lfo | /lfo/<n>/shape, rate, frames, min, max, width, phase, curve, steps, mode, every, target, on | lfo.c (getter needed: issue 4) |
+
+The show records the bitstream name: recall warns when it differs; targets
+the running build lacks are skipped with a warning.
+
+### OSC (debazd)
+
+    /show/load s  /show/save [s]  /show/new s  /show/list
+    /scene/add s  /scene/rename  /scene/delete  /scene/list
+    /cue/record <scene> <cue> keyframe|delta [name]
+    /cue/update <scene> <cue>   /cue/delete   /cue/move
+    /cue/go <scene> <cue> [fade s] [cut|fade|dip] [smooth]
+    /cue/next  /cue/back  /cue/stop  /cue/status
+    /cue/list <scene>  /cue/get <scene> <cue>  /cue/resolve <scene> <cue>
+                                -> one reply per item, then .../end
+    /state                      -> one /state/target per target, /state/end
+
+Replies item by item (as /fields): debazd's OSC packets are at most 8 KB,
+a full cue is larger.
+
+### Transitions
+
+cut (all at the next vsync), fade N s (numeric fields linear, one step per
+frame tick; "smooth" = S curve), dip (output gains to black, switch media
+and displays, back). Per field KIND (a new attribute of the field table):
+continuous (gains, offsets, linestep, PINC: interpolate; packed RGB per
+lane), phase-like (poff: the short way round), discrete (modes, shapes,
+tick, slot numbers, enables: switch at the start, or in the middle for
+dip), action / never (see issue 1). Media in a fade: cut at the start
+except with dip. /fx/xfade = the one real video cross-fade (HDMI_1 only).
+
+### Issues found (to solve on the way)
+
+1. No "action" flag in the field table: /hdmi/2/hpd_low (unplugs the
+   source), /audio/rx/clear and the like must never be stored or written by
+   a cue -> DZ_F_NOCUE.
+2. Aliases (/hdmi/<n>/gain/rgb vs /r /g /b; /dds/<n>/hz vs /pinc vs
+   /enable): a snapshot takes ONE canonical field per bit range, or a
+   recall writes the same bits twice with different rounding.
+3. LFOs and transitions - DECIDED 2026-11-01 (user): LFOs are free
+   running. A cue sets them up, switches them on or off (their settings +
+   on/off are targets), and an LFO left on may compete with a cue's fade
+   (the LFO runs after the ramps each frame, so it wins). No special rule.
+4. LFO settings cannot be read back (/lfo/<n> = value + on): lfo.c needs a
+   getter for shape, rate, range, target, ...
+5. No movie position / seek: a recall starts a movie at 0. Decision
+   2026-10-30: no seek / ff / scrub on the board (render it into the
+   media, or play from an HDMI source); play + pause only (pause via
+   dzmosh, MPEG-4 Part 2 files).
+6. No audio volume (sound.c): audio is cut-only until a software volume
+   (pcmplay) or ALSA softvol (section 13).
+7. Painted surfaces are pixels in debazd's buffer: optional per cue, saved
+   as PNG (/surface/s/save, ~1 s, 1-3 MB per slot), recall = image load.
+8. The write-only DDS tables are known only if debazd wrote them since it
+   started: snapshot stores "unknown" then, recall leaves them alone.
+9. Bitstream dependence (fields that an older build lacks): skip + warn.
+10. Tearing: a cut writes everything right after vsync (dz_osc2 has its own
+    commit-at-vsync; the rest via the vsync thread / frame tick).
+11. The intentional wrap math makes some fades pass through flashes: an
+    effect, documented, never "fixed".
+12. Several units (later): a time-aligned go (FLEET.md); now a go is per
+    unit.
+
+### Steps
+
+1. DONE 2026-10-30: `sw/debazd/trans.c` - ramps of fields in the frame tick
+   (before the LFOs), linear / smooth, per lane for DZ_RGB, a new ramp on a
+   field replaces the old; `/fx/xfade t [s] [smooth]` (HDMI_1: own gain =
+   G - fb, fb = round(t G) per lane, ONE paired ramp so the sum is exactly G
+   at every frame - two separate ramps could both round up to 256 = wrap),
+   `/trans/field path value s [smooth]`, `/trans/stop`, `/trans/status`.
+   Host tests: 26 consistent samples of a 1 s fade, 0 lane sums != 255;
+   selftest.sh checks xfade-own/fb/query, trans-now/value/bad. On the
+   board 2026-11-01: a fade ends with own + feedback = 255 per lane; the
+   Effects tab has a "Cross-fade (HDMI_1)" card.
+2. DONE 2026-11-01: `sw/debazd/state.c` - `state_dump()` over the groups
+   media (movie settings, then `/movie/<s>/file`: new, plays or stops, the
+   same movie playing = no change), displays (key /disp/<d>/source: show,
+   capture or seq), ascii (`/ascii/<d>/run -1` = stop: new), dds tables
+   (only if debazd wrote them), lfo (read-back in lfo.c), fields (no
+   read-only, no /ev/ /pcm/, no action or measured fields, no Hz aliases;
+   per register the widest field wins: computed, no flags in the table;
+   RGB fields as 3 bytes). /fx/hue and /fx/key are not targets (they only
+   compute mixer fields). OSC `/state`, `/state/snap|recall|diff [name]`
+   (diff also reports `/state/gone`). Host: 471 targets, diff = exactly the
+   changes, recall -> diff 0 (selftest state-diff/recall). Board: 467
+   targets, 5 changes found, recall -> diff 0, another movie -> recall
+   restarts the snapshot's movie; a recall takes < 60 ms (without a movie
+   restart).
+3. DONE 2026-11-01: `sw/debazd/cue.c` - record keyframe / delta (delta =
+   dump minus resolve of cue n-1), resolve (last keyframe + deltas, a
+   changed target keeps its place), go (only what differs from now), next
+   (the cue's own targets; a keyframe = go; past a scene's end = the next
+   scene), back, list / get / resolve / delete / name / fade, scenes, shows
+   in DZ_SHOW_DIR (/data/shows; sim /tmp/dzshows) as JSON with targets as
+   ordered ["key", "/address", args...] (own reader / writer, no cJSON: an
+   outside download was blocked). A refusal changes nothing (a delta as cue
+   1 made the scene first: fixed). /movie/<s>/vf|af: the same chain = no
+   restart; only live options changed = sent live (table live_opt in
+   dz_draw.c), no restart. Host: tracking, ripple, go in any order, save ->
+   load = the same resolve (selftest cue-*). Board: 467-target keyframe,
+   2-target deltas, a go 78-92 ms incl. dzctl, hue 0 <-> 120 between cues
+   with the decoder PID unchanged, negate = restart, /data/shows/bench.json.
+4. DONE 2026-11-01 (cue.c): each cue has fade secs, curve linear|smooth
+   and transition cut|fade|dip (JSON "transition"); `/cue/go <scene> <n>
+   [secs] [cut|fade|dip] [smooth|linear]`, `/cue/next|back [same]`,
+   `/cue/fade <scene> <n> secs [curve] [mode]`, `/cue/stop`. fade: fields
+   ramp in trans.c (RGB per lane) unless on/off, < 6 bits or a choice
+   (/mode /shape /tick /reset /last /func /stream /vic /src /key); single
+   floats and crop x / y ramp as messages each frame (cue_tick); strings,
+   choices and the rest switch at the start. dip: the 5 output gain fields
+   (HDMI_0 gain, HDMI_1 gain / feedback / osc sin / osc phase) to 0 in the
+   first half, everything switches at the bottom, the gains rise to the
+   cue's values; /cue/stop in the first half puts the gains back. A new go
+   replaces a running one. Host: selftest cue-fading/faded/dip-down/done.
+   Board: smooth 4 s fade (gain 236 -> 100, trails 0 -> 0.9, movie 15-16
+   fps), 2 s dip (display switch at the bottom), show /data/shows/fades.
+   LFOs on faded targets: by design (issue 3).
+   Review 2026-11-01 - state no command could read back, now TRACKED as
+   targets: movie pause; the audio file players (key /audio/out/<n>/file:
+   /audio/play out file loop, or /audio/stop out; /audio/play of the file
+   already playing = no restart) and each output's source (when known); the
+   fan PWM incl. the software one (/fan/<n>/pwm hz duty invert, or 0;
+   /fan/<n>/pwm got the optional invert argument that /servo uses); /fx/wrap;
+   /capture/auto, /audio/fs/auto, /audio/rx/auto. Not targets: pixels
+   (painting, images, sprites, issue 7) and actions (trigger, record,
+   replug, recall). The dump: ~477 targets.
+   Measured on the board (movie playing): debazd 4.4 % CPU idle, 6.6 %
+   during a 10 s fade. First version: a dump 14 ms, dump + diff 26 ms, a
+   cue go 30-58 ms - the target lists searched keys linearly (n^2/2 string
+   compares per dump, diff and resolve). With a hash index (state.c): a
+   dump 4.7 ms (register reads 1.2 ms of it), a cue go 4.8-6.2 ms.
+   `/state/bench [n]` -> i:targets f:dump_ms f:diff_ms f:fields_ms; the go
+   log line has its time. Replies: all replies to one received packet now
+   go out as OSC bundles <= 8 KB (debazd.c out_msg) - a /state dump as 477
+   single datagrams lost ~15 % at the receiver; now 477 of 477, also over
+   the network (/fields 275 of 275). sw/Makefile: debazd/*.h were added to
+   HDRS after the compile rule, so a header change did not rebuild debazd
+   (a struct change gave a double free): fixed.
+5. DONE 2026-11-01: storage redesign + web tab Cues. Decisions (user):
+   a show FOLDER with looks by reference; record into the cue only; decimal
+   cue numbers. Model (cue.c): keyframe = baseline + looks + its own set,
+   delta = the cue before + looks + its set (tracking); a look = a named
+   part-state used by reference (the same look in cue 1, 100, 150), its
+   transition belongs to the cue. Files: /data/shows/<show>/show.json
+   (scenes, cues: n, name, kind, looks, fade, curve, transition, set),
+   baseline.json (taken at the first keyframe, /show/baseline),
+   looks/<name>.json; targets as {"/address": value | [values]} (1 int, 1.0
+   float, floats written as the shortest form that reads back the same).
+   Engine changes for hand editing: key = address everywhere (new
+   /disp/<d>/source, /dds/<n>/step/<i>, /audio/out/<n>/file; LFO rate +
+   frames and ASCII chars + mode both always), a FIXED APPLY ORDER by kind
+   (state.c rank_of: a file's order does not matter), /show/check (unknown
+   address, argument types, missing movie / audio / look files, a scene
+   starting with a delta), the mtime guard (a save refuses over a file that
+   changed on disk since: /show/reload or "force"), every file .part +
+   rename, show.json last, a save deletes only the looks deleted here.
+   Interface pitfalls found and handled: adding a look drops the cue's own
+   targets that equal it (else they hide later look updates); a delta
+   recorded while not on the cue before it gets a /warning (it holds
+   everything since that cue). The old single-file format is NOT read
+   (/data/shows/bench.json, fades.json: test shows). Web: tab Cues (show,
+   playback GO / Back / Stop + override, looks, cue table with transitions,
+   inspector = OSC lines). Host: selftest cue-decimal/order, look-*,
+   show-check; hand-edit test (refused save, reload, check found 3 planted
+   errors, frames-before-rate applied right). Board: show demo (4 cues incl.
+   1.5, look glow in 2 cues), check 0 issues.
+6. Later: audio volume, saved surfaces, generated cues, several units.

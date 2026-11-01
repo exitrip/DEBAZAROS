@@ -14,6 +14,9 @@
  * started) changes apply at once and the frame tick runs from a timer.
  *
  * OSC (d = 0, 1 or a pattern):
+ *   /disp/<d>/source s:what ...    "show" slot | "capture" | "seq" rate slots...
+ *                                  (one address for what the display shows:
+ *                                  the state model / cues)
  *   /disp/<d>/show i:slot          front = slot (next frame)
  *   /disp/<d>/home                 display 0 -> slot 0, display 1 -> slot 2
  *   /disp/<d>/capture              front = the frame the capture writes
@@ -32,9 +35,21 @@
  *                                  and seq; lands on the next vsync, so it can
  *                                  move every frame (LFO: "/disp/0/crop $0 $1").
  *   /disp/<d>/crop                 -> /disp/<d>/crop i:x i:y
+ *   /disp/<d>/crop/x i, /crop/y i  one coordinate alone (LFO target:
+ *                                  "/disp/0/crop/x $i0")
  *   /disp/<d>/crop/off             = crop 0 0
  *   /disp/<d>                      -> /disp/<d> i:slot i:blanked i:seq
  *   /vsync                         -> /vsync i:frames f:hz f:jitter_us i:ok
+ *   /video/mode                    -> /video/mode i:w i:h f:hz s:name
+ *   /video/mode s:name             set the video mode of both displays (one
+ *                                  pixel clock + VTC): stops hdmi2.elf (by pid)
+ *                                  and starts it again with -r name, as
+ *                                  plreload.sh but without a PL load. The main
+ *                                  loop then sees the new geometry
+ *                                  (/event/mode): movies stop, crops reset.
+ *                                  Names = video_modes[] (hdmi2 -r).
+ *   /video/modes                   -> /video/modes s:name ... (WxH[xNNHz], 60 Hz
+ *                                  without a rate)
  */
 #define _GNU_SOURCE
 #include "debazd.h"
@@ -42,11 +57,15 @@
 #include "dz_map.h"
 #include "dz_vdma.h"
 
+#include <dirent.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/eventfd.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -316,6 +335,50 @@ static int slot_of(uint32_t a)
 	return a < DZ_SLOTS ? (int)a : -1;
 }
 
+/* the state model (state.c): what each display shows (key
+ * /disp/<d>/source: a slot, the capture or a sequence), blank, crop */
+void disp_state(state_cb cb, void *ctx)
+{
+	for (int d = 0; d < DZ_DISPLAYS; d++) {
+		char p[40], key[40];
+		int slot, bl, seqon, seqn, rate, cx, cy, capture, seq[SEQ_MAX];
+
+		pthread_mutex_lock(&mu);
+		uint32_t a = D[d].want ? D[d].want_addr : D[d].front;
+		slot = slot_of(a);
+		capture = a && a == dz_capture_addr() && slot < 0;
+		bl = D[d].want_blank >= 0 ? D[d].want_blank : D[d].blanked;
+		seqon = D[d].seqon && !D[d].seqstop;
+		seqn = D[d].seqn;
+		rate = D[d].rate;
+		memcpy(seq, D[d].seq, sizeof(seq));
+		cx = D[d].cx;
+		cy = D[d].cy;
+		pthread_mutex_unlock(&mu);
+		snprintf(key, sizeof(key), "/disp/%d/source", d);
+		if (seqon && seqn > 0) {
+			dz_arg sa[SEQ_MAX + 2];
+			int k2 = 0;
+
+			sa[k2++] = (dz_arg){ .type = 's', .s = "seq" };
+			sa[k2++] = (dz_arg){ .type = 'i', .i = rate > 0 ? rate : 1 };
+			for (int k = 0; k < seqn && k2 < DZ_OSC_MAX_ARGS; k++)
+				sa[k2++] = (dz_arg){ .type = 'i', .i = seq[k] };
+			st_emit_args(cb, ctx, NULL, key, sa, k2);
+		} else if (capture) {
+			st_emit(cb, ctx, NULL, key, "s", "capture");
+		} else if (slot >= 0) {
+			st_emit(cb, ctx, NULL, key, "si", "show", slot);
+		}
+		snprintf(p, sizeof(p), "/disp/%d/blank", d);
+		st_emit(cb, ctx, NULL, p, "i", bl ? 1 : 0);
+		snprintf(p, sizeof(p), "/disp/%d/crop/x", d);
+		st_emit(cb, ctx, NULL, p, "i", cx);
+		snprintf(p, sizeof(p), "/disp/%d/crop/y", d);
+		st_emit(cb, ctx, NULL, p, "i", cy);
+	}
+}
+
 static void status(int d)
 {
 	char p[24];
@@ -336,6 +399,142 @@ static int usable(int slot)
 	       dz_reserved(DZ_SLOT_ADDR(slot), DZ_SLOT_PITCH);
 }
 
+/* ---- video mode: hdmi2.elf -r (2026-11-01) ---- */
+
+static const struct { const char *name; int w, h; float hz; } video_modes[] = {
+	{ "640x480", 640, 480, 60 },	   { "800x600", 800, 600, 60 },
+	{ "1024x768", 1024, 768, 60 },	   { "1280x720", 1280, 720, 60 },
+	{ "1280x720x50Hz", 1280, 720, 50 }, { "1280x720x30Hz", 1280, 720, 30 },
+	{ "1920x1080x25Hz", 1920, 1080, 25 }, { "1920x1080x30Hz", 1920, 1080, 30 },
+	{ "1920x1080x60Hz", 1920, 1080, 60 },
+};
+#define N_VMODES ((int)(sizeof(video_modes) / sizeof(video_modes[0])))
+
+/* the mode that matches the running geometry and frame rate best */
+static const char *video_mode_name(int w, int h, double hz)
+{
+	const char *best = "";
+	double bd = 1e9;
+
+	for (int i = 0; i < N_VMODES; i++) {
+		double dd = hz > 1 ? (video_modes[i].hz - hz) * (video_modes[i].hz - hz) : 0;
+		if (video_modes[i].w == w && video_modes[i].h == h && dd < bd) {
+			bd = dd;
+			best = video_modes[i].name;
+		}
+	}
+	return best;
+}
+
+/* stop every hdmi2.elf by pid (SIGTERM, 1 s, then SIGKILL) */
+static void hdmi2_stop(void)
+{
+	pid_t pids[8];
+	int n = 0;
+	DIR *dp = opendir("/proc");
+	struct dirent *e;
+
+	if (!dp)
+		return;
+	while ((e = readdir(dp)) && n < 8) {
+		char path[64], comm[32] = "";
+		pid_t pid = (pid_t)atoi(e->d_name);
+		FILE *fp;
+
+		if (pid <= 0)
+			continue;
+		snprintf(path, sizeof(path), "/proc/%d/comm", (int)pid);
+		fp = fopen(path, "r");
+		if (!fp)
+			continue;
+		if (fgets(comm, sizeof(comm), fp) && !strncmp(comm, "hdmi2.elf", 9))
+			pids[n++] = pid;
+		fclose(fp);
+	}
+	closedir(dp);
+	for (int i = 0; i < n; i++)
+		kill(pids[i], SIGTERM);
+	for (int t = 0; t < 100; t++) {
+		int alive = 0;
+		for (int i = 0; i < n; i++)
+			if (kill(pids[i], 0) == 0)
+				alive++;
+		if (!alive)
+			return;
+		usleep(10000);
+	}
+	for (int i = 0; i < n; i++)
+		kill(pids[i], SIGKILL);
+}
+
+/* hdmi2.elf -r name, detached (double fork, all inherited fds closed: the OSC
+ * socket and the /tmp/debazd.lock flock must not live on in hdmi2).
+ * DZ_HDMI2 = another program (host tests). */
+static int hdmi2_start(const char *name)
+{
+	const char *prog = getenv("DZ_HDMI2");
+	pid_t pid;
+
+	if (!prog || !*prog)
+		prog = "/home/ebaz/bin/hdmi2.elf";
+	if (access(prog, X_OK))
+		return -1;
+	pid = fork();
+	if (pid < 0)
+		return -1;
+	if (pid == 0) {
+		if (fork() == 0) {
+			setsid();
+			for (int fd = 3; fd < 1024; fd++)
+				close(fd);
+			if (!freopen("/dev/null", "r", stdin) ||
+			    !freopen("/tmp/hdmi2.log", "w", stdout))
+				_exit(127);
+			dup2(1, 2);
+			execl(prog, prog, "-r", name, (char *)NULL);
+			_exit(127);
+		}
+		_exit(0);
+	}
+	waitpid(pid, NULL, 0);
+	return 0;
+}
+
+static int video_dispatch(const dz_msg *m)
+{
+	if (!strcmp(m->path, "/video/modes")) {
+		dz_arg a[N_VMODES];
+
+		for (int i = 0; i < N_VMODES; i++)
+			a[i] = (dz_arg){ .type = 's', .s = video_modes[i].name };
+		dzd_reply_args("/video/modes", a, N_VMODES);
+		return 1;
+	}
+	if (strcmp(m->path, "/video/mode"))
+		return 0;
+	if (m->n < 1 || m->a[0].type != 's') {
+		int w = dz_geom_w(), h = dz_geom_h();
+		double hz = disp_frame_hz();
+		dzd_reply("/video/mode", "iifs", w, h, (float)hz, video_mode_name(w, h, hz));
+		return 1;
+	}
+	for (int i = 0; i < N_VMODES; i++) {
+		if (strcmp(m->a[0].s, video_modes[i].name))
+			continue;
+		dzd_log("debazd: video mode -> %s (hdmi2 restart)\n", video_modes[i].name);
+		audio_rx_hold();
+		hdmi2_stop();
+		if (hdmi2_start(video_modes[i].name)) {
+			dzd_reply("/error", "ss", "/video/mode", "hdmi2.elf missing");
+			return 1;
+		}
+		dzd_reply("/video/mode", "s", "starting");
+		return 1;
+	}
+	dzd_reply("/error", "ss", "/video/mode", "unknown mode (see /video/modes)");
+	return 1;
+}
+
 int disp_dispatch(const dz_msg *m)
 {
 	const dz_arg *a = m->a;
@@ -347,14 +546,17 @@ int disp_dispatch(const dz_msg *m)
 		pthread_mutex_unlock(&mu);
 		return 1;
 	}
+	if (!strncmp(m->path, "/video/", 7))
+		return video_dispatch(m);
 	if (strncmp(m->path, "/disp/", 6))
 		return 0;
 
 	for (int d = 0; d < DZ_DISPLAYS; d++) {
 		char base[16], p[40];
 		const char *op = NULL;
-		static const char *ops[] = { "show", "home", "capture", "blank", "seq",
-					     "seq/rate", "seq/stop", "crop", "crop/off", NULL };
+		static const char *ops[] = { "source", "show", "home", "capture", "blank", "seq",
+					     "seq/rate", "seq/stop", "crop", "crop/off", "crop/x", "crop/y",
+					     NULL };
 
 		snprintf(base, sizeof(base), "/disp/%d", d);
 		if (dz_osc_match(m->path, base)) {
@@ -375,7 +577,31 @@ int disp_dispatch(const dz_msg *m)
 			status(d);
 			continue;
 		}
-		if (!strcmp(op, "crop") && n == 0) {	/* query */
+		if (!strcmp(op, "source") && n >= 1 && a[0].type == 's') {
+			/* the state model: "show" slot | "capture" | "seq" rate slots... */
+			dz_msg mm = { .n = 0 };
+
+			snprintf(p, sizeof(p), "%s/%s", base, !strcmp(a[0].s, "seq") ? "seq/rate" : a[0].s);
+			mm.path = p;
+			if (!strcmp(a[0].s, "show") && n >= 2) {
+				mm.a[0] = a[1];
+				mm.n = 1;
+			} else if (!strcmp(a[0].s, "seq") && n >= 3) {
+				mm.a[0] = a[1];			/* rate first, then the slots */
+				mm.n = 1;
+				dzd_handle_internal(&mm);
+				snprintf(p, sizeof(p), "%s/seq", base);
+				mm.n = 0;
+				for (int k = 2; k < n && mm.n < DZ_OSC_MAX_ARGS; k++)
+					mm.a[mm.n++] = a[k];
+			} else if (strcmp(a[0].s, "capture")) {
+				dzd_reply("/error", "ss", "source: show <slot> | capture | seq <rate> <slots...>", m->path);
+				continue;
+			}
+			dzd_handle_internal(&mm);
+			continue;
+		}
+		if (!strncmp(op, "crop", 4) && strcmp(op, "crop/off") && n == 0) {	/* query */
 			snprintf(p, sizeof(p), "%s/crop", base);
 			pthread_mutex_lock(&mu);
 			dzd_reply(p, "ii", D[d].cx, D[d].cy);
@@ -428,7 +654,7 @@ int disp_dispatch(const dz_msg *m)
 		} else if (!strcmp(op, "seq/stop")) {
 			if (D[d].seqon)
 				D[d].seqstop = 1;
-		} else if (!strcmp(op, "crop") || !strcmp(op, "crop/off")) {
+		} else if (!strncmp(op, "crop", 4)) {
 			/* window = the mode, inside the source: the capture's
 			 * real size (e.g. 1600 x 1200, which runs into the next
 			 * slot) when it is shown, else a 1920 x 1080 slot at
@@ -453,6 +679,11 @@ int disp_dispatch(const dz_msg *m)
 			if (!strcmp(op, "crop") && n >= 2) {
 				x = a[0].type == 'f' ? (int)a[0].f : a[0].i;
 				y = a[1].type == 'f' ? (int)a[1].f : a[1].i;
+			} else if (!strcmp(op, "crop/x") || !strcmp(op, "crop/y")) {
+				int v = a[0].type == 'f' ? (int)a[0].f : a[0].i;
+
+				x = op[5] == 'x' ? v : D[d].cx;
+				y = op[5] == 'y' ? v : D[d].cy;
 			}
 			x = x < 0 ? 0 : x > maxx ? maxx : x;
 			y = y < 0 ? 0 : y > maxy ? maxy : y;
@@ -464,7 +695,7 @@ int disp_dispatch(const dz_msg *m)
 		}
 		pthread_mutex_unlock(&mu);
 		kick(d);
-		if (!strcmp(op, "crop") || !strcmp(op, "crop/off")) {
+		if (!strncmp(op, "crop", 4)) {
 			snprintf(p, sizeof(p), "%s/crop", base);	/* no log: may run per frame */
 			dzd_reply(p, "ii", D[d].cx, D[d].cy);
 			continue;

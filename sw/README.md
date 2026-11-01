@@ -10,6 +10,8 @@ Built with plain make and the gcc from Vitis 2022.2. No Vitis project, no BSP.
 | `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing (`dz_draw`). |
 | `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk, capture). Moved from the old Vitis workspace (jerkspace). |
 | `fbfeed/` | Copies raw frames from stdin into a frame slot (second video stream). |
+| `dzmosh/` | Live datamosh in the movie pipe (MPEG-4 Part 2 only): drops key frames, repeats P frames, flips bits, pauses; sets the frame pace. Commands on `/tmp/dzmosh.<slot>` (debazd `/movie/<s>/mosh\|bloom\|corrupt\|pause`). |
+| `debazd/ascii.c` | `/ascii/<d>/...`: a slot drawn as text (ASCII, shade, braille, half blocks, any UTF-8 characters) into another slot. |
 | `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). |
 | `tools/` | `capstat.sh` (capture status), `selftest.sh`, `vscode/` (debug setup). |
 

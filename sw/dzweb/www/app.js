@@ -2,6 +2,7 @@
 import * as net from "./net.js";
 import { h, toast, store } from "./ui.js";
 import * as displays from "./displays.js";
+import * as wall from "./wall.js";
 import * as effects from "./effects.js";
 import * as lfo from "./lfo.js";
 import * as dds from "./dds.js";
@@ -9,8 +10,9 @@ import * as paint from "./paint.js";
 import * as media from "./media.js";
 import * as audio from "./audio.js";
 import * as con from "./console.js";
+import * as cues from "./cues.js";
 
-const modules = { displays, effects, lfo, dds, paint, media, audio, console: con };
+const modules = { displays, wall, effects, lfo, dds, paint, media, audio, cues, console: con };
 const $ = (id) => document.getElementById(id);
 
 // ---- tabs ----
@@ -44,6 +46,7 @@ setInterval(() => net.connected() && net.msg("/vsync"), 2000);
 
 // ---- errors -> toast ----
 net.on("/error", (m) => toast(m.args.join(": "), true));
+net.on("/warning", (m) => toast(m.args.join(": ")));
 
 // ---- units ----
 let units = [];

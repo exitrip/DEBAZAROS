@@ -12,14 +12,17 @@
 #include "dz_vdma.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <math.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(__ARM_NEON)
@@ -40,6 +43,20 @@ typedef struct {
 	int       autoflush;
 	pid_t     player;
 	pid_t     aplayer;		/* the movie's audio (own process) */
+	int       paused;		/* /movie/<s>/pause: audio SIGSTOPped */
+	int       mosh, bloom;		/* dzmosh state as last sent (cues) */
+	float     corrupt;
+	char      vf[200], af[200];	/* /movie/<s>/vf, /af: ffmpeg filter chains */
+	float     trails, ghost;	/* /movie/<s>/trails, /ghost: fbfeed effects */
+	int       cmdfd1[2];		/* ffmpeg command FIFOs (video, audio), fd + 1 */
+	struct {			/* live filter options waiting to be sent */
+		char key[64], val[32];
+	} cq[2][16];
+	int       cqn[2];
+	double    cq_t[2];		/* when the last command went out */
+	char      mname[100];		/* the movie, for a restart with new filters */
+	float     mfps;
+	int       maudio;
 } surf_t;
 
 static surf_t surf[DZ_SLOTS];
@@ -765,6 +782,64 @@ void dz_surf_fail(void)
 
 /* ---- files ------------------------------------------------------------------ */
 /* Only a plain file name: this runs on a network port. */
+/* /movie/<s>/vf and /af (2026-11-01): a preset name or an ffmpeg filter
+ * chain. Measured on the board (720p, decode alone 60 fps): swapuv, random,
+ * shuffleframes ~59, hflip / chromashift / hue ~43, negate / lutyuv / noise
+ * ~36, tblend ~20, lagfun ~10, tmix ~6 fps (the movie then plays slower). */
+static const char *const vf_presets[][2] = {
+	{ "lagfun",  "lagfun=decay=0.95" },	/* slow: use /movie/<s>/trails */
+	{ "tmix",    "tmix=frames=3" },		/* slow: use /movie/<s>/ghost */
+	{ "split",   "chromashift=cbh=12:crv=-12" },
+	{ "invert",  "negate" },
+	{ "hue",     "hue=h=90:s=2" },
+	{ "swap",    "swapuv" },
+	{ "mirror",  "hflip" },
+	{ "shuffle", "random=frames=8" },
+	{ "stutter", "framestep=3" },
+	{ "pixel",   "scale=160:90:flags=neighbor" },
+	{ "noise",   "noise=alls=40:allf=t" },
+	{ "diff",    "tblend=all_mode=difference" },
+	{ "edges",   "scale=320:180,edgedetect=mode=colormix" },
+};
+static const char *const af_presets[][2] = {
+	{ "echo",    "aecho=0.8:0.8:250|500:0.5|0.3" },
+	{ "chorus",  "chorus=0.6:0.9:50|60:0.4|0.32:0.25|0.4:2|1.3" },
+	{ "flanger", "flanger=delay=5:depth=5:speed=0.4" },
+	{ "phaser",  "aphaser=speed=0.4" },
+	{ "tremolo", "tremolo=f=6:d=0.8" },
+	{ "vibrato", "vibrato=f=6:d=0.5" },
+	{ "crush",   "acrusher=bits=6:samples=8:mix=1" },
+	{ "lowpass", "lowpass=f=600" },
+	{ "highpass","highpass=f=1500" },
+	{ "radio",   "highpass=f=400,lowpass=f=3000,acrusher=bits=10:mix=0.5" },
+};
+
+/* a preset name -> its chain; else the chain itself if it is safe: it goes
+ * into a shell command and ffmpeg. Allowed: letters, digits = : . , _ + - *
+ * / ( ) | (one linear chain: no [labels], ; or quotes) and no filter that
+ * opens a file. NULL = refused. "" = no filter. */
+static const char *filter_chain(const char *in, const char *const presets[][2], size_t np)
+{
+	static const char *const bad[] = { "movie", "sendcmd", "zmq", "subtitles", "ass",
+					    "ladspa", "lv2", "frei0r", "file", "url" };
+
+	if (!in || !*in)
+		return "";
+	for (size_t i = 0; i < np; i++)
+		if (!strcmp(in, presets[i][0]))
+			return presets[i][1];
+	if (strlen(in) > 190)
+		return NULL;
+	for (const char *p = in; *p; p++)
+		if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') ||
+		      strchr("=:.,_+-*/()|", *p)))
+			return NULL;
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+		if (strstr(in, bad[i]))
+			return NULL;
+	return in;
+}
+
 static int name_ok(const char *n)
 {
 	if (!n || !*n || *n == '.' || strlen(n) > 96 || strstr(n, ".."))
@@ -818,6 +893,48 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 	return 0;
 }
 
+pid_t dz_spawn(const char *cmd, int rt_prio)
+{
+	int sync[2];
+	pid_t pid;
+	char c;
+
+	/* the parent waits until the child has exec'd: the write end closes
+	 * on exec. Before (2026-11-01) a stop could come between fork and the
+	 * child's setsid: kill(-pid) found no group, waitpid(pid) then waited
+	 * for a movie that kept running and debazd hung (ASCII drawing into
+	 * the slot a movie had just started on) */
+	if (pipe2(sync, O_CLOEXEC) < 0)
+		return 0;
+	pid = fork();
+	if (pid == 0) {
+		close(sync[0]);
+		setsid();	/* own process group: a stop kills the whole command */
+		if (rt_prio > 0) {
+			struct sched_param sp = { .sched_priority = rt_prio };
+
+			sched_setscheduler(0, SCHED_FIFO, &sp);	/* inherited by ffmpeg */
+		}
+		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+		_exit(127);
+	}
+	close(sync[1]);
+	if (pid > 0)
+		while (read(sync[0], &c, 1) < 0 && errno == EINTR)
+			;
+	close(sync[0]);
+	return pid > 0 ? pid : 0;
+}
+
+void dz_kill_group(pid_t pid, int sig)
+{
+	if (pid <= 0)
+		return;
+	if (kill(-pid, sig) < 0 && errno == ESRCH)
+		kill(pid, sig);
+	waitpid(pid, NULL, 0);
+}
+
 int dz_draw_movie_running(int i)
 {
 	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
@@ -838,14 +955,25 @@ int dz_draw_movie_stop(int i)
 	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
 
 	if (s && s->aplayer > 0) {
-		kill(-s->aplayer, SIGKILL);	/* at once: no ALSA buffer play-out */
-		waitpid(s->aplayer, NULL, 0);
+		dz_kill_group(s->aplayer, SIGKILL);	/* at once: no ALSA buffer play-out */
 		s->aplayer = 0;
+	}
+	if (s) {
+		s->paused = s->mosh = s->bloom = 0;
+		s->corrupt = 0.0f;
+		for (int k = 0; k < 2; k++)
+			if (s->cmdfd1[k]) {
+				char fp[64];
+
+				close(s->cmdfd1[k] - 1);
+				s->cmdfd1[k] = 0;
+				snprintf(fp, sizeof(fp), k ? DZ_FFA_CTL : DZ_FFV_CTL, i);
+				unlink(fp);
+			}
 	}
 	if (!s || s->player <= 0)
 		return 0;
-	kill(-s->player, SIGTERM);
-	waitpid(s->player, NULL, 0);
+	dz_kill_group(s->player, SIGTERM);
 	s->player = 0;
 	return 1;
 }
@@ -873,13 +1001,42 @@ int dz_draw_movie_play_fps(int i, const char *name, float fps)
 int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 {
 	surf_t *s = get(i);
-	char cmd[900], path[256], dst[96], cap[32] = "", aud[400] = "";
+	char cmd[2400], path[256], dst[96], cap[32] = "", aud[900] = "", vf[210] = "";
+	char mname[100], fxo[80];
 	static const int pcm_of[3] = { 0, 1, 3 };
 	pid_t pid;
 
 	if (!s || !name_ok(name))
 		return -1;
+	snprintf(mname, sizeof(mname), "%s", name);	/* name may be s->mname */
 	dz_draw_movie_stop(i);
+	snprintf(s->mname, sizeof(s->mname), "%s", mname);
+	s->mfps = fps;
+	s->maudio = audio;
+	name = s->mname;
+	if (s->vf[0])
+		snprintf(vf, sizeof(vf), "%s,", s->vf);
+	/* ffmpeg runtime commands (/movie/<s>/vf/<filter>/<option>): a FIFO as
+	 * the decoder's and the audio ffmpeg's stdin; kept open read-write here
+	 * and by the shell (0<>), so it never blocks or reads EOF */
+	for (int k = 0; k < 2; k++) {
+		char fp[64];
+
+		snprintf(fp, sizeof(fp), k ? DZ_FFA_CTL : DZ_FFV_CTL, i);
+		unlink(fp);
+		if (mkfifo(fp, 0600) == 0) {
+			int fd = open(fp, O_RDWR | O_NONBLOCK);
+
+			s->cmdfd1[k] = fd >= 0 ? fd + 1 : 0;
+		}
+		s->cqn[k] = 0;
+	}
+	/* fbfeed: the frame effects and their FIFO (live /trails, /ghost) */
+	snprintf(fxo, sizeof(fxo), " -L " DZ_FBFEED_CTL "%s%s", i,
+		 s->trails > 0 ? " -T " : s->ghost > 0 ? " -G " : "", "");
+	if (s->trails > 0 || s->ghost > 0)
+		snprintf(fxo + strlen(fxo), sizeof(fxo) - strlen(fxo), "%.3f",
+			 s->trails > 0 ? s->trails : s->ghost);
 	snprintf(path, sizeof(path), "%s/%s", DZ_MOVIE_DIR, name);
 	if (access(path, R_OK) != 0) {
 		fprintf(stderr, "dz_draw: no such movie %s\n", path);
@@ -908,42 +1065,413 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 	for (int k = 0; k < 3; k++)
 		if (audio & (1 << k))
 			snprintf(aud + strlen(aud), sizeof(aud) - strlen(aud),
-				 " -map 0:a:0 -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d", pcm_of[k]);
+				 " -map 0:a:0%s%s%s -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d",
+				 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "", pcm_of[k]);
 	if (aud[0]) {
-		char acmd[900];
+		char acmd[1400];
 
 		snprintf(acmd, sizeof(acmd),
 			 "ffprobe -v error -select_streams a:0 -show_entries stream=index "
 			 "-of csv=p=0 '%s' | grep -q . || exit 0; "
-			 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
-			 "-i '%s'%s", path, path, aud);
-		pid = fork();
-		if (pid == 0) {
-			struct sched_param sp = { .sched_priority = 20 };
-
-			setsid();
-			sched_setscheduler(0, SCHED_FIFO, &sp);	/* inherited by ffmpeg */
-			execl("/bin/sh", "sh", "-c", acmd, (char *)NULL);
-			_exit(127);
-		}
+			 "exec ffmpeg -hide_banner -loglevel error -stream_loop -1 -re "
+			 "-i '%s'%s 0<>" DZ_FFA_CTL " 2>/dev/null", path, path, aud, i);
+		pid = dz_spawn(acmd, 20);
 		s->aplayer = pid > 0 ? pid : 0;
 	}
+	/*
+	 * MPEG-4 Part 2 (what mkmedia makes) goes through dzmosh (2026-10-30):
+	 * ffmpeg copies the video stream out as raw m4v, dzmosh sets the pace
+	 * (the file's frame rate, so no -re) and takes /movie/<s>/mosh, bloom,
+	 * corrupt and pause on its FIFO, a second ffmpeg decodes. Timestamps =
+	 * arrival time (repeated frames have the same time code); -vsync
+	 * passthrough: no frame drop or repeat by the raw output. The decoder
+	 * logs only fatal errors: corrupt makes an error line per frame.
+	 * Other codecs: one ffmpeg with -re, as before (no mosh, no pause).
+	 */
 	snprintf(cmd, sizeof(cmd),
-		 "exec ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -re "
-		 "-i '%s' -map 0:v:0 -vf %sscale=%d:%d:flags=fast_bilinear -pix_fmt yuv420p "
-		 "-f rawvideo pipe:1 "
-		 "| %s -y %s -w %d -h %d -s %u%s",
-		 path, cap, s->w, s->h, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
-		 movie_verbose ? " -v" : "");
-	pid = fork();
-	if (pid < 0)
+		 "set -- $(ffprobe -v error -select_streams v:0 -show_entries "
+		 "stream=codec_name,avg_frame_rate,r_frame_rate -of csv=p=0 '%s' | tr , ' '); "
+		 "r=$2; [ \"$r\" = 0/0 ] && r=$3; "
+		 "if [ \"$1\" = mpeg4 ] && [ -x %s ]; then "
+		 "ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -i '%s' "
+		 "-map 0:v:0 -c:v copy -bsf:v dump_extra -f m4v pipe:1 "
+		 "| %s -r \"$r\" -c " DZ_MOSH_CTL " "
+		 "| ffmpeg -hide_banner -loglevel fatal -use_wallclock_as_timestamps 1 "
+		 "-f m4v -i /dev/fd/3 -vsync passthrough "
+		 "-vf '%s%sscale=%d:%d:flags=fast_bilinear' -pix_fmt yuv420p -f rawvideo pipe:1 "
+		 "3<&0 0<>" DZ_FFV_CTL " 2>/dev/null "
+		 "| %s -y %s -w %d -h %d -s %u%s%s; "
+		 "else "
+		 "ffmpeg -hide_banner -loglevel error -stream_loop -1 -re "
+		 "-i '%s' -map 0:v:0 -vf '%s%sscale=%d:%d:flags=fast_bilinear' -pix_fmt yuv420p "
+		 "-f rawvideo pipe:1 0<>" DZ_FFV_CTL " 2>/dev/null "
+		 "| %s -y %s -w %d -h %d -s %u%s%s; fi",
+		 path, DZ_DZMOSH, path, DZ_DZMOSH, i,
+		 cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+		 movie_verbose ? " -v" : "", fxo,
+		 path, cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+		 movie_verbose ? " -v" : "", fxo);
+	pid = dz_spawn(cmd, 0);
+	if (!pid)
 		return -1;
-	if (pid == 0) {
-		setsid();	/* own process group: stop kills the whole pipe */
-		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
-		_exit(127);
-	}
 	s->player = pid;
+	return 0;
+}
+
+/* One command line to the movie's dzmosh (its FIFO): 0, or -1 when the slot
+ * plays no movie through dzmosh (not MPEG-4, not started yet, stopped). */
+int dz_draw_movie_ctl(int i, const char *line)
+{
+	char path[64];
+	int fd, rc;
+
+	if (i < 0 || i >= DZ_SLOTS || !dz_draw_movie_running(i))
+		return -1;
+	snprintf(path, sizeof(path), DZ_MOSH_CTL, i);
+	fd = open(path, O_WRONLY | O_NONBLOCK);	/* ENXIO: no reader */
+	if (fd < 0)
+		return -1;
+	rc = write(fd, line, strlen(line)) == (ssize_t)strlen(line) ? 0 : -1;
+	close(fd);
+	return rc;
+}
+
+/* options ffmpeg 4.4 can change while it runs ("T" in ffmpeg -h filter=x,
+ * measured on the board 2026-11-01), for the filters debazd offers */
+static int live_opt(const char *filter, const char *opt)
+{
+	static const char *const tab[] = {
+		"hue h", "hue s", "hue b", "hue H", "chromashift cbh", "chromashift cbv",
+		"chromashift crh", "chromashift crv", "chromashift edge", "lagfun decay",
+		"tblend all_mode", "tblend all_opacity", "lowpass f", "lowpass w", "lowpass mix",
+		"highpass f", "highpass w", "highpass mix", "acrusher bits", "acrusher samples",
+		"acrusher mix", "acrusher level_in", "acrusher level_out", "volume volume",
+		"atempo tempo", "rgbashift rh", "rgbashift rv", "rgbashift gh", "rgbashift gv",
+		"rgbashift bh", "rgbashift bv" };
+	char k[80];
+
+	snprintf(k, sizeof(k), "%s %s", filter, opt);
+	for (size_t i = 0; i < sizeof(tab) / sizeof(tab[0]); i++)
+		if (!strcmp(tab[i], k))
+			return 1;
+	return 0;
+}
+
+/* old -> new without a restart: the same filters in the same order and only
+ * live options differ. Sends them (dz_draw_movie_live) and returns 1; 0 =
+ * a restart is needed. (A cue go from hue h=0 to h=120 restarted the movie
+ * from the start, 2026-11-01.) */
+static int chain_live_switch(int i, int audio, const char *old, const char *new_)
+{
+	char a[256], b[256], *sa, *sb, *pa = a, *pb = b;
+	int n = 0;
+	struct { char f[32], o[32], v[32]; } ch[16];
+
+	if (!old[0] || !new_[0])
+		return 0;
+	snprintf(a, sizeof(a), "%s", old);
+	snprintf(b, sizeof(b), "%s", new_);
+	for (;;) {
+		char *ea = strchr(pa, ','), *eb = strchr(pb, ',');
+
+		if (ea) *ea = 0;
+		if (eb) *eb = 0;
+		/* one segment: name[=k=v:k=v] - same name, then compare the options */
+		sa = strchr(pa, '=');
+		sb = strchr(pb, '=');
+		size_t la = sa ? (size_t)(sa - pa) : strlen(pa), lb = sb ? (size_t)(sb - pb) : strlen(pb);
+		if (la != lb || strncmp(pa, pb, la) || la >= 32)
+			return 0;
+		if (strcmp(pa, pb)) {			/* options differ: each must be k=v and live */
+			char *ta = sa ? sa + 1 : (char *)"", *tb = sb ? sb + 1 : (char *)"";
+			char fa[256], fb[256], *x, *y, *ra, *rb;
+
+			snprintf(fa, sizeof(fa), "%s", ta);
+			snprintf(fb, sizeof(fb), "%s", tb);
+			/* the new options: each one that is not in the old list unchanged must be live */
+			for (y = strtok_r(fb, ":", &rb); y; y = strtok_r(NULL, ":", &rb)) {
+				char *eq = strchr(y, '=');
+				int same = 0;
+
+				if (!eq)
+					return 0;		/* a positional option: no name */
+				snprintf(fa, sizeof(fa), "%s", ta);
+				for (x = strtok_r(fa, ":", &ra); x; x = strtok_r(NULL, ":", &ra))
+					same |= !strcmp(x, y);
+				if (same)
+					continue;
+				char fname[32];
+
+				*eq = 0;
+				snprintf(fname, sizeof(fname), "%.*s", (int)la, pa);
+				if (!live_opt(fname, y) || n >= 16)
+					return 0;
+				snprintf(ch[n].f, sizeof(ch[n].f), "%.*s", (int)la, pa);
+				snprintf(ch[n].o, sizeof(ch[n].o), "%s", y);
+				snprintf(ch[n].v, sizeof(ch[n].v), "%s", eq + 1);
+				n++;
+			}
+			/* an option the new list drops: not handled live */
+			snprintf(fa, sizeof(fa), "%s", ta);
+			for (x = strtok_r(fa, ":", &ra); x; x = strtok_r(NULL, ":", &ra)) {
+				char *eq = strchr(x, '=');
+				char key[40];
+
+				if (!eq)
+					return 0;
+				snprintf(key, sizeof(key), ":%.*s=", (int)(eq - x), x);
+				char nb[260];
+				snprintf(nb, sizeof(nb), ":%s", tb);
+				if (!strstr(nb, key))
+					return 0;
+			}
+		}
+		if (!ea && !eb)
+			break;
+		if (!ea || !eb)
+			return 0;			/* a different number of filters */
+		pa = ea + 1;
+		pb = eb + 1;
+	}
+	for (int k = 0; k < n; k++)
+		if (dz_draw_movie_live(i, audio, ch[k].f, ch[k].o, ch[k].v) < 0)
+			return 0;
+	return 1;
+}
+
+/* /movie/<s>/vf, /af: set the chain (preset or filters; "" = none); a
+ * playing movie starts again with it, unless only live options changed
+ * (then they are sent live). -1 = refused (unsafe or unknown). */
+int dz_draw_movie_filter(int i, int audio, const char *in)
+{
+	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
+	const char *c = audio ? filter_chain(in, af_presets, sizeof(af_presets) / sizeof(af_presets[0]))
+			      : filter_chain(in, vf_presets, sizeof(vf_presets) / sizeof(vf_presets[0]));
+
+	if (!s)
+		return -1;
+	if (!audio && (!strcmp(in, "trails") || !strcmp(in, "ghost")))	/* the cheap ones */
+		return dz_draw_movie_memfx(i, in[0] == 'g', in[0] == 'g' ? 0.6f : 0.9f);
+	if (!c)
+		return -1;
+	if (!strcmp(audio ? s->af : s->vf, c))
+		return 0;			/* the same chain: no restart (cue recalls) */
+	if (dz_draw_movie_running(i) && chain_live_switch(i, audio, audio ? s->af : s->vf, c)) {
+		snprintf(audio ? s->af : s->vf, sizeof(s->vf), "%s", c);
+		return 0;			/* only live options: sent, no restart */
+	}
+	snprintf(audio ? s->af : s->vf, sizeof(s->vf), "%s", c);
+	if (dz_draw_movie_running(i) && s->mname[0])
+		return dz_draw_movie_play_av(i, s->mname, s->mfps, s->maudio);
+	return 0;
+}
+
+/* the movie of slot i as last started: name, fps cap, audio mask; returns
+ * 1 while it plays (the state model) */
+int dz_draw_movie_info(int i, char *name, size_t cap, float *fps, int *audio)
+{
+	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
+
+	snprintf(name, cap, "%s", s ? s->mname : "");
+	*fps = s ? s->mfps : 0.0f;
+	*audio = s ? s->maudio : 0;
+	return s ? dz_draw_movie_running(i) : 0;
+}
+
+const char *dz_draw_movie_vf(int i)
+{
+	return i >= 0 && i < DZ_SLOTS ? surf[i].vf : "";
+}
+
+const char *dz_draw_movie_af(int i)
+{
+	return i >= 0 && i < DZ_SLOTS ? surf[i].af : "";
+}
+
+/* a name of a filter or option: [a-z0-9_], 1..31 */
+static int word_ok(const char *w, int value)
+{
+	size_t n = strlen(w);
+
+	if (n < 1 || n > 31)
+		return 0;
+	for (const char *p = w; *p; p++)
+		if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '_' ||
+		      (value && ((*p >= 'A' && *p <= 'Z') || strchr(".+-", *p)))))
+			return 0;
+	return 1;
+}
+
+/* opt=val inside the segment of filter in chain (so a restart keeps a live
+ * change): replaced, or appended as :opt=val; nothing if the filter is not in it */
+static void chain_set(char *chain, size_t cap, const char *filter, const char *opt, const char *val)
+{
+	char out[256] = "", seg[256];
+	const char *p = chain;
+	size_t fl = strlen(filter), ol = strlen(opt);
+
+	while (*p) {
+		const char *e = strchr(p, ',');
+		size_t n = e ? (size_t)(e - p) : strlen(p);
+
+		snprintf(seg, sizeof(seg), "%.*s", (int)n, p);
+		if (!strncmp(seg, filter, fl) && (seg[fl] == '=' || seg[fl] == 0)) {
+			char *q = seg[fl] == '=' ? seg + fl + 1 : NULL, *hit = NULL;
+
+			for (char *t = q; t && *t;) {	/* key=value items split by ':' */
+				if (!strncmp(t, opt, ol) && t[ol] == '=') {
+					hit = t;
+					break;
+				}
+				t = strchr(t, ':');
+				t = t ? t + 1 : NULL;
+			}
+			if (hit) {
+				char *end = strchr(hit, ':'), rest[256];
+
+				snprintf(rest, sizeof(rest), "%s", end ? end : "");
+				snprintf(hit, sizeof(seg) - (size_t)(hit - seg), "%s=%s%s", opt, val, rest);
+			} else {
+				size_t l = strlen(seg);
+				snprintf(seg + l, sizeof(seg) - l, "%s%s=%s", q ? ":" : "=", opt, val);
+			}
+		}
+		snprintf(out + strlen(out), sizeof(out) - strlen(out), "%s%s", out[0] ? "," : "", seg);
+		p += n + (e ? 1 : 0);
+	}
+	if (strlen(out) < cap)
+		snprintf(chain, cap, "%s", out);
+}
+
+/* /movie/<s>/vf/<filter>/<option> v, /af/...: change a running filter (only
+ * options ffmpeg marks as runtime, "T" in ffmpeg -h filter=x; else ffmpeg
+ * answers an error, which goes to /dev/null). Queued: ffmpeg reads its stdin
+ * every 100 ms, so dz_draw_movie_tick sends one command per 110 ms and keeps
+ * only the latest value per option. -1 = refused. */
+int dz_draw_movie_live(int i, int audio, const char *filter, const char *opt, const char *val)
+{
+	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
+	char key[64];
+	int k = audio ? 1 : 0;
+
+	if (!s || !word_ok(filter, 0) || !word_ok(opt, 0) || !word_ok(val, 1))
+		return -1;
+	chain_set(audio ? s->af : s->vf, sizeof(s->vf), filter, opt, val);
+	snprintf(key, sizeof(key), "%s %s", filter, opt);
+	for (int j = 0; j < s->cqn[k]; j++)
+		if (!strcmp(s->cq[k][j].key, key)) {
+			snprintf(s->cq[k][j].val, sizeof(s->cq[k][j].val), "%s", val);
+			return 0;
+		}
+	if (s->cqn[k] >= 16)
+		return -1;
+	snprintf(s->cq[k][s->cqn[k]].key, sizeof(key), "%s", key);
+	snprintf(s->cq[k][s->cqn[k]].val, sizeof(s->cq[k][0].val), "%s", val);
+	s->cqn[k]++;
+	return 0;
+}
+
+void dz_draw_movie_tick(void)
+{
+	struct timespec ts;
+	double now;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	now = ts.tv_sec + ts.tv_nsec / 1e9;
+	for (int i = 0; i < DZ_SLOTS; i++)
+		for (int k = 0; k < 2; k++) {
+			surf_t *s = &surf[i];
+			char line[128];
+
+			if (!s->cqn[k] || now - s->cq_t[k] < 0.11)
+				continue;
+			if (s->cmdfd1[k] && s->player > 0) {
+				const char *key = s->cq[k][0].key, *sp = strchr(key, ' ');
+
+				/* ffmpeg's interactive command: c<filter> <time -1 = now> <opt> <val> */
+				snprintf(line, sizeof(line), "c%.*s -1 %s %s\n", (int)(sp - key), key,
+					 sp + 1, s->cq[k][0].val);
+				ssize_t w = write(s->cmdfd1[k] - 1, line, strlen(line));
+				(void)w;
+			}
+			memmove(&s->cq[k][0], &s->cq[k][1], sizeof(s->cq[k][0]) * (size_t)--s->cqn[k]);
+			s->cq_t[k] = now;
+		}
+}
+
+/* /movie/<s>/trails d, /ghost k (fbfeed): kept per slot (a restart keeps
+ * them), sent live to the playing movie's fbfeed. One of the two at a time:
+ * setting one above 0 turns the other off. */
+int dz_draw_movie_memfx(int i, int ghost, float v)
+{
+	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
+	char path[64], line[32];
+	int fd;
+
+	if (!s)
+		return -1;
+	v = v < 0 ? 0 : v > 1 ? 1 : v;
+	if (ghost) {
+		s->ghost = v;
+		if (v > 0)
+			s->trails = 0;
+	} else {
+		s->trails = v;
+		if (v > 0)
+			s->ghost = 0;
+	}
+	if (!dz_draw_movie_running(i))
+		return 0;
+	snprintf(path, sizeof(path), DZ_FBFEED_CTL, i);
+	fd = open(path, O_WRONLY | O_NONBLOCK);
+	if (fd < 0)
+		return 0;		/* not yet started: the start options carry it */
+	if (s->trails > 0)
+		snprintf(line, sizeof(line), "trails %.4f\n", s->trails);
+	else if (s->ghost > 0)
+		snprintf(line, sizeof(line), "ghost %.4f\n", s->ghost);
+	else
+		snprintf(line, sizeof(line), "off\n");
+	ssize_t w = write(fd, line, strlen(line));	/* full FIFO: the next one gets through */
+
+	(void)w;
+	close(fd);
+	return 0;
+}
+
+void dz_draw_movie_memfx_get(int i, float *trails, float *ghost)
+{
+	*trails = i >= 0 && i < DZ_SLOTS ? surf[i].trails : 0;
+	*ghost = i >= 0 && i < DZ_SLOTS ? surf[i].ghost : 0;
+}
+
+/* the dzmosh state as last sent; returns 1 while a movie plays */
+int dz_draw_movie_fx(int i, int *mosh, int *bloom, float *corrupt, int *paused)
+{
+	if (i < 0 || i >= DZ_SLOTS) {
+		*mosh = *bloom = *paused = 0;
+		*corrupt = 0.0f;
+		return 0;
+	}
+	*mosh = surf[i].mosh;
+	*bloom = surf[i].bloom;
+	*corrupt = surf[i].corrupt;
+	*paused = surf[i].paused;
+	return dz_draw_movie_running(i);
+}
+
+/* pause 1|0: dzmosh stops sending frames (the picture holds), the audio
+ * ffmpeg is stopped with SIGSTOP and goes on where it was with SIGCONT */
+int dz_draw_movie_pause(int i, int on)
+{
+	char line[16];
+
+	snprintf(line, sizeof(line), "pause %d\n", on ? 1 : 0);
+	if (dz_draw_movie_ctl(i, line) < 0)
+		return -1;
+	if (surf[i].aplayer > 0)
+		kill(-surf[i].aplayer, on ? SIGSTOP : SIGCONT);
+	surf[i].paused = on ? 1 : 0;
 	return 0;
 }
 
@@ -1149,6 +1677,17 @@ static int op_fill(int i, const dz_arg *a, int n)
 	return 0;
 }
 
+/* the transform ops of /draw/<s>/... (dz_xform.c) */
+static int is_xform_op(const char *op)
+{
+	static const char *const ops[] = { "transform", "rotozoom", "scroll", "mirror", "wave" };
+
+	for (size_t k = 0; k < sizeof(ops) / sizeof(ops[0]); k++)
+		if (!strcmp(op, ops[k]))
+			return 1;
+	return 0;
+}
+
 int dz_draw_dispatch(const dz_msg *m, int verbose)
 {
 	movie_verbose = verbose;
@@ -1163,6 +1702,12 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 
 			if (!(mask & (1u << i)))
 				continue;
+			/* a transform in place works on the painting buffer: when a movie
+			 * plays on the slot, take its frame first (2026-10-29; grab stops
+			 * the movie, as every drawing op does). Images load into the
+			 * buffer already. */
+			if (is_xform_op(op) && dz_draw_movie_running(i))
+				dz_draw_grab(i, i);
 			if (!strcmp(op, "solid") && n >= 3)
 				rc = dz_draw_solid(i, col(a, 0), rect_at(a, n, 3));
 			else if (!strcmp(op, "clear"))
@@ -1206,11 +1751,16 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			else if (!strcmp(op, "fill") && n >= 1) {
 				rc = op_fill(i, a, n);
 			} else if (!strcmp(op, "text") && n >= 6 && a[5].type == 's')
-				rc = dz_text_draw(i, col(a, 0), a[3].i, a[4].i, a[5].s,
-						  n >= 7 ? a[6].i : 1, n >= 8 ? a[7].i : 16);
-			else if (!strcmp(op, "ttf") && n >= 7 && a[6].type == 's')
-				rc = dz_ttf_draw(i, col(a, 0), a[3].i, a[4].i, argn(&a[5]), a[6].s,
-						 n >= 8 && a[7].type == 's' ? a[7].s : NULL);
+				rc = dz_text_draw_rot(i, col(a, 0), a[3].i, a[4].i, a[5].s,
+						      n >= 7 ? a[6].i : 1, n >= 8 ? a[7].i : 16,
+						      n >= 9 ? argn(&a[8]) : 0.0f);
+			else if (!strcmp(op, "ttf") && n >= 7 && a[6].type == 's') {
+				/* [font] and [angle]: a string after the text is the font */
+				int hf = n >= 8 && a[7].type == 's';
+				int ka = hf ? 8 : 7;
+				rc = dz_ttf_draw_rot(i, col(a, 0), a[3].i, a[4].i, argn(&a[5]), a[6].s,
+						     hf ? a[7].s : NULL, n > ka ? argn(&a[ka]) : 0.0f);
+			}
 			else if (!strcmp(op, "transform") && n >= 6) {
 				float mm[6];
 
@@ -1293,6 +1843,69 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 				hits++;
 			} else if (!strcmp(op, "stop")) {
 				dz_draw_movie_stop(i);
+				hits++;
+			} else if (!strcmp(op, "file") && n >= 1 && a[0].type == 's') {
+				/* the state model: "" = stop; the same movie, fps and
+				 * audio already playing = nothing (it keeps its place) */
+				float fps = n >= 2 ? (a[1].type == 'f' ? a[1].f : a[1].type == 'i' ? (float)a[1].i : 0.0f) : 0.0f;
+				int au = n >= 3 ? (a[2].type == 'f' ? (int)a[2].f : a[2].type == 'i' ? a[2].i : 0) : 0;
+
+				if (!a[0].s[0])
+					dz_draw_movie_stop(i);
+				else if (!(dz_draw_movie_running(i) && !strcmp(surf[i].mname, a[0].s) &&
+					   surf[i].mfps == fps && surf[i].maudio == (au & 7)) &&
+					 dz_draw_movie_play_av(i, a[0].s, fps, au & 7))
+					fails++;
+				hits++;
+			} else if ((!strncmp(op, "vf/", 3) || !strncmp(op, "af/", 3)) && n >= 1) {
+				char f[40], o[40], v[40];
+				const char *sl2 = strchr(op + 3, '/');
+
+				if (!sl2 || (size_t)(sl2 - op - 3) >= sizeof(f)) {
+					fails++;
+				} else {
+					snprintf(f, sizeof(f), "%.*s", (int)(sl2 - op - 3), op + 3);
+					snprintf(o, sizeof(o), "%s", sl2 + 1);
+					if (a[0].type == 'f')
+						snprintf(v, sizeof(v), "%g", a[0].f);
+					else if (a[0].type == 'i')
+						snprintf(v, sizeof(v), "%d", a[0].i);
+					else
+						snprintf(v, sizeof(v), "%.31s", a[0].type == 's' ? a[0].s : "");
+					if (dz_draw_movie_live(i, op[0] == 'a', f, o, v))
+						fails++;
+				}
+				hits++;
+			} else if ((!strcmp(op, "trails") || !strcmp(op, "ghost")) && n >= 1) {
+				float v = a[0].type == 'f' ? a[0].f : a[0].type == 'i' ? (float)a[0].i : 0.0f;
+
+				dz_draw_movie_memfx(i, op[0] == 'g', v);
+				hits++;
+			} else if ((!strcmp(op, "vf") || !strcmp(op, "af")) && n >= 1 && a[0].type == 's') {
+				if (dz_draw_movie_filter(i, op[0] == 'a', a[0].s))
+					fails++;
+				hits++;
+			} else if (!strcmp(op, "pause")) {
+				int on = n >= 1 ? (a[0].type == 'f' ? a[0].f != 0.0f :
+						   a[0].type == 'i' ? a[0].i != 0 : 1) : 1;
+				if (dz_draw_movie_pause(i, on))
+					fails++;
+				hits++;
+			} else if (!strcmp(op, "mosh") || !strcmp(op, "bloom") ||
+				   !strcmp(op, "corrupt")) {
+				char line[48];
+				double v = n >= 1 ? (a[0].type == 'f' ? a[0].f :
+						     a[0].type == 'i' ? a[0].i : 0) : 0;
+
+				snprintf(line, sizeof(line), "%s %g\n", op, v);
+				if (dz_draw_movie_ctl(i, line))
+					fails++;
+				else if (op[0] == 'm')
+					surf[i].mosh = (int)v;
+				else if (op[0] == 'b')
+					surf[i].bloom = (int)v;
+				else
+					surf[i].corrupt = (float)v;
 				hits++;
 			}
 		}

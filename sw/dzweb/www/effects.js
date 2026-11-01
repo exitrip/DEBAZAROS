@@ -35,13 +35,13 @@ function fieldControl(f, prefix = "") {
     return h("div.field", {}, label, v, h("span"));
   }
   if (unit === "bool") {
-    const cb = h("input", { type: "checkbox", onchange: () => net.msg(path, cb.checked ? 1 : 0) });
+    const cb = h("input", { type: "checkbox", title: `${path} <0|1>`, onchange: () => net.msg(path, cb.checked ? 1 : 0) });
     controls.set(path, { set: (raw) => (cb.checked = !!raw) });
     return h("div.field", {}, label, cb, h("span"));
   }
   if (unit === "hz") {
-    const num = h("input", { type: "number", step: "0.1", min: 0, title: "Hz" });
-    const rng = h("input", { type: "range", min: 0, max: 200, step: 0.1 });
+    const num = h("input", { type: "number", step: "0.1", min: 0, title: `${path} <Hz, float>` });
+    const rng = h("input", { type: "range", min: 0, max: 200, step: 0.1, title: `${path} <Hz, float>` });
     const sendHz = (v) => net.throttled(path, () => net.message(path, net.float(Number(v))));
     num.oninput = () => { rng.value = num.value; sendHz(num.value); };
     rng.oninput = () => { num.value = rng.value; sendHz(rng.value); };
@@ -49,15 +49,15 @@ function fieldControl(f, prefix = "") {
     return h("div.field", {}, label, rng, num);
   }
   const max = maxOf(width);
-  const num = h("input", { type: "number", min: 0, max });
+  const num = h("input", { type: "number", min: 0, max, title: `${path} <0..${max}> (int raw; float 0..1 = scaled)` });
   const sendRaw = (v) => net.throttled(path, () => net.message(path, Math.round(Number(v)) | 0));
   if (width > 16) {
     num.onchange = () => sendRaw(num.value);
     controls.set(path, { set: (raw) => (num.value = raw) });
-    num.title = `0…${max}`;
+    num.title = `${path} <0…${max}>`;
     return h("div.field", {}, label, h("span"), num);
   }
-  const rng = h("input", { type: "range", min: 0, max, step: 1 });
+  const rng = h("input", { type: "range", min: 0, max, step: 1, title: `${path} <0..${max}>` });
   rng.oninput = () => { num.value = rng.value; sendRaw(rng.value); };
   num.onchange = () => { rng.value = num.value; sendRaw(num.value); };
   controls.set(path, { set: (raw) => { rng.value = raw; num.value = raw; } });
@@ -71,19 +71,23 @@ const refreshSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeou
 // Colour matrix (hue, map) and colour key: debazd /fx/... (sw/debazd/fx.c).
 // Both write the mixer; "Boot setup" puts back the debazarosit.sh values.
 function fxCard() {
-  const deg = h("input", { type: "range", min: -180, max: 180, step: 1, value: 0 });
-  const gain = h("input", { type: "range", min: 0, max: 1, step: 0.01, value: 1 });
+  const deg = h("input", { type: "range", min: -180, max: 180, step: 1, value: 0,
+    title: "/fx/hue/deg <degrees>  (or /fx/hue <deg> [gain])" });
+  const gain = h("input", { type: "range", min: 0, max: 1, step: 0.01, value: 1,
+    title: "/fx/hue/gain <0..1>" });
   const degOut = h("span", {}, "0°");
   const sendHue = () => {
     degOut.textContent = `${deg.value}°`;
     net.throttled("/fx/hue", () => net.message("/fx/hue", net.float(Number(deg.value)),
-      net.float(Number(gain.value))));
+      net.float(Number(gain.value))));	// = /fx/hue/deg + /fx/hue/gain
     refreshSoon();
   };
   deg.oninput = sendHue;
   gain.oninput = sendHue;
-  const pick = (v) => h("input", { type: "color", value: v });
-  const mapR = pick("#ff0000"), mapG = pick("#00ff00"), mapB = pick("#0000ff");
+  const pick = (v, t) => h("input", { type: "color", value: v, title: t });
+  const mapR = pick("#ff0000", "where input red goes\n/fx/map <0xRRGGBB r> <g> <b>"),
+    mapG = pick("#00ff00", "where input green goes\n/fx/map <r> <0xRRGGBB g> <b>"),
+    mapB = pick("#0000ff", "where input blue goes\n/fx/map <r> <g> <0xRRGGBB b>");
   const wrap = h("input", { type: "checkbox", title: "allow row sums > 1 (bright colours wrap)",
     onchange: () => net.msg("/fx/wrap", wrap.checked ? 1 : 0) });
   const boot = () => {
@@ -97,8 +101,9 @@ function fxCard() {
     net.send(net.bundle(...m));
     refreshSoon();
   };
-  const keyCol = pick("#00ff00");
-  const tol = h("input", { type: "range", min: 0, max: 128, step: 1, value: 30 });
+  const keyCol = pick("#00ff00", "key colour\n/fx/key/color <0xRRGGBB> [tol]");
+  const tol = h("input", { type: "range", min: 0, max: 128, step: 1, value: 30,
+    title: "key tolerance (± per channel)\n/fx/key/tol <0..128>" });
   const tolOut = h("span", {}, "30");
   const sendKey = () => {
     tolOut.textContent = tol.value;
@@ -106,9 +111,9 @@ function fxCard() {
       Number(tol.value) | 0));
     refreshSoon();
   };
-  const keyOn = h("input", { type: "checkbox",
+  const keyOn = h("input", { type: "checkbox", title: "on: /fx/key/color <0xRRGGBB> <tol>\noff: /fx/key/off",
     onchange: () => (keyOn.checked ? sendKey() : (net.msg("/fx/key/off"), refreshSoon())) });
-  const keySrc = h("input", { type: "checkbox",
+  const keySrc = h("input", { type: "checkbox", title: "compare HDMI_0's own video\n/fx/key/source <0|1>",
     onchange: () => net.msg("/fx/key/source", keySrc.checked ? 1 : 0) });
   keyCol.oninput = () => { keyOn.checked = true; sendKey(); };
   tol.oninput = () => { keyOn.checked = true; sendKey(); };
@@ -120,11 +125,11 @@ function fxCard() {
     row("Hue", deg, degOut),
     row("Gain", gain),
     row("Map R G B →", mapR, mapG, mapB,
-      h("button", { onclick: () => { net.msg("/fx/map", hex24(mapR.value), hex24(mapG.value),
+      h("button", { title: "/fx/map <0xRRGGBB> <0xRRGGBB> <0xRRGGBB>", onclick: () => { net.msg("/fx/map", hex24(mapR.value), hex24(mapG.value),
         hex24(mapB.value)); refreshSoon(); } }, "Apply")),
-    row("", h("button", { onclick: () => { deg.value = 0; degOut.textContent = "0°";
+    row("", h("button", { title: "/fx/identity", onclick: () => { deg.value = 0; degOut.textContent = "0°";
       net.msg("/fx/identity"); refreshSoon(); } }, "Identity"),
-      h("button.ghost", { onclick: boot }, "Boot setup"), h("label", {}, wrap, " wrap")),
+      h("button.ghost", { title: "the debazarosit.sh mixer setup\n/mixer/<c>/mode, /k, /lo, /hi (all 9 channels)", onclick: boot }, "Boot setup"), h("label", {}, wrap, " wrap")),
     h("p.hint", {}, "Hue and map set all 9 mixer channels to constant gains. " +
       "Gains are unsigned: between 0°, 120° and 240° the colours lose saturation."),
     row("Key colour", keyCol, tol, tolOut),
@@ -137,13 +142,61 @@ function fxCard() {
       "Needs the key bitstream (Oct 2026)."));
 }
 
+// HDMI_1 cross-fade (debazd trans.c): own slot <-> HDMI_0's output through the two gain
+// words; the board keeps own + feedback = the level G per lane, so the adder never wraps
+function xfadeCard() {
+  const t = h("input", { type: "range", min: 0, max: 1, step: 0.001, value: 0,
+    title: "drag = at once\n/fx/xfade t (0 = HDMI_1's own slot, 1 = HDMI_0's output)" });
+  const tOut = h("span", {}, "0.000");
+  const secs = h("input", { type: "number", min: 0, max: 600, step: 0.1, value: 3, style: "width:5em",
+    title: "fade time of the buttons, seconds" });
+  const smooth = h("input", { type: "checkbox", title: "S curve instead of linear" });
+  const st = h("span.hint", {}, "");
+  const show = (v) => { t.value = v; tOut.textContent = Number(v).toFixed(3); };
+  t.oninput = () => {
+    show(t.value);
+    net.throttled("/fx/xfade", () => net.message("/fx/xfade", net.float(Number(t.value))));
+  };
+  const go = (to) => {
+    const a = [net.float(to), net.float(Number(secs.value) || 0)];
+    if (smooth.checked) a.push("smooth");
+    net.msg("/fx/xfade", ...a);
+    poll();
+  };
+  let timer = 0;
+  const poll = () => {        // follow a running fade
+    clearTimeout(timer);
+    let n = Math.ceil(((Number(secs.value) || 0) + 0.5) / 0.2);
+    const step = () => {
+      net.send(net.bundle(net.message("/fx/xfade"), net.message("/trans/status")));
+      if (--n > 0) timer = setTimeout(step, 200);
+    };
+    step();
+  };
+  net.on("/fx/xfade", (m) => { if (m.args.length && document.activeElement !== t) show(m.args[0]); });
+  net.on("/trans/status", (m) => { st.textContent = m.args[0] ? `${m.args[0]} ramp(s) running` : "idle"; });
+  net.send(net.bundle(net.message("/fx/xfade"), net.message("/trans/status"))); // position now
+  return card("Cross-fade (HDMI_1)",
+    row("t", t, tOut),
+    row("fade", secs, h("label", {}, "s"), h("label", {}, smooth, " smooth")),
+    row(null,
+      h("button", { title: "/fx/xfade 0 <s> [smooth]", onclick: () => go(0) }, "→ own (0)"),
+      h("button", { title: "/fx/xfade 0.5 <s> [smooth]", onclick: () => go(0.5) }, "½"),
+      h("button.primary", { title: "/fx/xfade 1 <s> [smooth]", onclick: () => go(1) }, "→ HDMI_0 (1)"),
+      h("button", { title: "/trans/stop: hold where it is", onclick: () => { net.msg("/trans/stop"); poll(); } }, "Stop"),
+      h("button", { title: "/fx/xfade (query)", onclick: poll }, "Read")),
+    row(null, st),
+    h("p.hint", {}, "Fades HDMI_1 between its own slot and HDMI_0's output with the own and feedback " +
+      "gains; per colour lane own + feedback stays at the level they had together (at most 255)."));
+}
+
 function mixerTable() {
   const tr = (c) => {
     const p = `/mixer/${c}`;
-    const mode = h("select", { onchange: () => net.msg(`${p}/mode`, parseInt(mode.value)) },
+    const mode = h("select", { title: `${p}/mode <n>`, onchange: () => net.msg(`${p}/mode`, parseInt(mode.value)) },
       MODES.map(([v, t]) => h("option", { value: v }, t)));
     const num = (k, max) => {
-      const n = h("input", { type: "number", min: 0, max,
+      const n = h("input", { type: "number", min: 0, max, title: `${p}/${k} <0..${max}>`,
         onchange: () => net.msg(`${p}/${k}`, parseInt(n.value) || 0) });
       controls.set(`${p}/${k}`, { set: (raw) => (n.value = raw) });
       return h("td", {}, n);
@@ -176,9 +229,10 @@ async function load() {
   }
   const status = fields.filter((f) => f[4]);
   grid.append(card(["Inputs (read only)",
-    h("button.ghost", { onclick: refresh, style: "margin-left:auto" }, "Refresh")],
+    h("button.ghost", { title: "query every field (/<field> -> /value)", onclick: refresh, style: "margin-left:auto" }, "Refresh")],
     ...status.map((f) => fieldControl(f, "/"))));
   grid.append(fxCard());
+  grid.prepend(xfadeCard()); // first: the quick test of /fx/xfade
   root.replaceChildren(grid, card("Mixer (HDMI_0 colour matrix, 9 channels)", mixerTable(),
     h("p.hint", {}, "Each channel makes one gain of the 3×3 colour matrix. Inputs: " +
       "din0 R, din1 B, din2 G of HDMI_1 (stream A, or the delayed stream B), din3 sine, din4 saw.")));
@@ -206,4 +260,5 @@ export function connected() {
 
 export function show() {
   if (fields.length) refresh();
+  net.msg("/fx/xfade");
 }

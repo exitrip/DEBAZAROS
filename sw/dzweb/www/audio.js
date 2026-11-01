@@ -38,12 +38,12 @@ function poll() {
 }
 
 function outCard(n) {
-  const sel = h("select", { title: "what this output plays",
+  const sel = h("select", { title: `what this output plays\n/audio/out/${n}/source <name>`,
     onchange: () => setSource(n, sel.value) },
     h("option", { value: "?" }, "(not set)"),
     ...OUTS[n].sources.map((s) => h("option", { value: s, title: SOURCE_HELP[s] }, s)));
   const now = h("span.hint", {}, "");
-  const stop = h("button", { onclick: () => net.msg("/audio/stop", n) }, "Stop");
+  const stop = h("button", { title: `/audio/stop ${n}`, onclick: () => net.msg("/audio/stop", n) }, "Stop");
   outEls[n] = { sel, now };
   return card(OUTS[n].name, row("source", sel), row("playing", now, stop),
     h("p.hint", {}, n < 2 ? "Any source but off switches the output to HDMI mode with audio."
@@ -56,32 +56,33 @@ function meter() {
 }
 
 export function init(root) {
-  fileSel = h("select");
-  outSel = h("select", {}, OUTS.map((o, i) => h("option", { value: i }, o.name)));
-  loopBox = h("input", { type: "checkbox" });
-  recName = h("input", { type: "text", value: "capture", title: "file name (.wav is added)" });
-  recSecs = h("input", { type: "number", min: 0, max: 3600, value: 0, title: "seconds, 0 = until stop" });
+  fileSel = h("select", { title: "/audio/play <out> <file> [loop]: the file (/files audio)" });
+  outSel = h("select", { title: "/audio/play <out> ...: 0 HDMI 0, 1 HDMI 1, 2 I2S" },
+    OUTS.map((o, i) => h("option", { value: i }, o.name)));
+  loopBox = h("input", { type: "checkbox", title: "/audio/play ... <loop 0|1>" });
+  recName = h("input", { type: "text", value: "capture", title: "file name (.wav is added)\n/audio/rec <name> [secs]" });
+  recSecs = h("input", { type: "number", min: 0, max: 3600, value: 0, title: "seconds, 0 = until stop\n/audio/rec <name> <secs>" });
   recState = h("span.hint", {}, "");
   meters = { l: meter(), r: meter(), state: h("span.hint", {}, "") };
 
   root.append(h("div.grid", {},
     outCard(0), outCard(1), outCard(2),
     card("Play a file",
-      row("file", fileSel, h("button", { onclick: loadFiles }, "↻")),
+      row("file", fileSel, h("button", { title: "/files audio", onclick: loadFiles }, "↻")),
       row("output", outSel, h("label", {}, loopBox, " loop")),
       row(null,
-        h("button.primary", { onclick: () => {
+        h("button.primary", { title: "/audio/play <out> <file> <loop>", onclick: () => {
           if (!fileSel.value) return toast("no file", true);
           net.msg("/audio/play", parseInt(outSel.value), fileSel.value, loopBox.checked ? 1 : 0);
         } }, "Play"),
-        h("button", { onclick: () => net.msg("/audio/stop") }, "Stop all")),
+        h("button", { title: "/audio/stop", onclick: () => net.msg("/audio/stop") }, "Stop all")),
       h("p.hint", {}, "Upload files in the Media tab (Audio). ffmpeg plays wav, mp3, flac, ogg, " +
         "and the audio of movie files. Movies can also play their own audio: Media → Movies.")),
     card("Record the HDMI 2 input",
       row("name", recName, h("label", {}, "s"), recSecs),
       row(null,
-        h("button.danger", { onclick: () => net.msg("/audio/rec", recName.value, parseFloat(recSecs.value) || 0) }, "● Record"),
-        h("button", { onclick: () => net.msg("/audio/rec/stop") }, "Stop"), recState),
+        h("button.danger", { title: "/audio/rec <name> <secs>", onclick: () => net.msg("/audio/rec", recName.value, parseFloat(recSecs.value) || 0) }, "● Record"),
+        h("button", { title: "/audio/rec/stop", onclick: () => net.msg("/audio/rec/stop") }, "Stop"), recState),
       h("p.hint", {}, "48 kHz 16 bit stereo WAV into /media/debaz/audio (11 MB per minute).")),
     card("HDMI 2 input level",
       row("left", meters.l.el), row("right", meters.r.el), row(null, meters.state))));

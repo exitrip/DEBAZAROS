@@ -35,13 +35,8 @@
   (fp_line (start -5.7 2.4) (end -5.7 -2.4) (layer "F.CrtYd") (width 0.12) (tstamp eae14f5f-515c-4a6f-ad0e-e8ef233d14bf))
   (pad "1" smd rect (at 4.553 0) (size 5.5 1.3) (layers "F.Cu" "F.Paste" "F.Mask") (tstamp 61fe4c73-be59-4519-98f1-a634322a841d))
   (pad "2" smd rect (at -4.553 0) (size 5.5 1.3) (layers "F.Cu" "F.Paste" "F.Mask") (tstamp e5864fe6-2a71-47f0-90ce-38c3f8901580))
-  (model "${KIPRJMOD}/kicad_lceda.3dshapes/HC-49S_L11.4-W1.8-H3.0-LS12.7.step"
-    (offset (xyz -0.254 -0.127 0))
-    (scale (xyz 1 1 1))
-    (rotate (xyz 0 0 0))
-  )
-  (model "${KIPRJMOD}/kicad_lceda.3dshapes/HC-49S_L11.4-W1.8-H3.0-LS12.7.wrl"
-    (offset (xyz -0.254 -0.127 0))
+  (model "${KICAD10_3DMODEL_DIR}/Crystal.3dshapes/Crystal_SMD_HC49-SD.step"
+    (offset (xyz 0 0 0))
     (scale (xyz 1 1 1))
     (rotate (xyz 0 0 0))
   )

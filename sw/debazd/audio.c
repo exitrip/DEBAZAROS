@@ -36,7 +36,7 @@
 #define VTC_GVSIZE	(0x074 / 4)
 
 static int  fs_auto = 1, rx_auto = 1, rx_bad;
-static long next_check, replug_end, rx_last_ms, rx_last_replug;
+static long next_check, replug_end, rx_last_ms, rx_last_replug, rx_hold_end;
 static uint32_t rx_last_n;
 static double rx_rate;
 
@@ -60,6 +60,11 @@ static void rx_watch(long ms)
 		rx_rate = (double)(uint32_t)(n - rx_last_n) * 1000.0 / (double)(ms - rx_last_ms);
 	rx_last_n = n;
 	rx_last_ms = ms;
+	if (rx_hold_end && ms < rx_hold_end) {	/* video mode change settling */
+		rx_bad = 0;
+		return;
+	}
+	rx_hold_end = 0;
 	if (!rx_auto || replug_end || !active || rx_rate <= 0.0 ||
 	    fabs(rx_rate - 48000.0) < 48000.0 * 0.02) {
 		rx_bad = 0;
@@ -72,6 +77,21 @@ static void rx_watch(long ms)
 	rx_last_replug = ms;
 	rx_bad = 0;
 	replug(2.0, ms);
+	rx_last_ms = 0;
+}
+
+/* A video mode change (hdmi2 restart) relocks the output dynclk, and the
+ * capture resets hang off its LOCKED: the input audio rate is wrong for some
+ * seconds. Seen 2026-11-01: 46235 samples/s for 3 s after 640x480 -> 720p, the
+ * automatic replug, and the laptop (i915) then sent no picture. No rate
+ * check for 10 s after a mode change. */
+void audio_rx_hold(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	rx_hold_end = ts.tv_sec * 1000L + ts.tv_nsec / 1000000L + 10000;
+	rx_bad = 0;
 	rx_last_ms = 0;
 }
 
@@ -116,6 +136,14 @@ void audio_tick(long ms)
 				pixel_hz() / 1e6);
 		}
 	}
+}
+
+/* the state model (state.c): the automatic settings */
+void audio_state(state_cb cb, void *ctx)
+{
+	st_emit(cb, ctx, NULL, "/capture/auto", "i", capture_auto);
+	st_emit(cb, ctx, NULL, "/audio/fs/auto", "i", fs_auto);
+	st_emit(cb, ctx, NULL, "/audio/rx/auto", "i", rx_auto);
 }
 
 int audio_dispatch(const dz_msg *m)

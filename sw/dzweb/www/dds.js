@@ -74,20 +74,27 @@ function fmt(key, v) {
 
 function patternCard(n) {
   const s = state[n], p = `/dds/${n}`;
-  const pat = h("select", { onchange: () => { s.pattern = pat.value; showRows(); apply(n); } },
+  const PAT_OSC = { wave: "wave <shape> <hz>", bars: "bars <count> <shape>", hbars: "hbars <count> <shape>",
+    checker: "checker <cols> <rows> <shape>", slant: "slant <count> <shift> <shape>" };
+  const tipPat = () => { pat.title = shp.title = `${p}/${PAT_OSC[s.pattern]}`; };
+  const pat = h("select", { onchange: () => { s.pattern = pat.value; showRows(); tipPat(); apply(n); } },
     PATTERNS.map(([v, t]) => h("option", { value: v, selected: v === s.pattern }, t)));
   const shp = h("select", { onchange: () => { s.shape = shp.value; showRows(); apply(n); } },
     SHAPES.map(([v, t]) => h("option", { value: v, selected: v === s.shape }, t)));
-  const rHz = row("Hz", num(n, "hz", { step: "0.01", min: 0 }));
-  const rCount = row("Count", num(n, "count", { step: "0.5", min: 0, title: "bars / bands / columns across the picture" }));
-  const rRows = row("Rows", num(n, "rows", { step: "1", min: 1 }));
-  const rShift = row("Shift", num(n, "shift", { step: "0.001", title: "cycles per line (diagonal)" }));
+  const rHz = row("Hz", num(n, "hz", { step: "any", min: 0, title: `${p}/wave <shape> <hz>` }));
+  const rCount = row("Count", num(n, "count", { step: "0.5", min: 0,
+    title: `bars / bands / columns across the picture\n${p}/<pattern> <count> ...` }));
+  const rRows = row("Rows", num(n, "rows", { step: "1", min: 1, title: `${p}/checker <cols> <rows> <shape>` }));
+  // the shift alone: /dds/<n>/shift sets only LINESTEP (an LFO can drive it too)
+  const rShift = row("Diagonal shift", num(n, "shift", { step: "any",
+    title: `cycles per line, signed (full precision)\n${p}/shift <cycles>   (LFO target: "${p}/shift $f0")` },
+    () => { net.throttled(`${p}/shift`, () => net.message(`${p}/shift`, net.float(s.shift))); save(n); }));
   const outS = h("span"), outP = h("span"), outD = h("span"), outL = h("span");
-  const scroll = slider(n, "scroll", { min: -10, max: 10, step: 0.1 }, outS, () => {
+  const scroll = slider(n, "scroll", { min: -10, max: 10, step: 0.1, title: `${p}/scroll <cycles per second>` }, outS, () => {
     net.throttled(`${p}/scroll`, () => net.message(`${p}/scroll`, net.float(s.scroll))); save(n); });
-  const phase = slider(n, "phase", { min: 0, max: 359, step: 1 }, outP, () => {
+  const phase = slider(n, "phase", { min: 0, max: 359, step: 1, title: `${p}/poff <0..1 = 0..360°>` }, outP, () => {
     net.throttled(`${p}/poff`, () => net.message(`${p}/poff`, net.float(s.phase / 360))); save(n); });
-  const duty = slider(n, "duty", { min: 0, max: 1, step: 0.01 }, outD, () => {
+  const duty = slider(n, "duty", { min: 0, max: 1, step: 0.01, title: `${p}/pulse <duty 0..1>` }, outD, () => {
     net.throttled(`${p}/pulse`, () => net.message(`${p}/pulse`, net.float(s.duty))); save(n); });
   const rDuty = row("Duty", duty, outD);
   function showRows() {
@@ -98,19 +105,21 @@ function patternCard(n) {
     rDuty.hidden = s.shape !== "pulse";
   }
   showRows();
+  tipPat();
   const kids = [
     row("Pattern", pat, shp),
     rHz, rCount, rRows, rShift,
     row("Scroll", scroll, outS),
     row("Phase", phase, outP),
     rDuty,
-    row("", h("button.primary", { onclick: () => apply(n) }, "Apply"),
-      h("button.ghost", { onclick: () => { net.msg(`${p}/off`); } }, "Off"),
-      h("button.ghost", { onclick: () => net.msg(`${p}/wave`, "sine", net.float(0.1)) }, "Slow sine")),
+    row("", h("button.primary", { onclick: () => apply(n), title: "the pattern message, then scroll / poff / pulse" }, "Apply"),
+      h("button.ghost", { onclick: () => { net.msg(`${p}/off`); }, title: `${p}/off` }, "Off"),
+      h("button.ghost", { onclick: () => net.msg(`${p}/wave`, "sine", net.float(0.1)), title: `${p}/wave sine 0.1` }, "Slow sine")),
   ];
   if (n === 1) {
     // HDMI_1: the sine layer's level, and a solo (video + feedback gains to 0)
-    const level = slider(n, "level", { min: 0, max: 255, step: 1 }, outL, () => {
+    const level = slider(n, "level", { min: 0, max: 255, step: 1,
+      title: "/hdmi/1/osc/sin/gain/rgb <0..255>  (1 = the shape once; more = folds)" }, outL, () => {
       net.throttled("/hdmi/1/osc/sin/gain/rgb", () => net.message("/hdmi/1/osc/sin/gain/rgb", s.level | 0));
       save(n); });
     let saved = null;
@@ -126,12 +135,12 @@ function patternCard(n) {
         saved = null;
       }
     } });
-    kids.push(row("Layer", level, outL), row("", h("label", { title:
-      "HDMI_1 video and feedback gains to 0 while on (back when off)" }, solo, " solo on black")));
+    kids.push(row("Sine layer gain", level, outL), row("", h("label", { title:
+      "HDMI_1 video and feedback gains to 0 while on (back when off)\n/hdmi/1/gain/rgb 0, /hdmi/1/feedback/rgb 0" }, solo, " solo on black")));
   }
   kids.push(h("p.hint", {}, n === 0
     ? "Channel 0 → HDMI_0 mixer din3 (sine leg) / din4 (saw leg): visible only through mixer mode 1."
-    : "Channel 1 → HDMI_1 oscillator layers (sine leg: Layer; saw leg: /hdmi/1/osc/phase/gain). " +
+    : "Channel 1 → HDMI_1 oscillator layers (sine leg: Sine layer gain; saw leg: /hdmi/1/osc/phase/gain). " +
       "Unsigned shapes: 0 or full scale; the layers add with wrap (intentional)."));
   return card(`DDS ${n} → HDMI_${n}`, ...kids);
 }
@@ -141,7 +150,7 @@ function stepCard(n) {
   const p = `/dds/${n}`;
   const field = (name) => `${p}/${name}`;
   const sel = (name, opts) => {
-    const el = h("select", { onchange: () => net.msg(field(name), parseInt(el.value)) },
+    const el = h("select", { onchange: () => net.msg(field(name), parseInt(el.value)), title: `${field(name)} <0..${opts.length - 1}>` },
       opts.map((t, i) => h("option", { value: i }, `${i} ${t}`)));
     views[n][name] = el;
     return el;
@@ -149,9 +158,9 @@ function stepCard(n) {
   const chk = (name, label, title) => {
     const el = h("input", { type: "checkbox", onchange: () => net.msg(field(name), el.checked ? 1 : 0) });
     views[n][name] = el;
-    return h("label", { title }, el, ` ${label}`);
+    return h("label", { title: `${title ? title + "\n" : ""}${field(name)} <0|1>` }, el, ` ${label}`);
   };
-  const last = h("select", { onchange: () => net.msg(field("last"), parseInt(last.value)) },
+  const last = h("select", { onchange: () => net.msg(field("last"), parseInt(last.value)), title: `${field("last")} <0..15>` },
     [...Array(16).keys()].map((i) => h("option", { value: i }, String(i))));
   views[n].last = last;
   const cells = steps[n].map(() => []); // [i][k] = the input of value k of step i
@@ -163,7 +172,8 @@ function stepCard(n) {
       return h("td", {}, el);
     };
     const cb = (k) => {
-      const el = h("input", { type: "checkbox", checked: !!st[k], onchange: () => { st[k] = el.checked ? 1 : 0; } });
+      const el = h("input", { type: "checkbox", checked: !!st[k], title: k === 3 ? "KEEP: continue from the increment now" :
+        "RST: restart the phase when the step starts", onchange: () => { st[k] = el.checked ? 1 : 0; } });
       cells[i][k] = el;
       return h("td", {}, el);
     };
@@ -197,8 +207,8 @@ function stepCard(n) {
     h("div", { style: "overflow-x:auto" }, h("table.mixer", {},
       h("thead", {}, h("tr", {}, ...["#", "start", "delta", "len", "keep", "rst", "phase°"].map((t) => h("th", {}, t)))),
       body)),
-    row("", h("button.primary", { onclick: write }, "Write steps"),
-      h("button.ghost", { onclick: read }, "Read back")),
+    row("", h("button.primary", { onclick: write, title: `${p}/step <i> <start> <delta> <len> <keep> <rst> <phase 0..2^32>  (x16)` }, "Write steps"),
+      h("button.ghost", { onclick: read, title: `${p}/steps  ->  ${p}/step ... , ${p}/steps/end` }, "Read back")),
     h("p.hint", {}, "A step runs LEN ticks: START is loaded (unless keep), DELTA is added at each tick, " +
       "PHASE is added while it runs, rst restarts the phase. Square = {A,0,N}{B,0,N}; " +
       "triangle = {A,+d,N}{keep,−d,N}. The checkerboard pattern writes steps 0-1."));
@@ -208,10 +218,11 @@ function stepCard(n) {
 function awgCard(n) {
   const W = 512, H = 160;
   const pts = awg[n];
-  const cv = h("canvas", { width: W, height: H, style: "width:100%;max-width:640px;height:auto;" +
+  const cv = h("canvas", { width: W, height: H, title: `${NPTS} points 0..65535 -> /dds/${n}/awg "v v v ..."`, style: "width:100%;max-width:640px;height:auto;" +
     "background:var(--panel2);border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:crosshair" });
   const ctx = cv.getContext("2d");
   const live = h("input", { type: "checkbox", checked: store.get(`dds.awglive.${n}`, true),
+    title: `send /dds/${n}/awg "v v ..." while drawing`,
     onchange: () => store.set(`dds.awglive.${n}`, live.checked) });
   const draw = () => {
     ctx.clearRect(0, 0, W, H);
@@ -260,18 +271,18 @@ function awgCard(n) {
   draw();
   return card(`DDS ${n} AWG (draw a waveshape)`, cv,
     row("Preset",
-      h("button.ghost", { onclick: () => fill((t) => 0.5 + 0.5 * Math.sin(2 * Math.PI * t)) }, "sine"),
-      h("button.ghost", { onclick: () => fill((t) => t) }, "saw"),
-      h("button.ghost", { onclick: () => fill((t) => 1 - Math.abs(2 * t - 1)) }, "tri"),
-      h("button.ghost", { onclick: () => fill((t) => (t < 0.5 ? 1 : 0)) }, "square"),
-      h("button.ghost", { onclick: () => fill(() => Math.random()) }, "noise"),
-      h("button.ghost", { onclick: () => fill((t) => Math.pow(t, 3)) }, "curve"),
-      h("button.ghost", { onclick: () => fill(() => 0.5) }, "flat")),
-    row("", h("button.ghost", { onclick: smooth }, "Smooth"),
-      h("button.ghost", { onclick: () => { pts.reverse(); draw(); send(); } }, "Reverse"),
-      h("button.ghost", { onclick: () => fill((t) => 1 - pts[Math.round(t * NPTS) % NPTS] / 65535) }, "Invert"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill((t) => 0.5 + 0.5 * Math.sin(2 * Math.PI * t)) }, "sine"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill((t) => t) }, "saw"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill((t) => 1 - Math.abs(2 * t - 1)) }, "tri"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill((t) => (t < 0.5 ? 1 : 0)) }, "square"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill(() => Math.random()) }, "noise"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill((t) => Math.pow(t, 3)) }, "curve"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill(() => 0.5) }, "flat")),
+    row("", h("button.ghost", { title: `smooth the table -> /dds/${n}/awg`, onclick: smooth }, "Smooth"),
+      h("button.ghost", { title: `reverse -> /dds/${n}/awg`, onclick: () => { pts.reverse(); draw(); send(); } }, "Reverse"),
+      h("button.ghost", { title: `fill the table -> /dds/${n}/awg "v v ..."`, onclick: () => fill((t) => 1 - pts[Math.round(t * NPTS) % NPTS] / 65535) }, "Invert"),
       h("label", {}, live, " live"),
-      h("button.primary", { onclick: () => { send(); net.msg(`/dds/${n}/shape`, 6); state[n].shape = "awg"; save(n); } },
+      h("button.primary", { title: `/dds/${n}/awg "...", then /dds/${n}/shape 6`, onclick: () => { send(); net.msg(`/dds/${n}/shape`, 6); state[n].shape = "awg"; save(n); } },
         "Use AWG")),
     h("p.hint", {}, "One cycle of the shape, left to right; top = full scale. " +
       `${NPTS} points → 2048 table entries (debazd interpolates). "Use AWG" selects shape 6 ` +
@@ -316,7 +327,7 @@ export function init(el) {
   const grid = h("div.grid", {}, patternCard(1), awgCard(1), stepCard(1),
     patternCard(0), awgCard(0), stepCard(0));
   root.replaceChildren(h("p", {}, rasterText, " ",
-    h("button.ghost", { onclick: loadRaster }, "Refresh")), grid);
+    h("button.ghost", { title: "/dds/raster -> line Hz, frame Hz, totals, size", onclick: loadRaster }, "Refresh")), grid);
 }
 
 export function connected() {

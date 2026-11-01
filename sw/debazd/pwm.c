@@ -12,6 +12,7 @@
  *                                  Hz; J3 hardware 6 Hz-100 kHz (the opto
  *                                  only follows a few kHz)
  *   /fan/<3|5>/pwm 0               stop (opto off, pin 4 high)
+ *   /fan/<3|5>/pwm hz duty 1       inverted (as /servo makes it; the state model)
  *   /fan/<3|5>/pwm                 -> /fan/<n>/pwm f:hz f:duty
  *   /fan/<3|5>/duty f              duty only (for LFO targets: "/fan/3/duty $0")
  *   /fan/<3|5>/servo f:pos [f:min_ms f:max_ms]
@@ -279,6 +280,34 @@ static double arg_f(const dz_arg *a)
 	return a->type == 'f' ? a->f : a->type == 'i' ? (double)a->i : NAN;
 }
 
+/* the state model (state.c): each channel as running (also the software
+ * PWM, which no register holds), or stopped */
+void pwm_state(state_cb cb, void *ctx)
+{
+	char p[32];
+
+	if (!th_ok)
+		return;
+	for (int i = 0; i < NCH; i++) {
+		double hz, duty;
+		int run, inv;
+
+		pthread_mutex_lock(&mu);
+		run = ch[i].on || ch[i].hw;
+		hz = ch[i].hz;
+		duty = ch[i].duty;
+		inv = ch[i].inv;
+		pthread_mutex_unlock(&mu);
+		if (!ch[i].out)
+			continue;
+		snprintf(p, sizeof(p), "/fan/%d/pwm", conn[i]);
+		if (run)
+			st_emit(cb, ctx, NULL, p, "ffi", hz, duty, inv);
+		else
+			st_emit(cb, ctx, NULL, p, "f", 0.0);
+	}
+}
+
 int pwm_dispatch(const dz_msg *m)
 {
 	int n, n0 = 0, i;
@@ -323,7 +352,7 @@ int pwm_dispatch(const dz_msg *m)
 				  "/fan/<n>/pwm hz (0.1-2000, 0 = off) duty (0..1)", m->path);
 			return 1;
 		} else
-			go(i, hz, duty, 0, 0);
+			go(i, hz, duty, m->n >= 3 && arg_f(&m->a[2]) != 0.0, 0);	/* [invert]: the state model */
 	} else if (!strcmp(what, "duty") && m->n >= 1) {
 		double duty = arg_f(&m->a[0]);
 

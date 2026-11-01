@@ -35,24 +35,25 @@ function displayCard(d) {
   const s = state[d];
   const chip = h("span.chip", {}, "–");
   const slots = [...Array(SLOTS).keys()].map((i) =>
-    h("button", { onclick: () => net.msg(`/disp/${d}/show`, i), title: `show slot ${i}` },
+    h("button", { onclick: () => net.msg(`/disp/${d}/show`, i), title: `show slot ${i}\n/disp/${d}/show ${i}` },
       String(i), h("small", {}, NAMES[i] || "")),
   );
-  const blank = h("button", { onclick: () => net.msg(`/disp/${d}/blank`) }, "Blank");
+  const blank = h("button", { title: `/disp/${d}/blank [0|1]  (no argument = toggle)`, onclick: () => net.msg(`/disp/${d}/blank`) }, "Blank");
   const seqIn = h("input", { type: "text", value: d ? "6 7 8 9 10" : "0 b", size: 16,
-    title: "slots; b or -1 = black" });
-  const rate = h("input", { type: "number", min: 1, max: 600, value: 6, title: "frames per step" });
+    title: `slots; b or -1 = black\n/disp/${d}/seq <slot> <slot> ...` });
+  const rate = h("input", { type: "number", min: 1, max: 600, value: 6, title: `frames per step\n/disp/${d}/seq/rate <frames>` });
   s.el = { chip, slots, blank };
   return card([`Display ${d}`, chip],
     h("div.slots", {}, slots),
     row(null,
-      h("button", { onclick: () => net.msg(`/disp/${d}/home`) }, "Home"),
-      h("button", { onclick: () => net.msg(`/disp/${d}/capture`) }, "Live input"),
+      h("button", { title: `/disp/${d}/home`, onclick: () => net.msg(`/disp/${d}/home`) }, "Home"),
+      h("button", { title: `/disp/${d}/capture`, onclick: () => net.msg(`/disp/${d}/capture`) }, "Live input"),
       blank),
     h("h3", {}, "Sequence"),
     row("slots", seqIn),
     row("frames/step", rate,
       h("button.primary", {
+        title: `/disp/${d}/seq/rate <frames> + /disp/${d}/seq <slots...>`,
         onclick: () => {
           const seq = parseSeq(seqIn.value);
           const r = Math.max(1, parseInt(rate.value) || 1);
@@ -63,7 +64,7 @@ function displayCard(d) {
           net.send(net.bundle(net.message(`/disp/${d}/seq/rate`, r), net.message(`/disp/${d}/seq`, ...seq)));
         },
       }, "Start"),
-      h("button", { onclick: () => net.msg(`/disp/${d}/seq/stop`) }, "Stop")),
+      h("button", { title: `/disp/${d}/seq/stop`, onclick: () => net.msg(`/disp/${d}/seq/stop`) }, "Stop")),
     h("p.hint", {}, "One step per n frames at 60 Hz. b or -1 = black."),
   );
 }
@@ -72,9 +73,9 @@ export function init(root) {
   root.append(h("div.grid", {}, displayCard(0), displayCard(1),
     card("Both displays",
       row(null,
-        h("button", { onclick: () => [0, 1].forEach((d) => net.msg(`/disp/${d}/blank`, 1)) }, "Blank both"),
-        h("button", { onclick: () => [0, 1].forEach((d) => net.msg(`/disp/${d}/blank`, 0)) }, "Unblank both"),
-        h("button", { onclick: () => [0, 1].forEach((d) => net.msg(`/disp/${d}/seq/stop`)) }, "Stop sequences")),
+        h("button", { title: "/disp/0/blank 1, /disp/1/blank 1", onclick: () => [0, 1].forEach((d) => net.msg(`/disp/${d}/blank`, 1)) }, "Blank both"),
+        h("button", { title: "/disp/0/blank 0, /disp/1/blank 0", onclick: () => [0, 1].forEach((d) => net.msg(`/disp/${d}/blank`, 0)) }, "Unblank both"),
+        h("button", { title: "/disp/0/seq/stop, /disp/1/seq/stop", onclick: () => [0, 1].forEach((d) => net.msg(`/disp/${d}/seq/stop`)) }, "Stop sequences")),
       h("p.hint", {}, "Slots 0–11 are frame buffers. Slot 0 is /dev/fb0 (ffmpeg), 4 is the HDMI input, " +
         "11 is always black. Draw into a slot (Paint, Media), then show it."))));
   for (const d of [0, 1]) {

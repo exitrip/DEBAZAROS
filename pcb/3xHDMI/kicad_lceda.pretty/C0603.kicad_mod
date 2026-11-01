@@ -21,11 +21,10 @@
  (fp_arc (start 1.08 -0.4) (end 1.39 -0.4) (angle -90.00469733793197) (layer F.SilkS) (width 0.254)) 
  (fp_arc (start 1.08 0.4) (end 1.08 0.71) (angle -89.99999999998593) (layer F.SilkS) (width 0.254)) 
  (pad 2 smd rect (at 0.7 0) (size 0.8 0.9) (drill 0) (layers F.Cu F.Paste F.Mask)) 
- (pad 1 smd rect (at -0.7 0) (size 0.8 0.9) (drill 0) (layers F.Cu F.Paste F.Mask)) 
- (model ${KIPRJMOD}/kicad_lceda.3dshapes/C0603_L1.6-W0.8-H0.8.step 
-   (offset (xyz -0.497 -0.127 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)) 
-  ) (model ${KIPRJMOD}/kicad_lceda.3dshapes/C0603_L1.6-W0.8-H0.8.wrl 
-   (offset (xyz -0.497 -0.127 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)) 
-  ) 
- 
+ (pad 1 smd rect (at -0.7 0) (size 0.8 0.9) (drill 0) (layers F.Cu F.Paste F.Mask))
+  (model "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+    (offset (xyz 0 0 0))
+    (scale (xyz 1 1 1))
+    (rotate (xyz 0 0 0))
+  )
 )

@@ -7,6 +7,10 @@ BIN=${1:-out/native}
 PORT=19123
 FAIL=0
 LOCKDIR=$(mktemp -d)
+# /video/mode starts this instead of hdmi2.elf: it writes its arguments
+printf '#!/bin/sh\necho "$@" > %s/hdmi2.args\n' "$LOCKDIR" > "$LOCKDIR/hdmi2.elf"
+chmod +x "$LOCKDIR/hdmi2.elf"
+export DZ_HDMI2="$LOCKDIR/hdmi2.elf"
 
 "$BIN/debazd" -n -p $PORT 2>"$LOCKDIR/log" &
 PID=$!
@@ -203,6 +207,13 @@ check lfo-bad      "matches no field"              q /lfo/2/target nothing
 q /lfo/reset >/dev/null
 check lfo-reset    "/lfo/0 0 0"                    q /lfo/0
 
+# video mode (disp.c): query, mode list, a restart of (fake) hdmi2 -r
+check vmode-query  "/video/mode 1280 720"          q /video/mode
+check vmode-list   "\"800x600\""                   q /video/modes
+check vmode-bad    "unknown mode"                  q /video/mode 999x9
+check vmode-set    "starting"                      q /video/mode 800x600
+sleep 0.2
+check vmode-args   "-r 800x600"                    cat "$LOCKDIR/hdmi2.args"
 # crop windows (disp.c): 720p window in a 1920x1080 slot, x even, clamped
 check crop-set     "/disp/0/crop 100 50"           q /disp/0/crop 100 50
 check crop-odd     "/disp/0/crop 100 51"           q /disp/0/crop 101 51
@@ -234,6 +245,79 @@ check pwm-sw-stop   "/fan/5/pwm 0"                  q /fan/5/pwm 0
 check pwm-sw-off    "/value \"/fan/5/out\" 0"       q /fan/5/out
 check pwm-bad-conn  "fan connector is 3 or 5"       q /fan/4/pwm 50 0.5
 check pwm-bad-hz    "/fan/<n>/pwm hz"               q /fan/5/pwm 5000 0.5
+
+# trans.c (2026-10-30): HDMI_1 cross-fade; own + feedback = G per lane, never 256
+q /hdmi/1/gain/rgb 255 >/dev/null; q /hdmi/1/feedback/rgb 0 >/dev/null
+q /fx/xfade 0.5 >/dev/null
+check xfade-own     "/value \"/hdmi/1/gain/rgb\" 8355711"     q /hdmi/1/gain/rgb
+check xfade-fb      "/value \"/hdmi/1/feedback/rgb\" 8421504" q /hdmi/1/feedback/rgb
+check xfade-query   "/fx/xfade 0.50"                        q /fx/xfade
+check trans-now     "/trans/status 0"                       q /trans/field /hdmi/0/gain/r 77 0
+check trans-value   "/value \"/hdmi/0/gain/r\" 77"          q /hdmi/0/gain/r
+check trans-bad     "/trans/field s:path"                   q /trans/field /no/such 1 1
+check mosh-nomovie  "no movie through dzmosh"               q /movie/0/mosh -1
+check movie-fx      "/movie/0/fx 0 0 0 0 0"                 q /movie/0/fx
+check ascii-mode    "\"braille\""                           q /ascii/1/mode braille
+check ascii-once    "/ascii/1/status 0 0"                   q /ascii/1/once 0
+check ascii-bad     "mode: ascii shade"                     q /ascii/1/mode nosuch
+check hue-set       "/fx/matrix"                            q /fx/hue 120 0.5
+q /fx/hue/deg 90 >/dev/null
+check hue-gainkeep  "/fx/hue 90 0.5"                        q /fx/hue
+q /fx/identity >/dev/null; q /fx/matrix/rr 0.5 >/dev/null; q /fx/matrix/rg 0.25 >/dev/null
+check matrix-entry  "/fx/matrix 0.5 0.25 0"                 q /fx/matrix
+q /fx/key/color 0x00FF00 >/dev/null; q /fx/key/tol 40 >/dev/null
+check key-tol       "/fx/key/color 65280 40"                q /fx/key/color
+check crop-x        "/disp/0/crop"                          q /disp/0/crop/x 64
+q /movie/2/vf lagfun >/dev/null
+check vf-preset     "/movie/2/vf \"lagfun=decay=0.95\""     q /movie/2/vf
+check vf-refused    "filter refused"                        q /movie/2/vf "negate;rm"
+q /movie/2/af tremolo >/dev/null
+check af-preset     "/movie/2/af \"tremolo=f=6:d=0.8\""     q /movie/2/af
+q /movie/2/vf trails >/dev/null
+check trails-word   "/movie/2/fx 0 0 0 0 0 0.9 0"            q /movie/2/fx
+q /movie/2/ghost 0.5 >/dev/null
+check ghost-set     "/movie/2/fx 0 0 0 0 0 0 0.5"            q /movie/2/fx
+q /movie/2/vf "hue=h=90:s=2:b=0,negate" >/dev/null; q /movie/2/vf/hue/h 45 >/dev/null
+check live-replace  "/movie/2/vf \"hue=h=45:s=2:b=0,negate\"" q /movie/2/vf
+q /movie/2/vf "lagfun" >/dev/null; q /movie/2/vf/lagfun/decay 0.9 >/dev/null
+check live-append   "/movie/2/vf \"lagfun=decay=0.9\""      q /movie/2/vf
+check live-refused  "live filter refused"                   q /movie/2/vf/hue/h "1;rm"
+q /state/snap t1 >/dev/null; q /mixer/3/k 777 >/dev/null; q /lfo/5/rate 3 >/dev/null
+check state-diff    "/state/end 2"                          q /state/diff t1
+q /state/recall t1 >/dev/null
+check state-recall  "/state/end 0"                          q /state/diff t1
+check state-count   "/state/end 4"                          q /state
+q /show/new selftest >/dev/null; q /mixer/3/k 100 >/dev/null; q /lfo/2/rate 1 >/dev/null
+check cue-key       "\"keyframe\""                          q /cue/record s1 1 keyframe dark
+q /mixer/3/k 200 >/dev/null
+check cue-delta     "\"delta\" 1"                           q /cue/record s1 2 delta x
+q /lfo/2/rate 5 >/dev/null; q /cue/record s1 3 delta y >/dev/null
+check cue-track     "\"/mixer/3/k\" \"/mixer/3/k\" 200"       q /cue/resolve s1 3
+check cue-first     "must be a keyframe"                    q /cue/record s2 1 delta
+check cue-noscene   "/scene/end 1"                          q /scene/list
+q /cue/go s1 1 >/dev/null
+check cue-go1       "/value \"/mixer/3/k\" 100"              q /mixer/3/k
+q /cue/go s1 3 >/dev/null
+check cue-go3       "/value \"/mixer/3/k\" 200"              q /mixer/3/k
+q /show/save selftest >/dev/null; q /show/new other >/dev/null; q /show/load selftest >/dev/null
+check cue-load      "/cue/end 3"                            q /cue/list s1
+q /cue/go s1 1 >/dev/null; q /cue/go s1 3 0.6 fade >/dev/null; sleep 0.25
+check cue-fading    "/trans/status 1"                       q /trans/status
+sleep 0.6
+check cue-faded     "/value \"/mixer/3/k\" 200"              q /mixer/3/k
+q /hdmi/0/gain/rgb 200 200 200 >/dev/null; q /cue/go s1 1 2 dip >/dev/null; sleep 0.1
+check cue-dip-down  "/value \"/mixer/3/k\" 200"              q /mixer/3/k
+sleep 2
+check cue-dip-done  "/value \"/mixer/3/k\" 100"              q /mixer/3/k
+q /cue/go s1 2 >/dev/null; q /mixer/3/k 150 >/dev/null
+check cue-decimal   "/cue/record \"s1\" 2.5 \"delta\" 1"      q /cue/record s1 2.5 delta
+check cue-order     "/cue 2.5"                              q /cue/list s1
+q /cue/go s1 1 >/dev/null; q /hdmi/1/gain/rgb 11 22 33 >/dev/null
+check look-save     "/look/save \"lk1\""                    q /look/save lk1
+q /cue/go s1 1 >/dev/null; q /look/apply lk1 >/dev/null
+check look-apply    "/value \"/hdmi/1/gain/rgb\" 729366"    q /hdmi/1/gain/rgb
+check look-add      "/cue/look \"s1\" 3 1"                  q /cue/look s1 3 add lk1
+check show-check    "/show/check/end 0"                     q /show/check
 q /led/red 0 >/dev/null
 
 kill $PID

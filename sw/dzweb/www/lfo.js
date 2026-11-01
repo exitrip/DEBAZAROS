@@ -37,6 +37,8 @@ function apply(i, keys) {
     else if (k === "rate") m.push(net.message(`${p}/rate`, net.float(c.rate)));
     else if (k === "frames" && c.frames > 0) m.push(net.message(`${p}/frames`, c.frames | 0));
     else if (k === "range") m.push(net.message(`${p}/range`, net.float(c.lo), net.float(c.hi)));
+    else if (k === "min") m.push(net.message(`${p}/min`, net.float(c.lo)));
+    else if (k === "max") m.push(net.message(`${p}/max`, net.float(c.hi)));
     else if (k === "width") m.push(net.message(`${p}/width`, net.float(c.width)));
     else if (k === "curve") m.push(net.message(`${p}/curve`, net.float(c.curve)));
     else if (k === "steps") m.push(net.message(`${p}/steps`, c.steps | 0));
@@ -53,19 +55,22 @@ function apply(i, keys) {
 function lfoCard(i) {
   const c = cfg[i];
   const num = (key, step, title, sendKey = key) => {
-    const el = h("input", { type: "number", step, value: c[key], title,
+    const osc = { range: "range <min> <max>", min: "min <f>", max: "max <f>", frames: "frames <n>",
+      steps: "steps <n>", every: "every <k>" }[sendKey] || `${sendKey} <f>`;
+    const el = h("input", { type: "number", step, value: c[key], title: `${title}\n/lfo/${i}/${osc}`,
       onchange: () => { c[key] = Number(el.value); apply(i, [sendKey]); } });
     return h("label", {}, title, el);
   };
-  const onBtn = h("button", { onclick: () => { c.on = c.on ? 0 : 1; paint(); apply(i, ["on"]); } });
+  const onBtn = h("button", { title: `/lfo/${i}/on <0|1>  (/lfo/${i} -> value on)`, onclick: () => { c.on = c.on ? 0 : 1; paint(); apply(i, ["on"]); } });
   const paint = () => { onBtn.textContent = c.on ? "On" : "Off"; onBtn.classList.toggle("on", !!c.on); };
   paint();
-  const shape = h("select", { onchange: () => { c.shape = shape.value; apply(i, ["shape"]); } },
+  const shape = h("select", { title: `/lfo/${i}/shape <name>`, onchange: () => { c.shape = shape.value; apply(i, ["shape"]); } },
     SHAPES.map((s) => h("option", { value: s, selected: s === c.shape }, s)));
-  const mode = h("select", { onchange: () => { c.once = mode.value === "once" ? 1 : 0; apply(i, ["mode"]); } },
+  const mode = h("select", { title: `/lfo/${i}/mode loop|once`, onchange: () => { c.once = mode.value === "once" ? 1 : 0; apply(i, ["mode"]); } },
     h("option", { value: "loop", selected: !c.once }, "loop"),
     h("option", { value: "once", selected: !!c.once }, "once"));
   const target = h("input", { type: "text", value: c.target, list: "lfo-targets",
+    title: `/lfo/${i}/target "<field path>" or "<message with $k / $fk>"`,
     placeholder: "/field/path  or  /message a b $0 $f1" });
   const meter = h("div.meter", {}, h("i"));
   const val = h("span.hint", {}, "–");
@@ -77,19 +82,19 @@ function lfoCard(i) {
       h("label", {}, "shape", shape),
       num("rate", "0.01", "rate Hz", "rate"),
       num("frames", "1", "or frames/cycle", "frames"),
-      num("lo", "any", "min", "range"),
-      num("hi", "any", "max", "range"),
+      num("lo", "any", "min", "min"),
+      num("hi", "any", "max", "max"),
       num("width", "0.05", "width 0..1"),
       num("curve", "0.1", "curve"),
       num("steps", "1", "steps"),
       num("every", "1", "every n frames"),
       num("phase", "0.05", "phase 0..1"),
       h("label", {}, "mode", mode),
-      h("label", {}, " ", h("button", { onclick: () => { c.on = 1; paint(); net.msg(`/lfo/${i}/trigger`); save(); } }, "Trigger")),
+      h("label", {}, " ", h("button", { title: `/lfo/${i}/trigger`, onclick: () => { c.on = 1; paint(); net.msg(`/lfo/${i}/trigger`); save(); } }, "Trigger")),
       h("label.target", {}, "target",
         h("div.row", {}, target,
-          h("button.primary", { onclick: () => { c.target = target.value.trim(); apply(i, ["target"]); } }, "Set"),
-          h("button", { onclick: () => { c.target = ""; target.value = ""; apply(i, ["target"]); } }, "Clear")))));
+          h("button.primary", { title: `/lfo/${i}/target "<text>"`, onclick: () => { c.target = target.value.trim(); apply(i, ["target"]); } }, "Set"),
+          h("button", { title: `/lfo/${i}/target  (no argument = no target)`, onclick: () => { c.target = ""; target.value = ""; apply(i, ["target"]); } }, "Clear")))));
 }
 
 function poll() {
@@ -103,8 +108,8 @@ export function init(root) {
   const list = h("datalist", { id: "lfo-targets" });
   root.append(list,
     h("div.row", {},
-      h("button", { onclick: () => { net.msg("/lfo/reset"); cfg = cfg.map(() => ({ ...DEF })); save(); root.replaceChildren(); init(root); } }, "Reset all"),
-      h("button", { onclick: () => cfg.forEach((_, i) => apply(i, ALL)) }, "Send all settings"),
+      h("button", { title: "/lfo/reset", onclick: () => { net.msg("/lfo/reset"); cfg = cfg.map(() => ({ ...DEF })); save(); root.replaceChildren(); init(root); } }, "Reset all"),
+      h("button", { title: "/lfo/<n>/shape, /rate, /range, ... for all 16", onclick: () => cfg.forEach((_, i) => apply(i, ALL)) }, "Send all settings"),
       h("span.hint", {}, "$k = value of LFO k (int), $fk = float. Targets run once per frame (every n).")),
     h("div.grid", {}, [...Array(N).keys()].map(lfoCard)));
   for (const ex of EXAMPLES) list.append(h("option", { value: ex }));

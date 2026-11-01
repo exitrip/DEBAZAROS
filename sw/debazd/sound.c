@@ -12,6 +12,8 @@
  *   /audio/rec/stop
  *   /audio/status                       -> /audio/out i:out s:file i:loop (x3)
  *                                          /audio/rec s:file f:seconds
+ *   /audio/out/<n>/file [s:file i:loop] its file player ("" = stop; the
+ *                                       same file playing = no change)
  *   /audio/out/<n>/source [s:src]       what output n plays (no arg = query):
  *        HDMI 0/1: auto  (Linux audio while a PCM plays, else the HDMI 2 input)
  *                  linux | input (HDMI 2) | i2s (I2S DIN) | tone | off
@@ -76,22 +78,14 @@ static int file_ok(const char *n)	/* a bare name in DZ_AUDIO_DIR */
 
 static pid_t spawn(const char *cmd)
 {
-	pid_t pid = fork();
-
-	if (pid == 0) {
-		setsid();	/* own process group: stop kills the whole command */
-		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
-		_exit(127);
-	}
-	return pid < 0 ? 0 : pid;
+	return dz_spawn(cmd, 0);	/* own process group, returns after the exec */
 }
 
 static void stop_pid(pid_t *pid, int sig)
 {
 	if (*pid <= 0)
 		return;
-	kill(-*pid, sig);
-	waitpid(*pid, NULL, 0);
+	dz_kill_group(*pid, sig);
 	*pid = 0;
 }
 
@@ -298,6 +292,22 @@ void sound_tick(void)
 	}
 }
 
+/* the state model (state.c): each output's source (when known) and its
+ * file player (key /audio/out/<n>/file: play or stop) */
+void sound_state(state_cb cb, void *ctx)
+{
+	char p[48], key[48];
+
+	for (int k = 0; k < OUTS; k++) {
+		if (strcmp(source[k], "?")) {
+			snprintf(p, sizeof(p), "/audio/out/%d/source", k);
+			st_emit(cb, ctx, NULL, p, "s", source[k]);
+		}
+		snprintf(key, sizeof(key), "/audio/out/%d/file", k);
+		st_emit(cb, ctx, NULL, key, "si", play[k].pid > 0 ? play[k].file : "", play[k].loop);
+	}
+}
+
 int sound_dispatch(const dz_msg *m)
 {
 	const dz_arg *a = m->a;
@@ -312,7 +322,13 @@ int sound_dispatch(const dz_msg *m)
 			dzd_reply("/error", "ss", "/audio/play i:out s:file [i:loop] (file in audio/)", m->path);
 			return 1;
 		}
-		if (play_file(out, a[1].s, m->n >= 3 && arg_i(&a[2], 0) != 0) < 0)
+		int loop = m->n >= 3 && arg_i(&a[2], 0) != 0;
+
+		if (play[out].pid > 0 && !strcmp(play[out].file, a[1].s) && play[out].loop == loop) {
+			dzd_reply("/ok", "sis", m->path, out, a[1].s);	/* already playing it */
+			return 1;
+		}
+		if (play_file(out, a[1].s, loop) < 0)
 			dzd_reply("/error", "ss", "cannot start ffmpeg", m->path);
 		else
 			dzd_reply("/ok", "sis", m->path, out, a[1].s);
@@ -354,6 +370,28 @@ int sound_dispatch(const dz_msg *m)
 				  play[k].loop, source[k]);
 		dzd_reply("/audio/rec", "sf", rec_pid ? rec_file : "",
 			  rec_pid ? (float)((now_ms() - rec_t0) / 1000.0) : 0.0f);
+		return 1;
+	}
+	if (!strncmp(m->path, "/audio/out/", 11) && m->path[11] >= '0' && m->path[11] <= '9' &&
+	    !strcmp(m->path + 12, "/file")) {	/* the state model: "name" [loop], "" = stop */
+		n = m->path[11] - '0';
+		if (!out_ok(n))
+			return 1;
+		if (m->n >= 1 && a[0].type == 's' && !a[0].s[0]) {
+			stop_play(n);
+		} else if (m->n >= 1 && a[0].type == 's' && file_ok(a[0].s)) {
+			int loop = m->n >= 2 && arg_i(&a[1], 0) != 0;
+
+			if (!(play[n].pid > 0 && !strcmp(play[n].file, a[0].s) && play[n].loop == loop) &&
+			    play_file(n, a[0].s, loop) < 0) {
+				dzd_reply("/error", "ss", "cannot start ffmpeg", m->path);
+				return 1;
+			}
+		} else if (m->n >= 1) {
+			dzd_reply("/error", "ss", "/audio/out/<n>/file s:file [i:loop] (\"\" = stop)", m->path);
+			return 1;
+		}
+		dzd_reply(m->path, "si", play[n].pid > 0 ? play[n].file : "", play[n].loop);
 		return 1;
 	}
 	if (!strncmp(m->path, "/audio/out/", 11) && m->path[11] >= '0' && m->path[11] <= '9' &&

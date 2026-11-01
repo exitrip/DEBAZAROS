@@ -19,11 +19,10 @@
  (pad 2 smd rect (at 0.753 0) (size 0.806 0.864) (drill 0) (layers F.Cu F.Paste F.Mask)) 
  (pad 1 smd rect (at -0.753 0) (size 0.806 0.864) (drill 0) (layers F.Cu F.Paste F.Mask)) 
  (fp_poly (pts (xy 1.195 -0.45) (xy 0.395 -0.45) (xy 0.345 -0.4) (xy 0.345 -0.172) (xy 0.715 -0.172) (xy 0.715 0.158) (xy 0.345 0.158) (xy 0.345 0.4) (xy 0.395 0.45) (xy 1.195 0.45) (xy 1.245 0.4) (xy 1.245 -0.4)) (layer F.Paste) (width 0.12)) 
- (fp_poly (pts (xy -0.355 -0.4) (xy -0.355 -0.172) (xy -0.735 -0.172) (xy -0.735 0.158) (xy -0.355 0.158) (xy -0.355 0.4) (xy -0.405 0.45) (xy -1.195 0.45) (xy -1.245 0.4) (xy -1.245 -0.4) (xy -1.195 -0.45) (xy -0.405 -0.45)) (layer F.Paste) (width 0.12)) 
- (model ${KIPRJMOD}/kicad_lceda.3dshapes/R0603_L1.6-W0.8-H0.8.step 
-   (offset (xyz -2.491 0.635 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)) 
-  ) (model ${KIPRJMOD}/kicad_lceda.3dshapes/R0603_L1.6-W0.8-H0.8.wrl 
-   (offset (xyz -2.491 0.635 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)) 
-  ) 
- 
+ (fp_poly (pts (xy -0.355 -0.4) (xy -0.355 -0.172) (xy -0.735 -0.172) (xy -0.735 0.158) (xy -0.355 0.158) (xy -0.355 0.4) (xy -0.405 0.45) (xy -1.195 0.45) (xy -1.245 0.4) (xy -1.245 -0.4) (xy -1.195 -0.45) (xy -0.405 -0.45)) (layer F.Paste) (width 0.12))
+  (model "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.step"
+    (offset (xyz 0 0 0))
+    (scale (xyz 1 1 1))
+    (rotate (xyz 0 0 0))
+  )
 )

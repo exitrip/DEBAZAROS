@@ -2,6 +2,7 @@
 // download, delete) uses dzweb's HTTP /media; drawing and playback use OSC.
 import * as net from "./net.js";
 import { h, card, row, hexToRgb, toast } from "./ui.js";
+import * as movfx from "./movfx.js";
 
 const KINDS = {
   img: { title: "Images", dir: "/media/debaz/img", accept: "image/*,.ppm" },
@@ -141,52 +142,55 @@ export function init(root) {
     uploads[kind] = h("div");
   }
   freeEl = h("span.hint", {}, "");
-  spriteId = h("input", { type: "number", min: 0, max: 63, value: 0 });
+  spriteId = h("input", { type: "number", min: 0, max: 63, value: 0, title: "/sprite/<id>/...: the sprite number 0..63" });
   slotSel = slotPicker();
+  slotSel.addEventListener("change", fxRefresh);
   info = h("span.hint", {}, "");
   movieAudio = h("select", { title: "where the movie's own audio track plays" },
     h("option", { value: 0 }, "no audio"), h("option", { value: 1 }, "HDMI 0"),
     h("option", { value: 2 }, "HDMI 1"), h("option", { value: 3 }, "HDMI 0 + 1"),
     h("option", { value: 4 }, "I2S"));
-  audioOut = h("select", {}, h("option", { value: 0 }, "HDMI 0"), h("option", { value: 1 }, "HDMI 1"),
+  audioOut = h("select", { title: "/audio/play <out> <file>: the output" }, h("option", { value: 0 }, "HDMI 0"), h("option", { value: 1 }, "HDMI 1"),
     h("option", { value: 2 }, "I2S"));
-  const color = h("input", { type: "color", value: "#ffffff" });
-  const text = h("input", { type: "text", value: "feedback" });
-  const size = h("input", { type: "number", min: 8, max: 400, value: 96, title: "TrueType size in px" });
-  const scale = h("input", { type: "number", min: 1, max: 16, value: 4, title: "pixel font scale" });
-  const key = h("input", { type: "color", value: "#ffffff" });
-  const tol = h("input", { type: "number", min: 0, max: 255, value: 40, title: "tolerance" });
+  const color = h("input", { type: "color", value: "#ffffff", title: "/sprite/<id>/ttf|text <r g b> ..." });
+  const text = h("input", { type: "text", value: "feedback", title: "/sprite/<id>/ttf r g b size \"<text>\"" });
+  const size = h("input", { type: "number", min: 8, max: 400, value: 96, title: "TrueType size in px\n/sprite/<id>/ttf r g b <size> ..." });
+  const scale = h("input", { type: "number", min: 1, max: 16, value: 4, title: "pixel font scale\n/sprite/<id>/text r g b \"text\" <scale>" });
+  const key = h("input", { type: "color", value: "#ffffff", title: "/sprite/<id>/key <r g b> [tol]" });
+  const tol = h("input", { type: "number", min: 0, max: 255, value: 40, title: "tolerance\n/sprite/<id>/key r g b <tol>" });
 
   root.append(
     h("div.row", {}, h("label", {}, "target slot"), slotSel,
       h("label", {}, "sprite #"), spriteId,
-      h("button", { onclick: refresh }, "Refresh lists"), freeEl),
+      h("button", { title: "dzweb HTTP GET /media (file lists, free space)", onclick: refresh }, "Refresh lists"), freeEl),
     h("div.grid", {},
       card(`${KINDS.img.title} (${KINDS.img.dir})`, dropZone("img"), uploads.img, lists.img),
       card(`${KINDS.movies.title} (${KINDS.movies.dir})`, dropZone("movies"), uploads.movies, lists.movies,
         row("movie audio", movieAudio),
-        row(null, h("button", { onclick: () => net.msg(`/movie/${slotSel.value}/stop`) }, "Stop movie in slot")),
+        row(null, h("button", { title: "/movie/<slot>/stop", onclick: () => net.msg(`/movie/${slotSel.value}/stop`) }, "Stop movie in slot")),
         h("p.hint", {}, "Movies decode on the board (about 12–20 fps per 720p stream). " +
           "File names change to A-Z a-z 0-9 . _ - on upload.")),
+      movfx.moshCard(() => slotSel.value),
+      movfx.asciiCard(() => slotSel.value, slotPicker),
       card(`${KINDS.audio.title} (${KINDS.audio.dir})`, dropZone("audio"), uploads.audio, lists.audio,
-        row("play on", audioOut, h("button", { onclick: () => net.msg("/audio/stop") }, "Stop all")),
+        row("play on", audioOut, h("button", { title: "/audio/stop", onclick: () => net.msg("/audio/stop") }, "Stop all")),
         h("p.hint", {}, "Recordings from the Audio tab land here. HDMI 0 + 1 for a movie = the same " +
           "audio on both outputs; the Audio tab's sources choose what each output plays.")),
       card("Sprites",
         row("colour", color, text),
         row(null,
-          h("button", { onclick: () => { const [r, g, b] = hexToRgb(color.value);
+          h("button", { title: "/sprite/<id>/ttf r g b <size> \"text\"", onclick: () => { const [r, g, b] = hexToRgb(color.value);
             net.msg(`/sprite/${spriteId.value}/ttf`, r, g, b, parseInt(size.value), text.value);
             setTimeout(() => net.msg(`/sprite/${spriteId.value}`), 300); } }, "TrueType → sprite"), size),
         row(null,
-          h("button", { onclick: () => { const [r, g, b] = hexToRgb(color.value);
+          h("button", { title: "/sprite/<id>/text r g b \"text\" <scale> 16", onclick: () => { const [r, g, b] = hexToRgb(color.value);
             net.msg(`/sprite/${spriteId.value}/text`, r, g, b, text.value, parseInt(scale.value), 16);
             setTimeout(() => net.msg(`/sprite/${spriteId.value}`), 300); } }, "Pixel text → sprite"), scale),
-        row("key out", key, tol, h("button", { onclick: () => { const [r, g, b] = hexToRgb(key.value);
+        row("key out", key, tol, h("button", { title: "/sprite/<id>/key r g b <tol>", onclick: () => { const [r, g, b] = hexToRgb(key.value);
           net.msg(`/sprite/${spriteId.value}/key`, r, g, b, parseInt(tol.value)); toast("colour keyed"); } }, "Key")),
         row(null,
-          h("button", { onclick: () => net.msg(`/sprite/${spriteId.value}`) }, "Size?"),
-          h("button.danger", { onclick: () => net.msg(`/sprite/${spriteId.value}/free`) }, "Free"), info),
+          h("button", { title: "/sprite/<id>  -> /sprite/<id> w h", onclick: () => net.msg(`/sprite/${spriteId.value}`) }, "Size?"),
+          h("button.danger", { title: "/sprite/<id>/free", onclick: () => net.msg(`/sprite/${spriteId.value}/free`) }, "Free"), info),
         h("p.hint", {}, "Place sprites with the Paint tab's sprite tool, or animate them with an LFO " +
           "target like /sprite/0/draw 6 640 360 1 $f2."))));
   net.on("/sprite", (m) => {
@@ -194,10 +198,17 @@ export function init(root) {
   });
 }
 
+function fxRefresh() {
+  movfx.moshRefresh(slotSel.value);
+  movfx.asciiRefresh(slotSel.value);
+}
+
 export function connected() {
   refresh();
+  fxRefresh();
 }
 
 export function show() {
   refresh();
+  fxRefresh();
 }

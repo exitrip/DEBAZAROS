@@ -11,6 +11,7 @@
  *   /lfo/<n>/width  f:0..1               square duty, tri peak position
  *   /lfo/<n>/phase  f:0..1               phase offset
  *   /lfo/<n>/range  f:min f:max          output range (default 0 1)
+ *   /lfo/<n>/min f, /lfo/<n>/max f       one end of the range alone
  *   /lfo/<n>/curve  f:k                  y = y^k (1 = linear) wave shaper
  *   /lfo/<n>/steps  i:n                  quantise to n levels (0 = off)
  *   /lfo/<n>/seq    f:v0 f:v1 ...        step values (shape step), as 0..1
@@ -303,9 +304,47 @@ void lfo_tick(double dt)
 /* ---- OSC ------------------------------------------------------------------------ */
 static double fa(const dz_arg *a) { return a->type == 'f' ? a->f : (double)a->i; }
 
+/* the state model (state.c): every LFO's settings, then on */
+void lfo_state(state_cb cb, void *ctx)
+{
+	char p[40], k[40];
+
+	for (int n = 0; n < N_LFO; n++) {
+		const lfo_t *l = &L[n];
+
+#define LP(x) (snprintf(p, sizeof(p), "/lfo/%d/" x, n), p)
+		st_emit(cb, ctx, NULL, LP("shape"), "s", shape_names[l->shape]);
+		(void)k;			/* rate, then frames (0 = the rate counts) */
+		st_emit(cb, ctx, NULL, LP("rate"), "f", l->rate);
+		st_emit(cb, ctx, NULL, LP("frames"), "i", l->frames);
+		st_emit(cb, ctx, NULL, LP("min"), "f", l->lo);
+		st_emit(cb, ctx, NULL, LP("max"), "f", l->hi);
+		st_emit(cb, ctx, NULL, LP("width"), "f", l->width);
+		st_emit(cb, ctx, NULL, LP("phase"), "f", l->phase0);
+		st_emit(cb, ctx, NULL, LP("curve"), "f", l->curve);
+		st_emit(cb, ctx, NULL, LP("steps"), "i", l->steps);
+		if (l->seqn > 0) {
+			dz_arg a[SEQ_LEN];
+			int k = l->seqn < DZ_OSC_MAX_ARGS ? l->seqn : DZ_OSC_MAX_ARGS;
+
+			for (int j = 0; j < k; j++)
+				a[j] = (dz_arg){ .type = 'f', .f = l->seq[j] };
+			st_emit_args(cb, ctx, NULL, LP("seq"), a, k);
+		}
+		st_emit(cb, ctx, NULL, LP("mode"), "s", l->once ? "once" : "loop");
+		st_emit(cb, ctx, NULL, LP("every"), "i", l->every > 0 ? l->every : 1);
+		if (l->tkind)
+			st_emit(cb, ctx, NULL, LP("target"), "s", l->tpl);
+		else
+			st_emit(cb, ctx, NULL, LP("target"), "");
+		st_emit(cb, ctx, NULL, LP("on"), "i", l->on ? 1 : 0);
+#undef LP
+	}
+}
+
 int lfo_dispatch(const dz_msg *m)
 {
-	static const char *ops[] = { "shape", "rate", "frames", "width", "phase", "range",
+	static const char *ops[] = { "shape", "rate", "frames", "width", "phase", "range", "min", "max",
 		"curve", "steps", "seq", "mode", "trigger", "on", "target", "every", NULL };
 	const dz_arg *a = m->a;
 	int n = m->n, hits = 0;
@@ -359,6 +398,10 @@ int lfo_dispatch(const dz_msg *m)
 		} else if (!strcmp(op, "range") && n >= 2) {
 			l->lo = fa(&a[0]);
 			l->hi = fa(&a[1]);
+		} else if (!strcmp(op, "min") && n >= 1) {
+			l->lo = fa(&a[0]);
+		} else if (!strcmp(op, "max") && n >= 1) {
+			l->hi = fa(&a[0]);
 		} else if (!strcmp(op, "curve") && n >= 1) {
 			l->curve = fa(&a[0]);
 		} else if (!strcmp(op, "every") && n >= 1) {

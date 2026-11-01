@@ -17,10 +17,21 @@
  *   /dds/<n>/hbars f:n [s:shape]     n horizontal bands (LINESTEP, reset at vsync)
  *   /dds/<n>/checker i:cols i:rows [s:shape]   sequencer: 2 steps, tick hsync
  *   /dds/<n>/slant f:n f:shift       bars + shift cycles per line (diagonals)
+ *   /dds/<n>/count f:n               the last bars / hbars / slant / checker
+ *                                    again with n (bars, bands; checker: cols)
+ *   /dds/<n>/cols i, /dds/<n>/rows i checker columns / rows alone
+ *                                    (single values for LFO targets, e.g.
+ *                                    "/dds/1/count $f0"; /dds/<n>/pattern ->
+ *                                    s:name f:count i:rows f:shift s:shape)
+ *   /dds/<n>/shift f:cycles          only LINESTEP: the diagonal, cycles per line
+ *                                    (signed; an LFO can drive it: target
+ *                                    "/dds/1/shift $f0")
  *   /dds/<n>/scroll f:speed          adds speed cycles per second (FRAMESTEP)
  *   /dds/<n>/pulse f:duty            pulse shape, high for duty (0..1) of a cycle
  *   /dds/<n>/off                     sequencer, reset, steps, offsets off (PINC stays)
  *   /dds/<n>/step i:idx i:start i:delta i:len [i:keep i:rst i:phase]
+ *   /dds/<n>/step/<i> i:start i:delta i:len [i:keep i:rst i:phase]  (the
+ *                                    same, one address per step: cues)
  *   /dds/<n>/steps                   -> /dds/<n>/step i*7 for steps 0..15, then
  *                                       /dds/<n>/steps/end
  *   /dds/<n>/awg s:"v v v ..."       2..1024 points 0..65535 (one cycle); linear
@@ -80,7 +91,16 @@ static struct {
 	uint32_t step[16][4];		/* START, DELTA, LEN|KEEP|RST, PHASE */
 	uint16_t pts[PTS_MAX];		/* the AWG as it was sent */
 	int      npts;
+	int      wsteps;		/* debazd wrote the step table (else unknown) */
 } ch[2];
+
+/* the last pattern per channel, for the single-value setters */
+enum { P_NONE, P_BARS, P_SLANT, P_HBARS, P_CHECKER };
+static const char *const pat_names[] = { "none", "bars", "slant", "hbars", "checker" };
+static struct {
+	int    pat, rows, shape;
+	double count, shift;
+} P[2];
 
 static uint32_t base_of(int n)
 {
@@ -183,6 +203,7 @@ static void put_step(int n, int i, uint32_t start, uint32_t delta, uint32_t len,
 	s[1] = delta;
 	s[2] = len;
 	s[3] = ph;
+	ch[n].wsteps = 1;
 	for (int k = 0; k < 4; k++)
 		wr(n, R_STEP + 16u * (uint32_t)i + 4u * (uint32_t)k, s[k]);
 }
@@ -261,6 +282,35 @@ static void reply_awg(int n)
 	dzd_reply(p, "s", buf);
 }
 
+/* write the pattern P[n] (bars, slant, hbars, checker) */
+static void pattern(int n, raster r, double vis)
+{
+	int s = P[n].shape;
+
+	clean(n);
+	if (P[n].pat == P_BARS || P[n].pat == P_SLANT) {
+		wr(n, R_PINC, PINC_VALID | inc_hz(P[n].count * vis * r.line_hz));
+		if (P[n].pat == P_SLANT)
+			wr(n, R_LSTEP, cycles32(P[n].shift));
+		wr(n, R_CTRL, C_SHAPE(s) | C_RESET(RST_HSYNC));
+	} else if (P[n].pat == P_HBARS) {
+		wr(n, R_PINC, PINC_VALID);		/* increment 0: one value per line */
+		wr(n, R_LSTEP, cycles32(P[n].count / (r.h > 0 ? r.h : 720)));
+		wr(n, R_CTRL, C_SHAPE(s) | C_RESET(RST_VSYNC));
+	} else if (P[n].pat == P_CHECKER) {
+		int rows = P[n].rows;
+		/* a square wave of cols/2 cycles: one cycle = a light and a dark column */
+		uint32_t inc = inc_hz(P[n].count / 2.0 * vis * r.line_hz);
+		uint32_t lines = (uint32_t)(r.h / rows > 0 ? r.h / rows : 1);
+
+		put_step(n, 0, inc, 0, lines, 0);
+		put_step(n, 1, inc, 0, lines, 0x80000000u);
+		wr(n, R_PINC, PINC_VALID | inc);
+		wr(n, R_CTRL, C_SEQ | C_TICK(TICK_HSYNC) | C_RESET(RST_HSYNC) | C_LAST(1) |
+				  C_VSRESTART | C_SHAPE(s));
+	}
+}
+
 int dds_dispatch(const dz_msg *m)
 {
 	const char *p = m->path, *c;
@@ -280,8 +330,9 @@ int dds_dispatch(const dz_msg *m)
 	c = p + 7;
 	/* the commands of this file; anything else is a field */
 	static const char *const cmds[] = { "wave", "bars", "hbars", "checker", "slant", "scroll",
-					    "pulse", "off", "step", "steps", "awg" };
-	int known = 0;
+					    "pulse", "off", "step", "steps", "awg", "shift",
+					    "count", "cols", "rows", "pattern" };
+	int known = !strncmp(c, "step/", 5);	/* /dds/<n>/step/<i>: the state model */
 	for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++)
 		if (!strcmp(c, cmds[i]))
 			known = 1;
@@ -310,21 +361,21 @@ int dds_dispatch(const dz_msg *m)
 		int s = arg_shape(m, 1 + slant, SH_SQUARE);
 		if (s < 0)
 			goto bad;
-		clean(n);
-		wr(n, R_PINC, PINC_VALID | inc_hz(argf(&m->a[0]) * vis * r.line_hz));
-		if (slant)
-			wr(n, R_LSTEP, cycles32(argf(&m->a[1])));
-		wr(n, R_CTRL, C_SHAPE(s) | C_RESET(RST_HSYNC));
+		P[n].pat = slant ? P_SLANT : P_BARS;
+		P[n].count = argf(&m->a[0]);
+		P[n].shift = slant ? argf(&m->a[1]) : 0.0;
+		P[n].shape = s;
+		pattern(n, r, vis);
 	} else if (!strcmp(c, "hbars")) {
 		if (m->n < 1)
 			goto bad;
 		int s = arg_shape(m, 1, SH_SQUARE);
 		if (s < 0)
 			goto bad;
-		clean(n);
-		wr(n, R_PINC, PINC_VALID);		/* increment 0: one value per line */
-		wr(n, R_LSTEP, cycles32(argf(&m->a[0]) / (r.h > 0 ? r.h : 720)));
-		wr(n, R_CTRL, C_SHAPE(s) | C_RESET(RST_VSYNC));
+		P[n].pat = P_HBARS;
+		P[n].count = argf(&m->a[0]);
+		P[n].shape = s;
+		pattern(n, r, vis);
 	} else if (!strcmp(c, "checker")) {
 		if (m->n < 2)
 			goto bad;
@@ -332,15 +383,34 @@ int dds_dispatch(const dz_msg *m)
 		int s = arg_shape(m, 2, SH_SQUARE);
 		if (cols < 1 || rows < 1 || s < 0)
 			goto bad;
-		/* a square wave of cols/2 cycles: one cycle = a light and a dark column */
-		uint32_t inc = inc_hz(cols / 2.0 * vis * r.line_hz);
-		uint32_t lines = (uint32_t)(r.h / rows > 0 ? r.h / rows : 1);
-		clean(n);
-		put_step(n, 0, inc, 0, lines, 0);
-		put_step(n, 1, inc, 0, lines, 0x80000000u);
-		wr(n, R_PINC, PINC_VALID | inc);
-		wr(n, R_CTRL, C_SEQ | C_TICK(TICK_HSYNC) | C_RESET(RST_HSYNC) | C_LAST(1) |
-				  C_VSRESTART | C_SHAPE(s));
+		P[n].pat = P_CHECKER;
+		P[n].count = cols;
+		P[n].rows = rows;
+		P[n].shape = s;
+		pattern(n, r, vis);
+	} else if (!strcmp(c, "count") || !strcmp(c, "cols") || !strcmp(c, "rows")) {
+		if (m->n < 1 || P[n].pat == P_NONE)
+			goto bad;		/* no pattern to change yet */
+		double v = argf(&m->a[0]);
+		if (c[0] == 'r') {
+			if (P[n].pat != P_CHECKER || v < 1)
+				goto bad;
+			P[n].rows = (int)v;
+		} else {
+			if (P[n].pat == P_CHECKER && v < 1)
+				goto bad;
+			P[n].count = v;
+		}
+		pattern(n, r, vis);
+	} else if (!strcmp(c, "pattern")) {
+		dzd_reply(p, "sfifs", pat_names[P[n].pat], (float)P[n].count, P[n].rows,
+			  (float)P[n].shift, shape_names[P[n].shape]);
+		return 1;
+	} else if (!strcmp(c, "shift")) {
+		if (m->n < 1)
+			goto bad;
+		P[n].shift = argf(&m->a[0]);
+		wr(n, R_LSTEP, cycles32(argf(&m->a[0])));
 	} else if (!strcmp(c, "scroll")) {
 		if (m->n < 1)
 			goto bad;
@@ -353,10 +423,22 @@ int dds_dispatch(const dz_msg *m)
 		wr(n, R_PWIDTH, d >= 1.0 ? 0xFFFFFFFFu : (uint32_t)llround(d * 4294967296.0));
 		wr(n, R_CTRL, (dz_rd(base_of(n), R_CTRL) & ~C_SHAPE(7)) | C_SHAPE(SH_PULSE));
 	} else if (!strcmp(c, "off")) {
+		P[n].pat = P_NONE;
 		wr(n, R_CTRL, 0);
 		clean(n);
 		for (int i = 0; i < 16; i++)
 			put_step(n, i, 0, 0, 0, 0);
+	} else if (!strncmp(c, "step/", 5)) {	/* start delta len [keep rst phase] */
+		int i = atoi(c + 5);
+		if (i < 0 || i > 15 || m->n < 3)
+			goto bad;
+		uint32_t len = (uint32_t)argf(&m->a[2]) & 0xFFFFFF;
+		if (m->n > 3 && argf(&m->a[3]) != 0)
+			len |= 1u << 24;
+		if (m->n > 4 && argf(&m->a[4]) != 0)
+			len |= 1u << 25;
+		put_step(n, i, (uint32_t)(int64_t)argf(&m->a[0]), (uint32_t)(int64_t)argf(&m->a[1]), len,
+			 m->n > 5 ? (uint32_t)(int64_t)argf(&m->a[5]) : 0);
 	} else if (!strcmp(c, "step")) {
 		if (m->n < 4)
 			goto bad;
@@ -389,12 +471,47 @@ bad:
 	return 1;
 }
 
+/* the state model (state.c): the write-only tables, only if debazd wrote
+ * them since it started (else the PL holds values nobody knows: left out) */
+void dds_state(state_cb cb, void *ctx)
+{
+	static char pts[PTS_MAX * 6 + 1];
+	char p[40], key[40];
+
+	if (!present())
+		return;
+	for (int n = 0; n < 2; n++) {
+		snprintf(p, sizeof(p), "/dds/%d/step", n);
+		for (int i = 0; ch[n].wsteps && i < 16; i++) {
+			const uint32_t *s = ch[n].step[i];
+
+			snprintf(key, sizeof(key), "/dds/%d/step/%d", n, i);
+			st_emit(cb, ctx, NULL, key, "iiiiii", (int)s[0], (int)s[1], (int)(s[2] & 0xFFFFFF),
+				(int)((s[2] >> 24) & 1), (int)((s[2] >> 25) & 1), (int)s[3]);
+		}
+		if (ch[n].npts >= 2) {
+			size_t l = 0;
+
+			for (int k = 0; k < ch[n].npts; k++)
+				l += (size_t)snprintf(pts + l, sizeof(pts) - l, "%s%u", k ? " " : "", ch[n].pts[k]);
+			snprintf(p, sizeof(p), "/dds/%d/awg", n);
+			st_emit(cb, ctx, NULL, p, "s", pts);
+		}
+	}
+}
+
 #else	/* hw_map.h without dz_osc2 */
 
 int dds_dispatch(const dz_msg *m)
 {
 	(void)m;
 	return 0;
+}
+
+void dds_state(state_cb cb, void *ctx)
+{
+	(void)cb;
+	(void)ctx;
 }
 
 #endif

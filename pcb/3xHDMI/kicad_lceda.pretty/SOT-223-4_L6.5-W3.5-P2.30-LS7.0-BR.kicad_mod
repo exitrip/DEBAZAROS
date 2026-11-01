@@ -36,11 +36,10 @@
  (fp_line (start -2.56 1.5) (end -2.56 -1.5) (layer Eco2.User) (width 0.12)) 
  (fp_line (start -2.56 -1.5) (end -1.74 -1.5) (layer Eco2.User) (width 0.12)) 
  (fp_line (start -1.74 -1.5) (end -1.74 1.5) (layer Eco2.User) (width 0.12)) 
- (fp_line (start -1.74 1.5) (end -2.56 1.5) (layer Eco2.User) (width 0.12)) 
- (model ${KIPRJMOD}/kicad_lceda.3dshapes/SOT-223-4P_L6.5-W3.5-H1.6-LS7.0-P2.30.step 
-   (offset (xyz -941.755 660.4 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 -180)) 
-  ) (model ${KIPRJMOD}/kicad_lceda.3dshapes/SOT-223-4P_L6.5-W3.5-H1.6-LS7.0-P2.30.wrl 
-   (offset (xyz -941.755 660.4 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 -180)) 
-  ) 
- 
+ (fp_line (start -1.74 1.5) (end -2.56 1.5) (layer Eco2.User) (width 0.12))
+  (model "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-223.step"
+    (offset (xyz 0 0 0))
+    (scale (xyz 1 1 1))
+    (rotate (xyz 0 0 180))
+  )
 )

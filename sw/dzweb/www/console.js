@@ -39,7 +39,7 @@ export function init(root) {
   const pause = h("button", { onclick: () => { paused = !paused; pause.textContent = paused ? "Resume" : "Pause"; } }, "Pause");
   const quick = ["/info", "/vsync", "/capture/status", "/disp/0", "/disp/1", "/list"];
   root.append(
-    h("div.row", {}, ...quick.map((q) => h("button", { onclick: () => run(q) }, q)), pause,
+    h("div.row", {}, ...quick.map((q) => h("button", { title: `send ${q}`, onclick: () => run(q) }, q)), pause,
       h("button", { onclick: () => log.replaceChildren() }, "Clear")),
     log,
     h("div.cmd", {}, input, h("button.primary", { onclick: () => { run(input.value); input.value = ""; } }, "Send")),

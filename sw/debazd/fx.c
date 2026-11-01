@@ -18,7 +18,12 @@
  *   /fx/matrix f*9         rows out R, G, B; columns in R, G, B; 0..1
  *   /fx/matrix             -> /fx/matrix f*9 (-1 = channel not in mode 4)
  *   /fx/identity           = /fx/matrix 1 0 0 0 1 0 0 0 1
+ *   /fx/matrix/<o><i> f    one entry, o = out and i = in, each r|g|b (e.g.
+ *                          /fx/matrix/rg 0.5 = out R from in G); the rest stays
  *   /fx/hue f:deg [f:gain] rotate the hue about the grey axis (+ = R->G->B).
+ *                          Without gain the last gain stays (default 1).
+ *   /fx/hue/deg f, /fx/hue/gain f   one value alone (LFO: "/fx/hue/deg $f0")
+ *   /fx/hue                -> /fx/hue f:deg f:gain
  *                          Negative coefficients are clipped (no signed
  *                          gains), so between multiples of 120 degrees the
  *                          colours lose some saturation.
@@ -30,7 +35,10 @@
  * channel 0 (R lane), 3 (B lane) and 6 (G lane) with their KEY bit set; where
  * the tested pixel is inside all joined bands, HDMI_1's pixel replaces the
  * matrix result. The channels keep their mode (their gains do not change).
- *   /fx/key/color i:0xRRGGBB [i:tol]      box = colour +- tol (default 24)
+ *   /fx/key/color i:0xRRGGBB [i:tol]      box = colour +- tol (default 24;
+ *                                         without tol the last one stays)
+ *   /fx/key/tol i                         tolerance alone, same colour
+ *   /fx/key/color                         -> /fx/key/color i:0xRRGGBB i:tol
  *   /fx/key/range i:0xRRGGBB i:0xRRGGBB   low and high corner (a low byte
  *                                         above the high byte = outside)
  *   /fx/key/source i                      1 = test HDMI_0's video (SRC bits)
@@ -54,6 +62,9 @@
 
 static const int chan_of[3][3] = { { 0, 2, 1 }, { 6, 7, 8 }, { 3, 4, 5 } };
 static int wrap;
+static float hue_deg, hue_gain = 1.0f;		/* last /fx/hue */
+static uint32_t key_col = 0x00FF00;		/* last /fx/key/color */
+static int key_tol = 24, key_have;
 
 static const dz_field *mix_field(int c, const char *name)
 {
@@ -159,6 +170,12 @@ static void key_set(uint32_t lo, uint32_t hi)
 	dzd_reply("/fx/key", "ii", (int)lo, (int)hi);
 }
 
+/* the state model (state.c): the wrap flag (the matrix itself is fields) */
+void fx_state(state_cb cb, void *ctx)
+{
+	st_emit(cb, ctx, NULL, "/fx/wrap", "i", wrap);
+}
+
 int fx_dispatch(const dz_msg *m)
 {
 	const dz_arg *a = m->a;
@@ -190,14 +207,45 @@ int fx_dispatch(const dz_msg *m)
 		reply_matrix();
 		return 1;
 	}
-	if (!strcmp(m->path, "/fx/hue")) {
+	if (!strcmp(m->path, "/fx/hue") || !strcmp(m->path, "/fx/hue/deg") ||
+	    !strcmp(m->path, "/fx/hue/gain")) {
 		float mt[3][3];
+		const char *sub = m->path + 7;		/* "", "/deg", "/gain" */
 
 		if (n < 1) {
-			dzd_reply("/error", "ss", "/fx/hue needs degrees", m->path);
+			dzd_reply("/fx/hue", "ff", hue_deg, hue_gain);
 			return 1;
 		}
-		hue_matrix(num(&a[0]), n >= 2 ? clamp01(num(&a[1])) : 1.0f, mt);
+		if (!strcmp(sub, "/gain")) {
+			hue_gain = clamp01(num(&a[0]));
+		} else {
+			hue_deg = num(&a[0]);
+			if (!*sub && n >= 2)
+				hue_gain = clamp01(num(&a[1]));
+		}
+		hue_matrix(hue_deg, hue_gain, mt);
+		set_matrix(mt);
+		reply_matrix();
+		return 1;
+	}
+	if (!strncmp(m->path, "/fx/matrix/", 11) && strlen(m->path) == 13) {
+		static const char rgb[] = "rgb";
+		const char *oi = m->path + 11, *o = strchr(rgb, oi[0]), *i = strchr(rgb, oi[1]);
+		float mt[3][3];
+
+		if (!o || !i || !oi[0] || !oi[1] || n < 1) {
+			dzd_reply("/error", "ss", "/fx/matrix/<out><in> f (r, g, b)", m->path);
+			return 1;
+		}
+		for (int r = 0; r < 3; r++)		/* the matrix now (not mode 4 = 0) */
+			for (int c = 0; c < 3; c++) {
+				uint32_t mode = 0, k = 0;
+
+				dz_field_read(mix_field(chan_of[r][c], "mode"), &mode);
+				dz_field_read(mix_field(chan_of[r][c], "k"), &k);
+				mt[r][c] = mode == MODE_CONST ? (float)(k / K_ONE) : 0.0f;
+			}
+		mt[o - rgb][i - rgb] = num(&a[0]);
 		set_matrix(mt);
 		reply_matrix();
 		return 1;
@@ -226,16 +274,30 @@ int fx_dispatch(const dz_msg *m)
 		dzd_reply("/fx/wrap", "i", wrap);
 		return 1;
 	}
-	if (!strcmp(m->path, "/fx/key/color")) {
+	if (!strcmp(m->path, "/fx/key/color") || !strcmp(m->path, "/fx/key/tol")) {
 		uint32_t c;
 		int t;
 
-		if (n < 1 || a[0].type != 'i') {
-			dzd_reply("/error", "ss", "/fx/key/color needs 0xRRGGBB [tol]", m->path);
+		if (n < 1) {
+			dzd_reply("/fx/key/color", "ii", (int)key_col, key_tol);
 			return 1;
 		}
-		c = (uint32_t)a[0].i;
-		t = n >= 2 ? (int)num(&a[1]) : 24;
+		if (m->path[8] == 't') {		/* /fx/key/tol */
+			key_tol = (int)num(&a[0]);
+			if (!key_have)			/* no colour yet: only remember it */
+				return 1;
+		} else {
+			if (a[0].type != 'i') {
+				dzd_reply("/error", "ss", "/fx/key/color needs 0xRRGGBB [tol]", m->path);
+				return 1;
+			}
+			key_col = (uint32_t)a[0].i;
+			if (n >= 2)
+				key_tol = (int)num(&a[1]);
+			key_have = 1;
+		}
+		c = key_col;
+		t = key_tol;
 		key_set((uint32_t)(byte_add(c, 16, -t) << 16 | byte_add(c, 8, -t) << 8 |
 				   byte_add(c, 0, -t)),
 			(uint32_t)(byte_add(c, 16, t) << 16 | byte_add(c, 8, t) << 8 |
@@ -258,6 +320,7 @@ int fx_dispatch(const dz_msg *m)
 		return 1;
 	}
 	if (!strcmp(m->path, "/fx/key/off")) {
+		key_have = 0;			/* /fx/key/tol must not turn it on again */
 		for (int c = 0; c < 9; c++)
 			dz_field_write(mix_field(c, "key"), 0);
 		dzd_reply("/ok", "s", m->path);
