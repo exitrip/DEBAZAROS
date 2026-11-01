@@ -12,6 +12,9 @@
 //   +mode=3  HDMI + internal test tone (fs_inc NCO).
 // In every mode: each decoded video pixel and every sync state must equal
 // the input LAT clocks earlier.
+//   +sdly=N  (any mode) the data reaches the block N clocks after its syncs
+//            (as behind the effects stages), ctrl[14:12] = N: the output
+//            must equal the aligned input LAT + N clocks earlier.
 `timescale 1ns/1ps
 module tb;
   localparam H_ACT = 160, H_FP = 10, H_SYNC = 20, H_TOT = 300;
@@ -23,7 +26,7 @@ module tb;
   reg clk = 0;
   always #5 clk = ~clk;
   reg rst_n = 0;
-  integer mode = 0;
+  integer mode = 0, sd = 0;
 
   // ---- video source -------------------------------------------------------
   integer h = 0, v = 0;
@@ -36,6 +39,12 @@ module tb;
     if (h == H_TOT - 1) v <= (v == V_TOT - 1) ? 0 : v + 1;
     rgb <= $random;
   end
+  reg [23:0] rgb_late [0:7];   // the data N clocks late (+sdly)
+  always @(posedge clk) begin
+    rgb_late[0] <= rgb;
+    for (int k = 1; k < 8; k++) rgb_late[k] <= rgb_late[k-1];
+  end
+  wire [23:0] rgb_dut = sd == 0 ? rgb : rgb_late[sd - 1];
 
   // ---- audio source (mode 2): one sample every 251 clocks (~1.2 per line,
   // like 48 kHz at 720p60: 1.07 per line) --------------------
@@ -53,7 +62,7 @@ module tb;
   wire [2:0] td_p, td_n;
   hdmi_tx #(.LOOK(LOOK)) dut (
     .TMDS_Clk_p(tclk_p), .TMDS_Clk_n(tclk_n), .TMDS_Data_p(td_p), .TMDS_Data_n(td_n),
-    .aRst_n(rst_n), .vid_pData(rgb), .vid_pVDE(de), .vid_pHSync(hs), .vid_pVSync(vs),
+    .aRst_n(rst_n), .vid_pData(rgb_dut), .vid_pVDE(de), .vid_pHSync(hs), .vid_pVSync(vs),
     .PixelClk(clk), .SerialClk(1'b0), .ctrl(ctrl), .fs_inc(fs_inc),
     .aud_l(al), .aud_r(ar), .aud_valid(av));
   wire [9:0] s0 = dut.tmds0, s1 = dut.tmds1, s2 = dut.tmds2;
@@ -246,15 +255,15 @@ module tb;
       rhist[cyc] = {r2, r1, r0};
     end
     #1;
-    if (rst_n && cyc > LAT + 2 * H_TOT * V_TOT) begin
+    if (rst_n && cyc > LAT + sd + 2 * H_TOT * V_TOT) begin
       reg [26:0] in;
-      in = hist[cyc - LAT];
+      in = hist[cyc - LAT - sd];
       // DVI: same symbols as Digilent rgb2dvi
       if (mode == 0) begin
         ndvi++;
-        if ({s2, s1, s0} !== rhist[cyc - DVI_OFF])
+        if ({s2, s1, s0} !== rhist[cyc - DVI_OFF - sd])
           fail($sformatf("DVI symbols %03x %03x %03x != rgb2dvi %03x %03x %03x",
-                         s2, s1, s0, rhist[cyc - DVI_OFF][29:20], rhist[cyc - DVI_OFF][19:10], rhist[cyc - DVI_OFF][9:0]));
+                         s2, s1, s0, rhist[cyc - DVI_OFF - sd][29:20], rhist[cyc - DVI_OFF - sd][19:10], rhist[cyc - DVI_OFF - sd][9:0]));
       end
       case (st)
         S_CTRL, S_DI_END: begin
@@ -335,6 +344,7 @@ module tb;
 
   initial begin
     if (!$value$plusargs("mode=%d", mode)) mode = 0;
+    if (!$value$plusargs("sdly=%d", sd)) sd = 0;
     for (int k = 0; k < 256; k++) cnt_type[k] = 0;
     case (mode)
       0: ctrl = 0;
@@ -345,9 +355,11 @@ module tb;
         fs_inc = 32'd17111423;          // 2^32 / 251
       end
     endcase
+    ctrl[14:12] = sd;
     repeat (5) @(posedge clk);
     rst_n = 1;
     wait (cyc == NCYC);
+    if (sd) $display("sync delay %0d:", sd);
     $display("mode %0d: %0d video pixels, %0d sync checks, %0d DVI symbol compares, %0d islands (%0d packets each), %0d packets: ACR %0d ASP %0d AVI %0d AIF %0d SPD %0d null %0d; %0d audio samples received (%0d sent, %0d still buffered)",
              mode, nvid, nsync, ndvi, di_islands, di_pk_line, npkt, cnt_type[1], cnt_type[2],
              cnt_type[8'h82], cnt_type[8'h84], cnt_type[8'h83], cnt_type[0], nrx, nrx + sent.size(), sent.size());

@@ -56,4 +56,6 @@ for c in 1 2 3 4 6 8; do
 done
 for c in 0 5 7; do $D/dzctl /mixer/$c/mode 4; $D/dzctl /mixer/$c/k 32768; done
 $D/dzctl /hdmi/0/gain/rgb 255
+# DE/sync delay = the effects data latency (hdmi_tx ctrl[14:12], 2026-11-01)
+$D/dzctl /hdmi/0/sync_delay 2; $D/dzctl /hdmi/1/sync_delay 3
 echo DONE

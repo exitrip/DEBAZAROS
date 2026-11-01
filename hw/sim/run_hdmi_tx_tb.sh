@@ -1,7 +1,7 @@
 #!/bin/sh
 # run_hdmi_tx_tb.sh - simulate hw/rtl/hdmi_tx with Verilator 5 in all four
 # modes (DVI, HDMI, HDMI + audio, HDMI + test tone), then the AXI-Lite
-# register block, then the receiver loop (2 modes). Expect 7 x "ALL PASS".
+# register block, then the receiver loop (2 modes). Expect 10 x "ALL PASS".
 #   sh hw/sim/run_hdmi_tx_tb.sh        (from the repo root)
 set -e
 OUT=build/sim_hdmi_tx
@@ -16,6 +16,10 @@ rc=0
 for m in 0 1 2 3; do
 	$OUT/tbsim +mode=$m | grep -v '^- ' || rc=1
 done
+# sync delay ctrl[14:12]: data 3 (HDMI_1) / 7 clocks after the syncs
+$OUT/tbsim +mode=0 +sdly=3 | grep -v '^- ' || rc=1
+$OUT/tbsim +mode=2 +sdly=3 | grep -v '^- ' || rc=1
+$OUT/tbsim +mode=2 +sdly=7 | grep -v '^- ' || rc=1
 verilator --binary --timing -Wno-fatal -Wno-lint -Wno-style --top-module tb \
 	--Mdir $OUT/regs -o tbsim hw/sim/hdmi_audio_regs_tb.sv \
 	hw/rtl/hdmi_tx/hdmi_audio_regs.v > $OUT/regs.log 2>&1 || { tail -20 $OUT/regs.log; exit 1; }

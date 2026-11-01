@@ -18,6 +18,12 @@
 //   [1]    audio packets
 //   [2]    test tone: 1 kHz square, -24 dBFS, on the internal sample clock
 //   [9:8]  AVI VIC: 0 = 4 (720p60), 1 = 34 (1080p30), 2 = 16 (1080p60), 3 = none
+//   [14:12] sync delay: DE, HSYNC and VSYNC N pixel clocks later (0..7). The
+//          effects stages register the pixel data after v_axi4s_vid_out,
+//          while the syncs come straight from it: without this the picture
+//          is N px right of DE (the first N columns = blanking data, the last
+//          N source columns lost). 2026-11-01: HDMI_0 N = 2 (mixer pix_out +
+//          colorGainMain), HDMI_1 N = 3 (colorGainFeedback1 + c_addsub_1/2).
 // fs_inc: internal 48 kHz sample clock, fs = fs_inc * f_pixel / 2^32 (0 = off;
 //   720p60: 74.25 MHz -> fs_inc = 2776544).
 // aud_l/aud_r/aud_valid: external samples, one strobe per stereo sample, in
@@ -63,12 +69,24 @@ module hdmi_tx #(
     wire       audio_en = ctrl_q[0] & ctrl_q[1];
     wire       tone_en  = ctrl_q[2];
     wire [1:0] avi_sel  = ctrl_q[9:8];
+    wire [2:0] sync_dly = ctrl_q[14:12];
+
+    // ---- sync delay (ctrl[14:12]): {DE, VSYNC, HSYNC} to the data latency ----
+    reg  [2:0] sdl [0:6];
+    integer j;
+    always @(posedge PixelClk) begin
+        sdl[0] <= {vid_pVDE, vid_pVSync, vid_pHSync};
+        for (j = 1; j < 7; j = j + 1)
+            sdl[j] <= sdl[j-1];
+    end
+    wire [2:0] sync_in = (sync_dly == 3'd0) ? {vid_pVDE, vid_pVSync, vid_pHSync} : sdl[sync_dly - 3'd1];
+    wire       de_in   = sync_in[2];
 
     // ---- look-ahead delay line (SRLs) --------------------------------------
     reg [26:0] dly [0:LOOK-1];
     integer i;
     always @(posedge PixelClk) begin
-        dly[0] <= {vid_pVDE, vid_pVSync, vid_pHSync, vid_pData};
+        dly[0] <= {sync_in, vid_pData};
         for (i = 1; i < LOOK; i = i + 1)
             dly[i] <= dly[i-1];
     end
@@ -79,8 +97,8 @@ module hdmi_tx #(
     // clocks until the delayed DE rises (LOOK when the undelayed DE rises now)
     reg de_u_q = 0;
     reg [4:0] vcnt = 0;
-    always @(posedge PixelClk) de_u_q <= vid_pVDE;
-    wire rise_u = vid_pVDE & ~de_u_q;
+    always @(posedge PixelClk) de_u_q <= de_in;
+    wire rise_u = de_in & ~de_u_q;
     wire [4:0] kk = rise_u ? LOOK[4:0] : vcnt;
     always @(posedge PixelClk) vcnt <= (kk != 0) ? kk - 5'd1 : 5'd0;
     wire vid_pre_0   = hdmi_en && !de_d && kk >= 5'd3 && kk <= 5'd10;

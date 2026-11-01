@@ -739,6 +739,17 @@ H.264 18.5 fps) and even H.264 + dd hog -> 0 events, 0 underflows.
 0's VDMA (`dz_geom_w/h/stride`, fallback 1280x720); surfaces restart on a mode
 change, movies stop; hdmi2 boot mode no longer redraws slot 2 every 10 s;
 movie scaling fast_bilinear; vsync thread wakes 0.4 ms early (was 1.5).
+**Picture N px right of DE (found Nov 1 2026):** the effects stages register
+the pixel data after v_axi4s_vid_out, but HSYNC/VSYNC/DE go straight to
+hdmi_tx: HDMI_1 data 3 clocks late (colorGainFeedback1 mult PipeStages 1 +
+c_addsub_1 + c_addsub_2), HDMI_0 2 (mixer pix_out + colorGainMain). The
+first N columns = blanking data, the last N source columns lost (seen on
+HDMI_1 as a bar at the left edge with a crop at x ~700). Fix: hdmi_tx
+ctrl[14:12] = DE/sync delay 0..7 (`/hdmi/<n>/sync_delay`, TX0_CTRL /
+TX_CTRL, reset 0 = old; plreload sets 2 / 3; not in /state); sim +sdly
+cases in run_hdmi_tx_tb.sh (10 x ALL PASS). Build `sdly`. The HDMI_0 ->
+HDMI_1 feedback leg is 2 px later still than HDMI_1's own video (not
+compensated).
 **Output mode from OSC (Nov 1 2026, on the board):** `/video/mode` -> w h hz
 name; `/video/mode <name>` (names = `/video/modes` = hdmi2 -r names) stops
 hdmi2.elf by pid and starts `/home/ebaz/bin/hdmi2.elf -r <name>` (double

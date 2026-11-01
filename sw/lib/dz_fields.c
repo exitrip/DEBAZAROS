@@ -138,6 +138,12 @@ static const dz_field static_fields[] = {
 	{ "/audio/tx0/enable",AUD, 0x0C, 1, 1,  DZ_BOOL, 0, "HDMI_0 audio packets (needs /audio/tx0/hdmi)" },
 	{ "/audio/tx0/tone",  AUD, 0x0C, 2, 1,  DZ_BOOL, 0, "HDMI_0 1 kHz test tone (uses /audio/tx/fs_inc)" },
 	{ "/audio/tx0/avi",   AUD, 0x0C, 8, 2,  DZ_RAW,  0, "HDMI_0 AVI VIC: 0 = 720p60, 1 = 1080p30, 2 = 1080p60, 3 = none" },
+	/* hdmi_tx ctrl[14:12] (2026-11-01): DE + syncs N pixel clocks later, to
+	 * match the registers of the effects path (else the first N columns
+	 * show blanking data). Boot values (plreload.sh): HDMI_0 2, HDMI_1 3.
+	 * Older bitstreams store the bits and ignore them. Not in /state. */
+	{ "/hdmi/0/sync_delay", AUD, 0x0C, 12, 3, DZ_RAW, 0, "HDMI_0 DE/sync delay in pixel clocks (2 = data path latency)" },
+	{ "/hdmi/1/sync_delay", AUD, 0x00, 12, 3, DZ_RAW, 0, "HDMI_1 DE/sync delay in pixel clocks (3 = data path latency)" },
 	{ "/audio/rx/loop",   AUD, 0x08, 0, 1,  DZ_BOOL, 0, "send the HDMI_2 input audio to the HDMI_1 output" },
 	{ "/audio/rx/clear",  AUD, 0x08, 1, 1,  DZ_BOOL, 0, "toggle: clear the input peak meters" },
 	{ "/hdmi/2/hpd_low",  AUD, 0x08, 2, 1,  DZ_BOOL, 0, "force the HDMI_2 hot-plug line low (source sees an unplug; /capture/replug pulses it)" },
