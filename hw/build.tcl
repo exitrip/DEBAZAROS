@@ -47,6 +47,7 @@ set rtl [list \
     $rtl_dir/hdmi_tx/hdmi_tx_packets.v \
     $rtl_dir/hdmi_tx/hdmi_tx_rom.v \
     $rtl_dir/hdmi_tx/hdmi_tx_serdes.v \
+    $rtl_dir/hdmi_tx/hdmi_tx_cdc.v \
     $rtl_dir/hdmi_tx/hdmi_audio_regs.v \
     $rtl_dir/hdmi_tx/hdmi_rx.v \
     $rtl_dir/pl_io/pl_io.v \

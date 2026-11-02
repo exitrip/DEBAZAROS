@@ -63,7 +63,7 @@ module tb;
   hdmi_tx #(.LOOK(LOOK)) dut (
     .TMDS_Clk_p(tclk_p), .TMDS_Clk_n(tclk_n), .TMDS_Data_p(td_p), .TMDS_Data_n(td_n),
     .aRst_n(rst_n), .vid_pData(rgb_dut), .vid_pVDE(de), .vid_pHSync(hs), .vid_pVSync(vs),
-    .PixelClk(clk), .SerialClk(1'b0), .ctrl(ctrl), .fs_inc(fs_inc),
+    .PixelClk(clk), .SerialClk(1'b0), .SerdesDivClk(clk), .ctrl(ctrl), .fs_inc(fs_inc),
     .aud_l(al), .aud_r(ar), .aud_valid(av));
   wire [9:0] s0 = dut.tmds0, s1 = dut.tmds1, s2 = dut.tmds2;
 

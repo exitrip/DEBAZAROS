@@ -14,6 +14,14 @@ entity axi_dynclk is
       kVersionMajor : natural := 1;
       kVersionMinor : natural := 0;
       kAddBUFMR : boolean := false; --true, if BUFMR should be added between MMCM and BUFIO  
+      -- DEBAZAROS 2026-11-02: false (default) = BUFIO + BUFR as before for
+      -- the OSERDES (up to 120 MHz pixel by the OSERDES: keeps the 108 MHz
+      -- modes in spec); the 1x of the BUFR has an unknown phase against the
+      -- global PXL_CLK_O: hdmi_tx crosses with its FIFO (CDC_FIFO = 1).
+      -- true = the serial clock (CLKOUT0, 5x) on a BUFG too: BUFG + BUFG
+      -- (phase-aligned MMCM outputs, no FIFO), but BUFG max 464 MHz = 92.8
+      -- MHz pixel in the -1 grade (hdmi_tx CDC_FIFO = 0).
+      kSerialBufg : boolean := false;
       -- User parameters ends
       -- Do not modify the parameters beyond this line
    
@@ -25,7 +33,13 @@ entity axi_dynclk is
    port (
       -- Users to add ports here
 		REF_CLK_I                     : in  std_logic;
+      -- DEBAZAROS 2026-11-02 (ROADMAP.md task 20): PXL_CLK_O = MMCM CLKOUT1
+      -- on a BUFG (global: all fabric logic of the pixel domain).
+      -- PXL_CLK_5X_O + PXL_CLK_DIV_O = the OSERDES CLK + CLKDIV pair:
+      -- kSerialBufg true: BUFG(CLKOUT0) + PXL_CLK_O; false: BUFIO + BUFR / 5
+      -- (unknown phase against PXL_CLK_O: hdmi_tx_cdc.v FIFO).
       PXL_CLK_O                     : out std_logic;
+      PXL_CLK_DIV_O                 : out std_logic;
       PXL_CLK_5X_O                  : out std_logic;
       LOCKED_O                      : out std_logic;   
       -- User ports ends
@@ -75,6 +89,7 @@ architecture arch_imp of axi_dynclk is
          CLK_DIV_REG  :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
          CLK_LOCK_REG :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
          CLK_FLTR_REG :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
+         CLK_O1_REG   :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
          S_AXI_ACLK	: in std_logic;
          S_AXI_ARESETN	: in std_logic;
          S_AXI_AWADDR	: in std_logic_vector(C_S_AXI_ADDR_WIDTH-1 downto 0);
@@ -109,6 +124,7 @@ architecture arch_imp of axi_dynclk is
 		SCLK              : in std_logic;
 		RST               : in std_logic;
 		S1_CLKOUT0        : in std_logic_vector(35 downto 0);
+		S1_CLKOUT1        : in std_logic_vector(31 downto 0);
 		S1_CLKFBOUT       : in std_logic_vector(35 downto 0);
 		S1_DIVCLK         : in std_logic_vector(13 downto 0);
 		S1_LOCK           : in std_logic_vector(39 downto 0);
@@ -118,6 +134,7 @@ architecture arch_imp of axi_dynclk is
 		CLKFBOUT_O        : out std_logic;
 		SRDY              : out std_logic;
 		PXL_CLK           : out std_logic;
+		PXL_CLK1          : out std_logic;
 		LOCKED_O          : out std_logic
 		);
 	end component;
@@ -131,6 +148,7 @@ architecture arch_imp of axi_dynclk is
     signal CLK_DIV_REG                    : std_logic_vector(C_S_AXI_LITE_DATA_WIDTH-1 downto 0);
     signal CLK_LOCK_REG                   : std_logic_vector(C_S_AXI_LITE_DATA_WIDTH-1 downto 0);
     signal CLK_FLTR_REG                   : std_logic_vector(C_S_AXI_LITE_DATA_WIDTH-1 downto 0);
+    signal CLK_O1_REG                     : std_logic_vector(C_S_AXI_LITE_DATA_WIDTH-1 downto 0);
 
 	type CLK_STATE_TYPE is (RESET, WAIT_LOCKED, WAIT_EN, WAIT_SRDY, ENABLED);
 	signal clk_state                 : CLK_STATE_TYPE := RESET;
@@ -144,6 +162,8 @@ architecture arch_imp of axi_dynclk is
 	signal mmcm_fbclk_in             : std_logic;
 	signal mmcm_fbclk_out            : std_logic;
 	signal mmcm_clk					 : std_logic;
+	signal mmcm_clk1				 : std_logic;
+	signal pxl_clk_g				 : std_logic;
 	
 	signal bufio_in                 : std_logic;
 begin
@@ -164,6 +184,7 @@ axi_dynclk_S00_AXI_inst : axi_dynclk_S00_AXI
       CLK_DIV_REG  => CLK_DIV_REG,  
       CLK_LOCK_REG => CLK_LOCK_REG,
       CLK_FLTR_REG => CLK_FLTR_REG,
+      CLK_O1_REG   => CLK_O1_REG,
 		
       S_AXI_ACLK	=> s_axi_lite_aclk,
       S_AXI_ARESETN   => s_axi_lite_aresetn,
@@ -201,6 +222,7 @@ DontGenerateBUFMR: if not kAddBUFMR generate
 end generate DontGenerateBUFMR;
 
 	-- Add user logic here
+RegionalSerial: if not kSerialBufg generate
 	BUFIO_inst : BUFIO
 	port map (
 		O => PXL_CLK_5X_O, -- 1-bit output: Clock output (connect to I/O clock loads).
@@ -218,6 +240,16 @@ end generate DontGenerateBUFMR;
 		CLR => xBUFR_Rst, -- 1-bit input: Active high, asynchronous clear (Divided modes only)		
 		I => bufio_in      -- 1-bit input: Clock buffer input driven by an IBUF, MMCM or local interconnect
 	);
+end generate RegionalSerial;
+
+GlobalSerial: if kSerialBufg generate
+	BUFG_ser : BUFG
+	port map (
+		O => PXL_CLK_5X_O,
+		I => mmcm_clk
+	);
+	pxl_clk <= pxl_clk_g;		-- CLKDIV = the global pixel clock itself
+end generate GlobalSerial;
    
 xBUFR_Rst <= xLckdRisingFlag; --pulse CLR on BUFR once the clock returns
   
@@ -231,12 +263,14 @@ xBUFR_Rst <= xLckdRisingFlag; --pulse CLR on BUFR once the clock returns
 		RST => not(s_axi_lite_aresetn),
 		SRDY => srdy,
 		S1_CLKOUT0 => CLK_FRAC_REG(3 downto 0) & CLK_O_REG,
+		S1_CLKOUT1 => CLK_O1_REG,
 		S1_CLKFBOUT => CLK_FRAC_REG(19 downto 16) & CLK_FB_REG,
 		S1_DIVCLK => CLK_DIV_REG(13 downto 0),
 		S1_LOCK => CLK_FLTR_REG(7 downto 0) & CLK_LOCK_REG,
 		S1_DIGITAL_FILT => CLK_FLTR_REG(25 downto 16),
 		REF_CLK => REF_CLK_I,
 		PXL_CLK => mmcm_clk,
+		PXL_CLK1 => mmcm_clk1,
 		CLKFBOUT_O => mmcm_fbclk_out,
 		CLKFBOUT_I => mmcm_fbclk_in,
 		LOCKED_O => aLocked
@@ -265,7 +299,15 @@ begin
    end if;
 end process LockedDetect;
       	
-	PXL_CLK_O <= pxl_clk;
+	-- the global pixel clock (2026-11-02); the BUFR output only drives the
+	-- OSERDES CLKDIV
+	BUFG_pxl : BUFG
+	port map (
+		O => pxl_clk_g,
+		I => mmcm_clk1
+	);
+	PXL_CLK_O <= pxl_clk_g;
+	PXL_CLK_DIV_O <= pxl_clk;
 	LOCKED_O <= aLocked; --dcm_locked of processor system reset expects direct connection to MMCM_Locked
    
    process (s_axi_lite_aclk)

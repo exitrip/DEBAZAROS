@@ -36,7 +36,13 @@
 // structure as Digilent rgb2dvi.
 `timescale 1ns / 1ps
 module hdmi_tx #(
-    parameter LOOK = 10            // >= 10: video preamble (8) + guard (2)
+    parameter LOOK = 10,           // >= 10: video preamble (8) + guard (2)
+    // 2026-11-02 (ROADMAP.md task 20): 1 (default) = SerdesDivClk is the
+    // BUFR / 5 of the BUFIO serial clock while PixelClk is the global BUFG
+    // clock: the TMDS words cross in a FIFO (hdmi_tx_cdc.v). 0 = SerdesDivClk
+    // has PixelClk's phase (axi_dynclk kSerialBufg true: BUFG + BUFG, or the
+    // old design with one BUFR pixel clock): direct.
+    parameter CDC_FIFO = 1
 ) (
     output wire       TMDS_Clk_p,
     output wire       TMDS_Clk_n,
@@ -49,6 +55,7 @@ module hdmi_tx #(
     input  wire       vid_pVSync,
     input  wire       PixelClk,
     input  wire       SerialClk,
+    input  wire       SerdesDivClk,  // the OSERDES CLKDIV (axi_dynclk PXL_CLK_DIV_O)
     input  wire [31:0] ctrl,
     input  wire [31:0] fs_inc,
     input  wire [15:0] aud_l,
@@ -247,12 +254,31 @@ module hdmi_tx #(
         .ctrl(cdata[5:4]), .terc4(idata[11:8]), .tmds(tmds2));
 
     // ---- serializers ------------------------------------------------------------
-    hdmi_tx_serdes ser_clk (.PixelClk(PixelClk), .SerialClk(SerialClk), .rst(rst),
+    // the OSERDES run on SerdesDivClk (CLKDIV) with a reset synchronous to it
+    wire [9:0] s0, s1, s2;
+    wire       srst;
+    generate
+        if (CDC_FIFO) begin : g_cdc
+            (* ASYNC_REG = "TRUE" *) reg [1:0] srst_sync = 2'b11;
+            always @(posedge SerdesDivClk or negedge aRst_n)
+                if (!aRst_n)
+                    srst_sync <= 2'b11;
+                else
+                    srst_sync <= {srst_sync[0], 1'b0};
+            assign srst = srst_sync[1];
+            hdmi_tx_cdc #(.W(30)) cdc (.wclk(PixelClk), .wrst(rst), .wdata({tmds2, tmds1, tmds0}),
+                .rclk(SerdesDivClk), .rrst(srst), .rdata({s2, s1, s0}));
+        end else begin : g_direct
+            assign srst = rst;
+            assign {s2, s1, s0} = {tmds2, tmds1, tmds0};
+        end
+    endgenerate
+    hdmi_tx_serdes ser_clk (.PixelClk(SerdesDivClk), .SerialClk(SerialClk), .rst(srst),
         .pdata(10'b1111100000), .out_p(TMDS_Clk_p), .out_n(TMDS_Clk_n));
-    hdmi_tx_serdes ser_d0 (.PixelClk(PixelClk), .SerialClk(SerialClk), .rst(rst),
-        .pdata(tmds0), .out_p(TMDS_Data_p[0]), .out_n(TMDS_Data_n[0]));
-    hdmi_tx_serdes ser_d1 (.PixelClk(PixelClk), .SerialClk(SerialClk), .rst(rst),
-        .pdata(tmds1), .out_p(TMDS_Data_p[1]), .out_n(TMDS_Data_n[1]));
-    hdmi_tx_serdes ser_d2 (.PixelClk(PixelClk), .SerialClk(SerialClk), .rst(rst),
-        .pdata(tmds2), .out_p(TMDS_Data_p[2]), .out_n(TMDS_Data_n[2]));
+    hdmi_tx_serdes ser_d0 (.PixelClk(SerdesDivClk), .SerialClk(SerialClk), .rst(srst),
+        .pdata(s0), .out_p(TMDS_Data_p[0]), .out_n(TMDS_Data_n[0]));
+    hdmi_tx_serdes ser_d1 (.PixelClk(SerdesDivClk), .SerialClk(SerialClk), .rst(srst),
+        .pdata(s1), .out_p(TMDS_Data_p[1]), .out_n(TMDS_Data_n[1]));
+    hdmi_tx_serdes ser_d2 (.PixelClk(SerdesDivClk), .SerialClk(SerialClk), .rst(srst),
+        .pdata(s2), .out_p(TMDS_Data_p[2]), .out_n(TMDS_Data_n[2]));
 endmodule

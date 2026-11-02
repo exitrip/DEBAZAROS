@@ -60,6 +60,7 @@ module mmcme2_drp
       output reg        SRDY,
 		
 		input 	[35:0]	S1_CLKOUT0,
+		input 	[31:0]	S1_CLKOUT1,		// DEBAZAROS 2026-11-02: CLKOUT1 = pixel clock (global)
 		input 	[35:0]	S1_CLKFBOUT,
 		input 	[13:0]	S1_DIVCLK,
 		input 	[39:0]	S1_LOCK,
@@ -67,6 +68,7 @@ module mmcme2_drp
 		
 		input					REF_CLK,
 		output				PXL_CLK,
+		output				PXL_CLK1,		// CLKOUT1 (divide = 5 x CLKOUT0's)
 		output				CLKFBOUT_O,
 		input				CLKFBOUT_I,
 		output				LOCKED_O
@@ -76,7 +78,7 @@ module mmcme2_drp
    // 100 ps delay for behavioral simulations
    localparam  TCQ = 100;
    
-   wire [38:0]  rom [12:0];  // 39 bit word 13 words deep array of reg writes to perform (no longer a ROM)
+   wire [38:0]  rom [14:0];  // 39 bit word 15 words deep array of reg writes to perform (no longer a ROM)
    reg [3:0]   rom_addr;
    reg [38:0]  rom_do;
    
@@ -117,6 +119,12 @@ module mmcme2_drp
       assign rom[1]  =  {7'h08, 16'h1000, S1_CLKOUT0[15:0]};
       assign rom[2]  =  {7'h09, 16'h8000, S1_CLKOUT0[31:16]};
 						
+      // Store CLKOUT1 divide and phase (DEBAZAROS 2026-11-02; XAPP888 masks:
+      // ClkReg1 keeps [12], ClkReg2 keeps [15:10]). At the end of the table
+      // (rom[13], rom[14]) so that the old entries keep their order.
+      assign rom[13] = {7'h0A, 16'h1000, S1_CLKOUT1[15:0]};
+      assign rom[14] = {7'h0B, 16'hFC00, S1_CLKOUT1[31:16]};
+
       // Store CLKOUT0 additional frac values
       assign rom[3] = {7'h07, 16'hC3FF, 2'b00 , S1_CLKOUT0[35:32], 10'h000}; 
       
@@ -172,7 +180,7 @@ module mmcme2_drp
    //    each state takes to reconfigure.
    // STATE_COUNT_CONST is used to reset the counters and should match the
    //    number of registers necessary to reconfigure each state.
-   localparam STATE_COUNT_CONST  = 13;
+   localparam STATE_COUNT_CONST  = 15;	// 13 + CLKOUT1 (2026-11-02)
    reg [3:0] state_count         = STATE_COUNT_CONST; 
    reg [3:0] next_state_count    = STATE_COUNT_CONST;
    
@@ -373,6 +381,10 @@ module mmcme2_drp
     .CLKOUT0_PHASE        (0.000),
     .CLKOUT0_DUTY_CYCLE   (0.500),
     .CLKOUT0_USE_FINE_PS  ("FALSE"),
+    .CLKOUT1_DIVIDE       (DIV_F * 5),	// the pixel clock (global, BUFG)
+    .CLKOUT1_PHASE        (0.000),
+    .CLKOUT1_DUTY_CYCLE   (0.500),
+    .CLKOUT1_USE_FINE_PS  ("FALSE"),
     .CLKIN1_PERIOD        (10.000),
     .REF_JITTER1          (0.010))
   mmcm_adv_inst
@@ -381,7 +393,7 @@ module mmcme2_drp
     .CLKFBOUTB           (clkfboutb_unused),
     .CLKOUT0             (PXL_CLK),
     .CLKOUT0B            (clkout0b_unused),
-    .CLKOUT1             (clkout1_unused),
+    .CLKOUT1             (PXL_CLK1),
     .CLKOUT1B            (clkout1b_unused),
     .CLKOUT2             (clkout2_unused),
     .CLKOUT2B            (clkout2b_unused),
