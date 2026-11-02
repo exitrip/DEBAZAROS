@@ -33,6 +33,18 @@ extern int capture_auto;	/* debazd.c: capture size follows the input */
 void lfo_init(void);
 int  lfo_dispatch(const dz_msg *m);	/* 0 = not an /lfo address */
 void lfo_tick(double dt);		/* once per frame (or timer) */
+/* react.c: audio analysis (2026-11-01) */
+int   react_dispatch(const dz_msg *m);	/* 0 = not an /audio/react address */
+void  react_tick(void);			/* once per frame, before lfo_tick */
+void  react_stop(void);
+int   react_feature_index(const char *name);	/* -1 = unknown */
+const char *react_feature_name(int i);
+float react_feature(int i);		/* 0..1 (a full-scale sine = 1) */
+int   react_samples(float *out, int n, int chan);	/* newest n capture samples (chan 0 =
+					 * (L+R)/2, 1 = L, 2 = R), 0 = none */
+void  react_hold(int on, const char *why);	/* pause / resume the capture source */
+int   react_capturing(void);		/* react's arecord holds the capture PCM */
+void  dds_tick(void);			/* once per frame after react_tick: AWG scope */
 /* Send a message template ("/addr a b $0 ...") to debazd itself. */
 void dzd_send_template(const char *tpl);
 
@@ -88,6 +100,7 @@ int  cue_dispatch(const dz_msg *m);	/* /show, /scene, /cue (cue.c) */
 int  state_dispatch(const dz_msg *m);	/* /state, /state/snap|recall|diff */
 void disp_state(state_cb cb, void *ctx);
 void lfo_state(state_cb cb, void *ctx);
+void react_state(state_cb cb, void *ctx);
 void dds_state(state_cb cb, void *ctx);
 void ascii_state(state_cb cb, void *ctx);
 void sound_state(state_cb cb, void *ctx);	/* sources, file players */

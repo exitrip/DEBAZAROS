@@ -37,6 +37,19 @@
  *   /dds/<n>/awg s:"v v v ..."       2..1024 points 0..65535 (one cycle); linear
  *                                    interpolation to 2048 entries (cyclic)
  *   /dds/<n>/awg                     -> /dds/<n>/awg s:points (the copy)
+ *   /dds/<n>/scope f:gain [s:h|v|keep] [s:sum|l|r]   audio scope (2026-11-01): each frame
+ *                                    the newest 2048 samples of the react.c
+ *                                    capture source go into the AWG table
+ *                                    (0x8000 + sample x gain, clamped). h = one
+ *                                    cycle across the visible width (bars 1 awg:
+ *                                    the waveform as brightness along each line),
+ *                                    v = one cycle down the frame (hbars 1 awg),
+ *                                    keep = the pattern stays (default h).
+ *                                    gain 0 = off (the table keeps the last frame).
+ *                                    sum = (L+R)/2 (default), l / r = one channel
+ *   /dds/<n>/scope/gain f, /scope/mode s, /scope/channel s   one value alone
+ *                                    (LFO targets, e.g. "/dds/1/scope/gain $f0")
+ *   /dds/<n>/scope                   -> /dds/<n>/scope f:gain s:mode s:channel
  *   /dds/raster                      -> /dds/raster f:line_hz f:frame_hz
  *                                       i:htotal i:vtotal i:width i:height
  * shape: sine saw sawdown tri square pulse awg, or 0..6.
@@ -101,6 +114,23 @@ static struct {
 	int    pat, rows, shape;
 	double count, shift;
 } P[2];
+
+/* audio scope per channel */
+static const char *const chan_names[] = { "sum", "l", "r" };
+static struct {
+	float gain;			/* 0 = off */
+	char  mode[8];
+	int   chan;			/* 0 sum, 1 L, 2 R (react_samples) */
+} S[2] = { { 0, "h", 0 }, { 0, "h", 0 } };
+
+static int chan_arg(const char *c)
+{
+	for (int i = 0; i < 3; i++)
+		if (!strcmp(c, chan_names[i]))
+			return i;
+	return !strcmp(c, "L") ? 1 : !strcmp(c, "R") ? 2 : -1;
+}
+
 
 static uint32_t base_of(int n)
 {
@@ -311,6 +341,18 @@ static void pattern(int n, raster r, double vis)
 	}
 }
 
+/* the scope's pattern: one AWG cycle across the width (h) or down (v) */
+static void scope_pattern(int n, raster r, double vis)
+{
+	if (S[n].gain <= 0 || S[n].mode[0] == 'k')
+		return;
+	P[n].pat = S[n].mode[0] == 'h' ? P_BARS : P_HBARS;
+	P[n].count = 1;
+	P[n].shift = 0;
+	P[n].shape = 6;			/* awg */
+	pattern(n, r, vis);
+}
+
 int dds_dispatch(const dz_msg *m)
 {
 	const char *p = m->path, *c;
@@ -331,7 +373,8 @@ int dds_dispatch(const dz_msg *m)
 	/* the commands of this file; anything else is a field */
 	static const char *const cmds[] = { "wave", "bars", "hbars", "checker", "slant", "scroll",
 					    "pulse", "off", "step", "steps", "awg", "shift",
-					    "count", "cols", "rows", "pattern" };
+					    "count", "cols", "rows", "pattern", "scope", "scope/gain",
+					    "scope/mode", "scope/channel" };
 	int known = !strncmp(c, "step/", 5);	/* /dds/<n>/step/<i>: the state model */
 	for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++)
 		if (!strcmp(c, cmds[i]))
@@ -453,6 +496,39 @@ int dds_dispatch(const dz_msg *m)
 		uint32_t ph = m->n > 6 ? (uint32_t)(int64_t)argf(&m->a[6]) : 0;
 		put_step(n, i, (uint32_t)(int64_t)argf(&m->a[1]), (uint32_t)(int64_t)argf(&m->a[2]),
 			 len, ph);
+	} else if (!strcmp(c, "scope")) {
+		if (m->n == 0) {
+			dzd_reply(p, "fss", S[n].gain, S[n].mode, chan_names[S[n].chan]);
+			return 1;
+		}
+		const char *md = m->n >= 2 && m->a[1].type == 's' ? m->a[1].s : "h";
+		int chn = m->n >= 3 && m->a[2].type == 's' ? chan_arg(m->a[2].s) : S[n].chan;
+		if ((strcmp(md, "h") && strcmp(md, "v") && strcmp(md, "keep")) || chn < 0)
+			goto bad;
+		int was_on = S[n].gain > 0, mode_new = strcmp(md, S[n].mode) != 0;
+		S[n].gain = (float)argf(&m->a[0]);
+		S[n].chan = chn;
+		snprintf(S[n].mode, sizeof(S[n].mode), "%s", md);
+		if (!was_on || mode_new)
+			scope_pattern(n, r, vis);
+	} else if (!strcmp(c, "scope/gain")) {
+		if (m->n < 1)
+			goto bad;
+		int was_on = S[n].gain > 0;
+		S[n].gain = (float)argf(&m->a[0]);
+		if (!was_on)			/* an LFO sends this every frame: pattern once */
+			scope_pattern(n, r, vis);
+	} else if (!strcmp(c, "scope/mode")) {
+		if (m->n < 1 || m->a[0].type != 's' ||
+		    (strcmp(m->a[0].s, "h") && strcmp(m->a[0].s, "v") && strcmp(m->a[0].s, "keep")))
+			goto bad;
+		snprintf(S[n].mode, sizeof(S[n].mode), "%s", m->a[0].s);
+		scope_pattern(n, r, vis);
+	} else if (!strcmp(c, "scope/channel")) {
+		int chn = m->n >= 1 && m->a[0].type == 's' ? chan_arg(m->a[0].s) : -1;
+		if (chn < 0)
+			goto bad;
+		S[n].chan = chn;
 	} else if (!strcmp(c, "steps")) {
 		reply_steps(n);
 		return 1;
@@ -469,6 +545,29 @@ int dds_dispatch(const dz_msg *m)
 bad:
 	dzd_reply("/error", "ss", p, "bad arguments (see sw/debazd/dds.c)");
 	return 1;
+}
+
+/* audio scope: the newest samples into the AWG table (2048 writes per
+ * channel and frame) */
+void dds_tick(void)
+{
+	static float smp[AWG_N];
+	int ok = -1;
+
+	for (int n = 0; n < 2; n++) {
+		if (S[n].gain <= 0)
+			continue;
+		if (ok < 0)
+			ok = present();
+		if (!ok || !react_samples(smp, AWG_N, S[n].chan))
+			return;
+		for (int k = 0; k < AWG_N; k++) {
+			float v = 32768.0f + smp[k] * S[n].gain * 32767.0f;
+
+			v = v < 0 ? 0 : v > 65535 ? 65535 : v;
+			wr(n, R_AWG + 4u * (uint32_t)k, (uint32_t)v);
+		}
+	}
 }
 
 /* the state model (state.c): the write-only tables, only if debazd wrote
@@ -497,10 +596,16 @@ void dds_state(state_cb cb, void *ctx)
 			snprintf(p, sizeof(p), "/dds/%d/awg", n);
 			st_emit(cb, ctx, NULL, p, "s", pts);
 		}
+		snprintf(p, sizeof(p), "/dds/%d/scope", n);
+		st_emit(cb, ctx, NULL, p, "fss", S[n].gain, S[n].mode, chan_names[S[n].chan]);
 	}
 }
 
 #else	/* hw_map.h without dz_osc2 */
+
+void dds_tick(void)
+{
+}
 
 int dds_dispatch(const dz_msg *m)
 {

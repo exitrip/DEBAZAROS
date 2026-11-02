@@ -7,10 +7,29 @@ BIN=${1:-out/native}
 PORT=19123
 FAIL=0
 LOCKDIR=$(mktemp -d)
+export DZ_SHOW_DIR="$LOCKDIR/shows"	# fresh shows every run (a saved show of an
+					# earlier run made /show/save refuse: stale load)
+mkdir -p "$DZ_SHOW_DIR"
 # /video/mode starts this instead of hdmi2.elf: it writes its arguments
 printf '#!/bin/sh\necho "$@" > %s/hdmi2.args\n' "$LOCKDIR" > "$LOCKDIR/hdmi2.elf"
 chmod +x "$LOCKDIR/hdmi2.elf"
 export DZ_HDMI2="$LOCKDIR/hdmi2.elf"
+# /audio/react/source capture reads this instead of arecord: 2 s of 100 Hz,
+# then 2 s of 5 kHz, then silence (48 kHz s16 stereo, real time)
+cat > "$LOCKDIR/tone.py" <<'PYEOF'
+import math, struct, sys, time
+o = sys.stdout.buffer
+for f in (100.0, 5000.0, 0.0):
+    for blk in range(120):
+        s = b"".join(struct.pack("<hh", v, v) for v in
+                     (int(16000 * math.sin(2 * math.pi * f * (blk * 1200 + i) / 48000)) for i in range(1200)))
+        o.write(s); o.flush(); time.sleep(0.025)
+time.sleep(30)
+PYEOF
+export DZ_REACT_CMD="python3 $LOCKDIR/tone.py"
+# /audio/rec runs this arecord (2 s, writes nothing): the capture hand-over test
+printf '#!/bin/sh\nsleep 2\n' > "$LOCKDIR/arecord"; chmod +x "$LOCKDIR/arecord"
+export PATH="$LOCKDIR:$PATH"
 
 "$BIN/debazd" -n -p $PORT 2>"$LOCKDIR/log" &
 PID=$!
@@ -214,6 +233,26 @@ check vmode-bad    "unknown mode"                  q /video/mode 999x9
 check vmode-set    "starting"                      q /video/mode 800x600
 sleep 0.2
 check vmode-args   "-r 800x600"                    cat "$LOCKDIR/hdmi2.args"
+# audio reactivity (react.c + lfo shape audio): fed by tone.py
+check react-off    "/audio/react \"off\" 0"        q /audio/react
+check react-fftbad "256, 512 or 1024"              q /audio/react/fft 300
+q /lfo/3/audio bass > /dev/null; q /lfo/3/range 0 100 > /dev/null; q /lfo/3/on 1 > /dev/null
+check lfo-badfeat  "audio feature"                 q /lfo/3/audio treble
+q /lfo/4/audio high > /dev/null; q /lfo/4/gain 0 > /dev/null; q /lfo/4/range 0 100 > /dev/null; q /lfo/4/on 1 > /dev/null
+check react-src    "/audio/react/source \"capture\"" q /audio/react/source capture	# the tone starts
+sleep 1.5
+check react-bass   "ok"  sh -c "$BIN/dzctl -p $PORT -t 200 /audio/react | awk '{ print (\$6 > 0.3 && \$6 > 4 * \$9) ? \"ok\" : \$0 }'"
+check lfo-audio    "ok"  sh -c "$BIN/dzctl -p $PORT -t 200 /lfo/3 | awk '{ print (\$2 > 30) ? \"ok\" : \$0 }'"
+sleep 3
+check lfo-autogain "ok"  sh -c "$BIN/dzctl -p $PORT -t 200 /lfo/4 | awk '{ print (\$2 > 70) ? \"ok\" : \$0 }'"
+check react-high   "ok"  sh -c "$BIN/dzctl -p $PORT -t 200 /audio/react | awk '{ print (\$9 > 0.3 && \$9 > 4 * \$6) ? \"ok\" : \$0 }'"
+check react-held   "held: recording"  sh -c "$BIN/dzctl -p $PORT -t 200 /audio/rec selftest_rec >/dev/null; $BIN/dzctl -p $PORT -t 200 /audio/react"
+sleep 2.5
+check react-resume "\"ok\""                         q /audio/react
+check react-state  "\"/lfo/3/audio\" \"bass\""        sh -c "$BIN/dzctl -p $PORT -t 400 /state | grep -F /lfo/3/audio"
+check react-st-src "\"/audio/react/source\" \"capture\"" sh -c "$BIN/dzctl -p $PORT -t 400 /state | grep -F /audio/react/source"
+check dds-scope    "dz_osc2"                       q /dds/1/scope 4 v	# simulation: no dz_osc2 (board test)
+q /audio/react/source off > /dev/null; q /lfo/reset > /dev/null
 # crop windows (disp.c): 720p window in a 1920x1080 slot, x even, clamped
 check crop-set     "/disp/0/crop 100 50"           q /disp/0/crop 100 50
 check crop-odd     "/disp/0/crop 100 51"           q /disp/0/crop 101 51
@@ -286,7 +325,7 @@ q /state/snap t1 >/dev/null; q /mixer/3/k 777 >/dev/null; q /lfo/5/rate 3 >/dev/
 check state-diff    "/state/end 2"                          q /state/diff t1
 q /state/recall t1 >/dev/null
 check state-recall  "/state/end 0"                          q /state/diff t1
-check state-count   "/state/end 4"                          q /state
+check state-count   "ok"  sh -c "$BIN/dzctl -p $PORT -t 400 /state | awk '/^.state.end/ { print (\$2 > 400) ? \"ok\" : \$0 }'"
 q /show/new selftest >/dev/null; q /mixer/3/k 100 >/dev/null; q /lfo/2/rate 1 >/dev/null
 check cue-key       "\"keyframe\""                          q /cue/record s1 1 keyframe dark
 q /mixer/3/k 200 >/dev/null

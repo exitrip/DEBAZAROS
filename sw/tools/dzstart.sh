@@ -12,7 +12,7 @@
 #                                                     what does not run
 #
 # Config /home/ebaz/dzstart.conf (shell, all optional):
-#   BITSTREAM=ebaz4205_2out1in_20261029_osc_epo.bit.bin
+#   BITSTREAM=ebaz4205_2out1in_20261101_sdly.bit.bin
 #   HDMI2_ARGS="-r 1280x720"
 #   WEB=1                      0 = do not start dzweb
 #

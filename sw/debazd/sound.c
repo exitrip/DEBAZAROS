@@ -246,6 +246,7 @@ static int rec_start(const char *name, double secs)
 	if (rec_pid > 0) {
 		stop_pid(&rec_pid, SIGINT);
 		own_like_dir(rec_file);
+		react_hold(0, NULL);
 	}
 	snprintf(rec_file, sizeof(rec_file), "%s%s", name,
 		 (n > 4 && !strcmp(name + n - 4, ".wav")) ? "" : ".wav");
@@ -255,9 +256,12 @@ static int rec_start(const char *name, double secs)
 	snprintf(cmd, sizeof(cmd),
 		 "exec arecord -q -D hw:DEBAZ,2 -f S16_LE -c 2 -r 48000 -d %d '%s/%s'",
 		 (int)(secs + 0.5), DZ_AUDIO_DIR, rec_file);
+	react_hold(1, "recording");		/* the capture PCM has one owner */
 	rec_pid = spawn(cmd);
-	if (!rec_pid)
+	if (!rec_pid) {
+		react_hold(0, NULL);
 		return -1;
+	}
 	rec_t0 = now_ms();
 	dzd_log("sound: recording %s (max %.0f s)\n", rec_file, secs);
 	return 0;
@@ -289,6 +293,7 @@ void sound_tick(void)
 		dzd_log("sound: recording %s ended\n", rec_file);
 		own_like_dir(rec_file);
 		rec_pid = 0;
+		react_hold(0, NULL);
 	}
 }
 
@@ -356,6 +361,7 @@ int sound_dispatch(const dz_msg *m)
 		if (rec_pid > 0) {
 			stop_pid(&rec_pid, SIGINT);	/* SIGINT: arecord finishes the WAV header */
 			own_like_dir(rec_file);
+			react_hold(0, NULL);
 		}
 		dzd_reply("/ok", "ss", m->path, rec_file);
 		return 1;

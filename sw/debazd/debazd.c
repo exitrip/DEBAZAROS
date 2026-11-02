@@ -502,7 +502,7 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
-	if (lfo_dispatch(m) || disp_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
+	if (react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
 	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
@@ -890,6 +890,8 @@ int main(int argc, char **argv)
 				t = now_ms();
 				trans_tick((t - last_tick) / 1000.0);	/* before the LFOs: they win */
 				cue_tick((t - last_tick) / 1000.0);
+				react_tick();
+				dds_tick();
 				lfo_tick((t - last_tick) / 1000.0);
 				ascii_tick();
 				dz_draw_movie_tick();
@@ -900,6 +902,8 @@ int main(int argc, char **argv)
 			t = now_ms();
 			trans_tick((t - last_tick) / 1000.0);	/* before the LFOs: they win */
 			cue_tick((t - last_tick) / 1000.0);
+			react_tick();
+			dds_tick();
 			lfo_tick((t - last_tick) / 1000.0);
 			ascii_tick();
 			dz_draw_movie_tick();
@@ -931,6 +935,7 @@ int main(int argc, char **argv)
 	}
 	fprintf(stderr, "debazd: stopping\n");
 	pwm_close();
+	react_stop();
 	sound_close();
 	disp_close();
 	dz_draw_close();

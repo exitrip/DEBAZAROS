@@ -4,6 +4,9 @@
 // (also on the Effects page). Channel 0 feeds the HDMI_0 mixer (din3 sine,
 // din4 saw: used only by mixer mode 1); channel 1 feeds HDMI_1's oscillator
 // layers, which add to the picture (wrap math, intentional).
+// Audio scope (2026-11-01): /dds/<n>/scope writes the newest 2048 samples of
+// debazd's audio capture (react.c) into the AWG table each frame; L, R or
+// (L+R)/2 per channel.
 import * as net from "./net.js";
 import { h, card, row, store } from "./ui.js";
 
@@ -26,6 +29,8 @@ const awg = [0, 1].map(() => new Array(NPTS).fill(32768));
 const steps = [0, 1].map(() => Array.from({ length: 16 }, () => [0, 0, 0, 0, 0, 0]));
 const views = [];
 let rasterText;
+const scopeUi = [];
+let srcUi = null, scopeTimer = null;
 
 const save = (n) => store.set(`dds.${n}`, state[n]);
 const i32 = (v) => Math.round(v) | 0; // 0..2^32-1 -> the OSC int (two's complement)
@@ -289,6 +294,63 @@ function awgCard(n) {
       "for the running pattern; the patterns above take shape AWG too."));
 }
 
+// ---- audio scope ----
+function scopeCard(n) {
+  const sc = store.get(`dds.scope.${n}`, { gain: 4, mode: "h", chan: "sum", on: 0 });
+  const p = `/dds/${n}/scope`;
+  const send = () => { net.msg(p, net.float(sc.on ? sc.gain : 0), sc.mode, sc.chan); store.set(`dds.scope.${n}`, sc); };
+  const onBtn = h("button", { title: `${p} <gain> <h|v|keep> <sum|l|r>  (gain 0 = off)`,
+    onclick: () => { sc.on = sc.on ? 0 : 1; paint(); send(); } });
+  const paint = () => { onBtn.textContent = sc.on ? "On" : "Off"; onBtn.classList.toggle("on", !!sc.on); };
+  paint();
+  onBtn.style.marginLeft = "auto";
+  const gv = h("span.hint", {}, String(sc.gain));
+  const gain = h("input", { type: "range", min: 0.5, max: 32, step: 0.5, value: sc.gain,
+    title: `${p}/gain <f>  (0x8000 + sample x gain; laptop audio: 4-8)`,
+    oninput: () => { sc.gain = Number(gain.value); gv.textContent = sc.gain; if (sc.on) net.throttled(`${p}/gain`, () => net.message(`${p}/gain`, net.float(sc.gain))); store.set(`dds.scope.${n}`, sc); } });
+  const mode = h("select", { title: `${p}/mode h|v|keep`, onchange: () => { sc.mode = mode.value; if (sc.on) net.msg(`${p}/mode`, sc.mode); store.set(`dds.scope.${n}`, sc); } },
+    [["h", "across each line (bars 1 awg)"], ["v", "down the frame (hbars 1 awg)"], ["keep", "keep the pattern"]]
+      .map(([v, t]) => h("option", { value: v, selected: v === sc.mode }, t)));
+  const chan = h("select", { title: `${p}/channel sum|l|r`, onchange: () => { sc.chan = chan.value; if (sc.on) net.msg(`${p}/channel`, sc.chan); store.set(`dds.scope.${n}`, sc); } },
+    [["sum", "L + R"], ["l", "left"], ["r", "right"]].map(([v, t]) => h("option", { value: v, selected: v === sc.chan }, t)));
+  scopeUi[n] = { sc, onBtn, paint, gain, gv, mode, chan };
+  return card([`DDS ${n} audio scope`, onBtn],
+    row("Gain", gain, gv), row("Mode", mode), row("Channel", chan),
+    h("p.hint", {}, n ? "Shows on HDMI_1 through the oscillator layers: raise /hdmi/1/osc/sin/gain (Effects)." :
+      "Channel 0 feeds the HDMI_0 mixer (din3: mixer mode 1 only)."));
+}
+
+// the analysis source (shared with the LFO tab) + its status
+function sourceRow() {
+  const src = h("select", { title: "/audio/react/source capture|peak|off\nthe scope needs capture (samples); " +
+      "peak = the PL meter, level only", onchange: () => net.msg("/audio/react/source", src.value) },
+    ["off", "capture", "peak"].map((v) => h("option", { value: v }, v)));
+  const st = h("span.hint", { title: "/audio/react -> ... s:status (ok, held: recording, busy: <pid name>)" }, "–");
+  srcUi = { src, st };
+  return h("p", {}, h("label", {}, "audio source ", src), " ", st);
+}
+
+async function loadScope() {
+  const r = await net.ask(net.message("/audio/react"), (m) => m.path === "/audio/react");
+  if (r && srcUi) {
+    if (document.activeElement !== srcUi.src) srcUi.src.value = r.args[0];
+    const status = r.args[11] ?? (r.args[1] ? "ok" : "not running");
+    srcUi.st.textContent = `status: ${status}` + (r.args[1] ? ` · level ${Number(r.args[2]).toFixed(2)}` : "");
+    srcUi.st.className = /busy|held|retry|no samples/.test(status) ? "warn-text" : "hint";
+  }
+  for (const n of [0, 1]) {
+    const m = await net.ask(net.message(`/dds/${n}/scope`), (x) => x.path === `/dds/${n}/scope` && x.args.length >= 2);
+    const u = scopeUi[n];
+    if (!m || !u) continue;
+    const [g, md, ch] = m.args;
+    u.sc.on = g > 0 ? 1 : 0;
+    if (g > 0) { u.sc.gain = g; u.gain.value = g; u.gv.textContent = g; }
+    u.sc.mode = md; u.mode.value = md;
+    if (ch) { u.sc.chan = ch; u.chan.value = ch; }
+    u.paint();
+  }
+}
+
 // read the register fields into the step-card controls
 async function refreshFields(n) {
   const v = views[n];
@@ -324,17 +386,30 @@ export function init(el) {
   root = el;
   rasterText = h("span.hint");
   for (const n of [0, 1]) views[n] = {};
-  const grid = h("div.grid", {}, patternCard(1), awgCard(1), stepCard(1),
-    patternCard(0), awgCard(0), stepCard(0));
+  const grid = h("div.grid", {}, patternCard(1), scopeCard(1), awgCard(1), stepCard(1),
+    patternCard(0), scopeCard(0), awgCard(0), stepCard(0));
   root.replaceChildren(h("p", {}, rasterText, " ",
-    h("button.ghost", { title: "/dds/raster -> line Hz, frame Hz, totals, size", onclick: loadRaster }, "Refresh")), grid);
+    h("button.ghost", { title: "/dds/raster -> line Hz, frame Hz, totals, size", onclick: loadRaster }, "Refresh")),
+    sourceRow(), grid);
 }
 
 export function connected() {
   loadRaster();
+  loadScope();
   for (const n of [1, 0]) { refreshFields(n); loadAwg(n); }
 }
 
 export function show() {
-  if (net.connected()) loadRaster();
+  if (net.connected()) { loadRaster(); loadScope(); }
+  clearInterval(scopeTimer);
+  scopeTimer = setInterval(() => {
+    if (!document.getElementById("tab-dds").classList.contains("active")) return clearInterval(scopeTimer);
+    if (net.connected() && srcUi) net.ask(net.message("/audio/react"), (m) => m.path === "/audio/react").then((r) => {
+      if (!r) return;
+      const status = r.args[11] ?? "";
+      srcUi.st.textContent = `status: ${status}` + (r.args[1] ? ` · level ${Number(r.args[2]).toFixed(2)}` : "");
+      srcUi.st.className = /busy|held|retry|no samples/.test(status) ? "warn-text" : "hint";
+      if (document.activeElement !== srcUi.src) srcUi.src.value = r.args[0];
+    });
+  }, 1000);
 }

@@ -5,7 +5,7 @@
  * value = min + (max - min) * quantise(curve(shape(phase)))
  *
  * OSC (<n> = 0..15 or a pattern):
- *   /lfo/<n>/shape  sine|tri|saw|ramp|square|random|smooth|step|noise
+ *   /lfo/<n>/shape  sine|tri|saw|ramp|square|random|smooth|step|noise|audio
  *   /lfo/<n>/rate   f:Hz                 (cycles per second)
  *   /lfo/<n>/frames i:n                  one cycle per n frames (frame exact)
  *   /lfo/<n>/width  f:0..1               square duty, tri peak position
@@ -27,6 +27,17 @@
  *                                        frame; $k = int value of LFO k,
  *                                        $fk = float value of LFO k
  *   /lfo/<n>/target                      (no argument) no target
+ *   /lfo/<n>/audio  s:feature            shape audio (2026-11-01): the value
+ *                                        follows an audio feature of react.c
+ *                                        (level peak bass low mid high air flux
+ *                                        beat band0..band15; /audio/react/source)
+ *   /lfo/<n>/gain   f:k                  feature x k before the clamp to 0..1
+ *                                        (default 1). 0 = auto: the feature /
+ *                                        its recent peak (the peak halves in
+ *                                        10 s): loud or quiet material both
+ *                                        use the whole range
+ *   /lfo/<n>/attack f:s, /release f:s    envelope follower times (default
+ *                                        0 / 0.15 s); then curve, steps, range
  *   /lfo/<n>                             -> /lfo/<n> f:value i:on
  *   /lfo/reset                           all LFOs off, defaults
  *
@@ -50,15 +61,17 @@
 #define SEQ_LEN		64
 
 enum { SH_SINE, SH_TRI, SH_SAW, SH_RAMP, SH_SQUARE, SH_RANDOM, SH_SMOOTH,
-       SH_STEP, SH_NOISE, SH_COUNT };
+       SH_STEP, SH_NOISE, SH_AUDIO, SH_COUNT };
 static const char *shape_names[SH_COUNT] = {
-	"sine", "tri", "saw", "ramp", "square", "random", "smooth", "step", "noise" };
+	"sine", "tri", "saw", "ramp", "square", "random", "smooth", "step", "noise", "audio" };
 
 typedef struct {
 	int    on, once, done, shape, steps, frames, every, ecount;
 	double rate, width, phase0, lo, hi, curve;
 	double phase, value;
 	double rnd_a, rnd_b;		/* random / smooth: previous and next */
+	int    afeat;			/* audio: react.c feature index */
+	double gain, attack, release, env, apk;	/* apk: auto gain peak */
 	float  seq[SEQ_LEN];
 	int    seqn;
 	/* target */
@@ -88,6 +101,8 @@ static void defaults(lfo_t *l)
 	l->width = 0.5;
 	l->hi = 1.0;
 	l->curve = 1.0;
+	l->gain = 1.0;
+	l->release = 0.15;
 	l->rnd_a = rnd01();
 	l->rnd_b = rnd01();
 }
@@ -117,6 +132,7 @@ static double wave(lfo_t *l, double p)
 	}
 	case SH_STEP:	return l->seqn ? l->seq[(int)(p * l->seqn) % l->seqn] : 0.0;
 	case SH_NOISE:	return rnd01();
+	case SH_AUDIO:	return l->env;
 	}
 	return 0.0;
 }
@@ -277,6 +293,23 @@ void lfo_tick(double dt)
 
 		if (!l->on || l->done)
 			continue;
+		if (l->shape == SH_AUDIO) {	/* envelope follower on the feature */
+			double f = react_feature(l->afeat), y, t;
+
+			if (l->gain > 0.0) {
+				y = f * l->gain;
+			} else {		/* auto: relative to the recent peak */
+				l->apk *= exp(-dt * M_LN2 / 10.0);
+				l->apk = f > l->apk ? f : (l->apk < 1e-3 ? 1e-3 : l->apk);
+				y = f / l->apk;
+			}
+			t = y > l->env ? l->attack : l->release;
+
+			y = y < 0.0 ? 0.0 : (y > 1.0 ? 1.0 : y);
+			l->env += (y - l->env) * (t > 0.0 ? 1.0 - exp(-dt / t) : 1.0);
+			l->value = shaped(l);
+			continue;
+		}
 		np = l->phase + (l->frames > 0 ? 1.0 / l->frames : l->rate * dt);
 		if (np >= 1.0) {
 			if (l->once) {
@@ -313,6 +346,11 @@ void lfo_state(state_cb cb, void *ctx)
 		const lfo_t *l = &L[n];
 
 #define LP(x) (snprintf(p, sizeof(p), "/lfo/%d/" x, n), p)
+		/* audio first: it also selects shape audio, the shape after it wins */
+		st_emit(cb, ctx, NULL, LP("audio"), "s", react_feature_name(l->afeat));
+		st_emit(cb, ctx, NULL, LP("gain"), "f", l->gain);
+		st_emit(cb, ctx, NULL, LP("attack"), "f", l->attack);
+		st_emit(cb, ctx, NULL, LP("release"), "f", l->release);
 		st_emit(cb, ctx, NULL, LP("shape"), "s", shape_names[l->shape]);
 		(void)k;			/* rate, then frames (0 = the rate counts) */
 		st_emit(cb, ctx, NULL, LP("rate"), "f", l->rate);
@@ -345,7 +383,8 @@ void lfo_state(state_cb cb, void *ctx)
 int lfo_dispatch(const dz_msg *m)
 {
 	static const char *ops[] = { "shape", "rate", "frames", "width", "phase", "range", "min", "max",
-		"curve", "steps", "seq", "mode", "trigger", "on", "target", "every", NULL };
+		"curve", "steps", "seq", "mode", "trigger", "on", "target", "every",
+		"audio", "gain", "attack", "release", NULL };
 	const dz_arg *a = m->a;
 	int n = m->n, hits = 0;
 
@@ -406,6 +445,22 @@ int lfo_dispatch(const dz_msg *m)
 			l->curve = fa(&a[0]);
 		} else if (!strcmp(op, "every") && n >= 1) {
 			l->every = a[0].i > 0 ? a[0].i : 1;
+		} else if (!strcmp(op, "audio") && n >= 1 && a[0].type == 's') {
+			int k = react_feature_index(a[0].s);
+
+			if (k < 0) {
+				dzd_reply("/error", "ss", "audio feature: level peak bass low mid high "
+					  "air flux beat band0..band15", base);
+			} else {
+				l->afeat = k;
+				l->shape = SH_AUDIO;
+			}
+		} else if (!strcmp(op, "gain") && n >= 1) {
+			l->gain = fa(&a[0]);
+		} else if (!strcmp(op, "attack") && n >= 1) {
+			l->attack = fa(&a[0]) > 0 ? fa(&a[0]) : 0.0;
+		} else if (!strcmp(op, "release") && n >= 1) {
+			l->release = fa(&a[0]) > 0 ? fa(&a[0]) : 0.0;
 		} else if (!strcmp(op, "steps") && n >= 1) {
 			l->steps = a[0].i;
 		} else if (!strcmp(op, "seq")) {

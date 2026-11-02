@@ -22,8 +22,9 @@
 //          effects stages register the pixel data after v_axi4s_vid_out,
 //          while the syncs come straight from it: without this the picture
 //          is N px right of DE (the first N columns = blanking data, the last
-//          N source columns lost). 2026-11-01: HDMI_0 N = 2 (mixer pix_out +
-//          colorGainMain), HDMI_1 N = 3 (colorGainFeedback1 + c_addsub_1/2).
+//          N source columns lost). 2026-11-01, by eye on the board: HDMI_1
+//          N = 5 (3 counted in the BD: colorGainFeedback1 + c_addsub_1/2;
+//          the rest not traced), HDMI_0 no visible change at any N (0).
 // fs_inc: internal 48 kHz sample clock, fs = fs_inc * f_pixel / 2^32 (0 = off;
 //   720p60: 74.25 MHz -> fs_inc = 2776544).
 // aud_l/aud_r/aud_valid: external samples, one strobe per stereo sample, in

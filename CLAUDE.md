@@ -746,8 +746,12 @@ c_addsub_1 + c_addsub_2), HDMI_0 2 (mixer pix_out + colorGainMain). The
 first N columns = blanking data, the last N source columns lost (seen on
 HDMI_1 as a bar at the left edge with a crop at x ~700). Fix: hdmi_tx
 ctrl[14:12] = DE/sync delay 0..7 (`/hdmi/<n>/sync_delay`, TX0_CTRL /
-TX_CTRL, reset 0 = old; plreload sets 2 / 3; not in /state); sim +sdly
-cases in run_hdmi_tx_tb.sh (10 x ALL PASS). Build `sdly`. The HDMI_0 ->
+TX_CTRL, reset 0 = old; not in /state); sim +sdly cases in
+run_hdmi_tx_tb.sh (10 x ALL PASS). Build `sdly` (artifacts, the DEFAULT
+since Nov 1; back to _osc_epo on timing trouble: FCLK2 +0.102, colour-matrix
+path 0.2 ns inside 720p60). Set by eye on the board: HDMI_1 = **5** (only 3
+registers counted in the BD), HDMI_0 = 0 (no visible change at any value);
+plreload sets 0 / 5. The HDMI_0 ->
 HDMI_1 feedback leg is 2 px later still than HDMI_1's own video (not
 compensated).
 **Output mode from OSC (Nov 1 2026, on the board):** `/video/mode` -> w h hz
@@ -1029,6 +1033,31 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   <pid>`); never `sudo kill -TERM -<pgid>` on the board: procps kill hit the
   ssh session instead. Effects tab: "Cross-fade (HDMI_1)" card first. Web: Media
   tab "ASCII" card.
+- **Audio reactivity (Nov 1 2026, on the board):** `sw/debazd/react.c`, one
+  analyser per frame before the LFOs. `/audio/react/source capture` =
+  `arecord hw:DEBAZ,2` -> FIFO /tmp/dzreact.fifo (O_RDWR, 256 KB pipe), our
+  own radix-2 real FFT (`/audio/react/fft 256|512|1024`, default 1024 = 47
+  Hz bins); `peak` = the PL hdmi_rx peak meter (toggle RX_CTRL[1] clears
+  it; level/peak only, no ALSA). Features level peak bass low mid high air
+  flux beat band0..15 (full-scale sine = 1; laptop audio measured ~0.1-0.3,
+  so LFO gain 4-8). LFO shape `audio`: `/lfo/<n>/audio <feature>` (also
+  selects the shape; the state dump emits it BEFORE shape), gain, attack,
+  release. `/dds/<n>/scope gain [h|v|keep]`: newest 2048 samples into the
+  AWG table each frame (bars 1 awg / hbars 1 awg; visible only with the
+  osc layer gains up). Measured: FFT 512 = 73 us (plain C; libavcodec
+  av_rdft NEON 28 us, no FFTW in the image); debazd 3.6 % with capture
+  analysis, 9 % with the scope (2048 uncached writes per frame). LFO
+  `gain 0` = auto (feature / its recent peak, halves in 10 s). Scope
+  channel per DDS: `/dds/<n>/scope gain mode sum|l|r`, `/scope/gain|mode|
+  channel` (L, R and (L+R)/2 rings in react.c). The capture PCM has ONE
+  owner: `/audio/rec` calls react_hold (react stops its arecord, status
+  "held: recording", resumes after); before each start react reads
+  /proc/asound/DEBAZ/pcm2c/sub0/status and reports "busy: <pid> <name>"
+  (retry 2 s). `/audio/react` ends with s:status. Web: DDS tab audio-scope
+  cards + source/status; Oscillators tab audio row. Host tests:
+  DZ_REACT_CMD = tone generator, a fake arecord in PATH (hand-over).
+  Movie-audio source: not yet (plan: s16 tap of the audio ffmpeg into a
+  FIFO that debazd always drains).
 - **Single-value OSC setters (Nov 1 2026; for LFO targets, scripts, cues):**
   `/disp/<d>/crop/x|y i`, `/fx/hue/deg f` + `/fx/hue/gain f` (+ `/fx/hue` query;
   `/fx/hue deg` without gain now KEEPS the last gain, was 1.0), `/fx/key/tol i`

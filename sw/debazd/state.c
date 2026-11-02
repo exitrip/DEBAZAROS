@@ -213,6 +213,7 @@ void state_dump(state_cb cb, void *ctx)
 	disp_state(cb, ctx);
 	ascii_state(cb, ctx);
 	dds_state(cb, ctx);
+	react_state(cb, ctx);
 	lfo_state(cb, ctx);
 	pwm_state(cb, ctx);
 	fx_state(cb, ctx);
@@ -366,7 +367,7 @@ static int rank_of(const char *a)
 		{ "/audio/out/", "/source", 20 }, { "/audio/out/", "/file", 21 },
 		{ "/disp/", "", 30 },
 		{ "/ascii/", "/chars", 40 }, { "/ascii/", "/run", 42 }, { "/ascii/", "", 41 },
-		{ "/dds/", "", 50 },
+		{ "/dds/", "", 50 }, { "/audio/react/", "", 55 },
 		{ "/lfo/", "/rate", 60 }, { "/lfo/", "/frames", 61 }, { "/lfo/", "/on", 63 },
 		{ "/lfo/", "", 62 },
 		{ "/fan/", "/pwm", 70 }, { "/fx/", "", 80 } };
