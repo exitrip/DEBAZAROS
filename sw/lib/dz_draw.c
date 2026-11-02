@@ -717,6 +717,51 @@ void dz_surf_put(int i, uint32_t *p, uint32_t v, unsigned cov)
 		put(s, p, v, cov);
 }
 
+/* mix() of a whole span: d + (((v - d) * a) >> 8) per colour byte, alpha
+ * byte 0xFF (2026-11-02: ASCII into a slot with alpha took 229 ms per
+ * frame with a dz_surf_put call per pixel) */
+void dz_surf_put_span(int i, uint32_t *dst, const uint32_t *src, size_t n)
+{
+	surf_t *s = get(i);
+	unsigned a;
+	size_t k = 0;
+
+	if (!s)
+		return;
+	if (s->blend != DZ_BLEND_NORMAL || s->alpha >= 256) {
+		for (; k < n; k++)
+			put(s, &dst[k], src[k], 256);
+		return;
+	}
+	a = s->alpha;
+	if (a == 0)
+		return;
+#if defined(__ARM_NEON)
+	{
+		int16x4_t av = vdup_n_s16((int16_t)a);
+		uint32x4_t opaque = vdupq_n_u32(0xFF000000u);
+
+		for (; k + 4 <= n; k += 4) {
+			uint8x16_t d = vreinterpretq_u8_u32(vld1q_u32(dst + k));
+			uint8x16_t v = vreinterpretq_u8_u32(vld1q_u32(src + k));
+			int16x8_t el = vreinterpretq_s16_u16(vsubl_u8(vget_low_u8(v), vget_low_u8(d)));
+			int16x8_t eh = vreinterpretq_s16_u16(vsubl_u8(vget_high_u8(v), vget_high_u8(d)));
+			int16x8_t ml = vcombine_s16(vmovn_s32(vshrq_n_s32(vmull_s16(vget_low_s16(el), av), 8)),
+						    vmovn_s32(vshrq_n_s32(vmull_s16(vget_high_s16(el), av), 8)));
+			int16x8_t mh = vcombine_s16(vmovn_s32(vshrq_n_s32(vmull_s16(vget_low_s16(eh), av), 8)),
+						    vmovn_s32(vshrq_n_s32(vmull_s16(vget_high_s16(eh), av), 8)));
+			uint16x8_t rl = vaddq_u16(vreinterpretq_u16_s16(ml), vmovl_u8(vget_low_u8(d)));
+			uint16x8_t rh = vaddq_u16(vreinterpretq_u16_s16(mh), vmovl_u8(vget_high_u8(d)));
+			uint8x16_t r = vcombine_u8(vmovn_u16(rl), vmovn_u16(rh));
+
+			vst1q_u32(dst + k, vorrq_u32(vreinterpretq_u32_u8(r), opaque));
+		}
+	}
+#endif
+	for (; k < n; k++)
+		dst[k] = mix(dst[k], src[k], a);
+}
+
 void dz_surf_dirty(int i, int x0, int y0, int x1, int y1)
 {
 	surf_t *s = get(i);

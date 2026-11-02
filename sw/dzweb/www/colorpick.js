@@ -28,11 +28,11 @@ export function colorPicker(state, onchange, oncommit) {
   const SW = 236, SH = 140;
   const sv = h("canvas.cp-sv", { width: SW, height: SH, title: "saturation (left → right), value (bottom → top)" });
   const hue = h("canvas.cp-bar", { width: SW, height: 16, title: "hue" });
-  const al = h("canvas.cp-bar", { width: SW, height: 16, title: "alpha of what you draw (/draw/<slot>/alpha)" });
+  const al = h("canvas.cp-bar", { width: SW, height: 16, title: "slot alpha: everything drawn on the slot (/draw/<slot>/alpha)" });
   const svx = sv.getContext("2d"), hx = hue.getContext("2d"), ax = al.getContext("2d");
   const hexIn = h("input.cp-hex", { type: "text", maxLength: 7, title: "hex #rrggbb" });
   const chan = [0, 1, 2].map((k) => h("input.cp-num", { type: "number", min: 0, max: 255, title: "RGB"[k] }));
-  const alIn = h("input.cp-num", { type: "number", min: 0, max: 100, title: "alpha %" });
+  const alIn = h("input.cp-num", { type: "number", min: 0, max: 100, title: "slot alpha % (/draw/<slot>/alpha)" });
   const sw1 = h("button.cp-swatch", { title: "colour 1 (click to edit)" });
   const sw2 = h("button.cp-swatch.small", { title: "colour 2: gradients, radial and linear fills (click to edit)" });
   const recentRow = h("div.cp-swatches", {});
@@ -128,7 +128,7 @@ export function colorPicker(state, onchange, oncommit) {
   const api = {
     el: h("div.cp", {},
       h("div.cp-top", {}, h("div.cp-pair", {}, sw1, sw2, swap), h("div.cp-fields", {},
-        hexIn, h("div.cp-rgb", {}, chan), h("label.cp-al", {}, "α", alIn, "%"))),
+        hexIn, h("div.cp-rgb", {}, chan), h("label.cp-al", { title: "slot alpha" }, "slot α", alIn, "%"))),
       sv, hue, al,
       h("div.hint", {}, "recent"), recentRow,
       h("div.hint", {}, "palette"), palRow),

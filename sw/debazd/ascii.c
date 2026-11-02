@@ -77,6 +77,7 @@ typedef struct {
 	int      ckn, ckvalid, frames;
 	int      nchars, ndrawn;	/* chars mode: string length, glyphs found */
 	int      used;			/* a setting was sent (the state model lists it) */
+	double   next;			/* no draw before this time (ms): see ascii_tick */
 } asc_t;
 
 static asc_t A[DZ_SLOTS];
@@ -458,8 +459,7 @@ static int render(int d)
 			cell_eval(a, sp, sstride, x0, y0, cw, ch, bg, thr, &c);
 			cell_draw(&c, obuf + (size_t)y0 * W + x0, W, cw, ch);
 		}
-	for (size_t i = 0; i < (size_t)W * H; i++)
-		dz_surf_put(d, &dst[i], obuf[i], 256);
+	dz_surf_put_span(d, dst, obuf, (size_t)W * H);
 	dz_surf_dirty(d, 0, 0, W, H);
 	dz_surf_finish(d);
 	a->ckvalid = 0;
@@ -474,13 +474,21 @@ void ascii_tick(void)
 
 		if (!a->run || ++a->cnt < a->every)
 			continue;
+		/* a slow frame (alpha on the target, many columns) blocks OSC
+		 * while it draws: rest as long as it took, so the main loop
+		 * keeps at least half of its time */
+		if (now_ms() < a->next)
+			continue;
 		a->cnt = 0;
 		if (dz_draw_movie_running(d)) {	/* a movie started on the target: it wins */
 			a->run = 0;
 			dzd_log("ascii: slot %d stopped (a movie plays there now)\n", d);
 			continue;
 		}
-		if (render(d) < 0) {
+		int rc = render(d);
+
+		a->next = now_ms() + a->ms;
+		if (rc < 0) {
 			a->run = 0;
 			dzd_log("ascii: slot %d stopped (source %d not readable)\n", d, a->src);
 		}

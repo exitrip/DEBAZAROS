@@ -658,11 +658,11 @@ export function init(root) {
   const PRESETS = [["pencil", 2, 1, 1], ["pen", 5, 0.9, 1], ["marker", 14, 0.75, 0.85], ["soft", 40, 0, 0.6], ["airbrush", 80, 0, 0.12]];
   const brushCard = card("Brush",
     bp,
-    h("div.tools", {}, PRESETS.map(([n, sz, hd, al]) => h("button", { title: `size ${sz}, hardness ${hd * 100} %, opacity ${al * 100} %`,
+    h("div.tools", {}, PRESETS.map(([n, sz, hd, al]) => h("button", { title: `size ${sz}, hardness ${hd * 100} %, slot alpha ${al * 100} %`,
       onclick: () => { brushSet.size(sz); brushSet.hard(hd); brushSet.alpha(al); picker.refresh(); } }, n))),
     big("size", 1, 200, 1, "size", "px", 1, "brush radius in px; the line tool is 2 × size wide, outlines are size wide  [ / ]"),
     big("hard", 0, 1, 0.01, "hardness", "%", 100, "0 % = soft edge, 100 % = hard edge"),
-    big("alpha", 0, 1, 0.01, "opacity", "%", 100, "/draw/<slot>/alpha: opacity of everything drawn on the slot",
+    big("alpha", 0, 1, 0.01, "slot alpha", "%", 100, "/draw/<slot>/alpha: one alpha for the whole slot - brush, shapes, text, ASCII, sprites; below 100 % ASCII into the slot is slow (full-frame blend)",
       () => { picker.refresh(); if (!s.batch) net.throttled(`${D()}/alpha`, () => net.message(`${D()}/alpha`, net.float(s.alpha))); }),
     big("tol", 0, 255, 1, "tolerance", "", 1, "paint bucket: colours that differ by up to this much (0-255 per channel) are filled"),
     h("p.hint", {}, "The dashed ring under the pointer shows the hard core; the outer ring the full size."));

@@ -13,6 +13,9 @@
 uint32_t *dz_surf(int i, int *w, int *h);
 /* One pixel with the surface alpha and blend mode, scaled by cov (0..256). */
 void dz_surf_put(int i, uint32_t *p, uint32_t v, unsigned cov);
+/* n pixels of src onto dst (in the painting buffer) with the surface alpha
+ * and blend mode; same result as dz_surf_put per pixel, NEON for normal. */
+void dz_surf_put_span(int i, uint32_t *dst, const uint32_t *src, size_t n);
 /* Mark a changed area (x1/y1 exclusive), then present if auto-present is on. */
 void dz_surf_dirty(int i, int x0, int y0, int x1, int y1);
 void dz_surf_finish(int i);
