@@ -96,6 +96,9 @@
 #define OFST_DYNCLK_DIV 0x14
 #define OFST_DYNCLK_LOCK_L 0x18
 #define OFST_DYNCLK_FLTR_LOCK_H 0x1C
+/* CLKOUT1 = the global pixel clock (axi_dynclk revision 3, 2026-11-02,
+ * ROADMAP.md task 20): divide = 5 x clkdiv. Older bitstreams ignore it. */
+#define OFST_DYNCLK_CLK1 0x24
 /*
 CTRL_REG     :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
 STAT_REG     :in  std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
@@ -115,6 +118,7 @@ CLK_FLTR_REG :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
 
 typedef struct {
 		u32 clk0L;
+		u32 clk1;		/* CLKOUT1 ClkReg2 << 16 | ClkReg1 (OFST_DYNCLK_CLK1) */
 		u32 clkFBL;
 		u32 clkFBH_clk0H;
 		u32 divclk;

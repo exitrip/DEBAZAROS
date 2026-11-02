@@ -222,15 +222,46 @@
 
     reg [OUT_WIDTH-1 : 0] dout_r [0:OUT_NUM-1];
 
+    // Mode 1 (coreRevision 25, 2026-11-02): pipelined MAC with signed
+    // operands. dout = (sum of gain_k x x_k) mod 2^24, as before; only gain
+    // bits [23:0] count, as before, so a gain word is in effect a 24-bit
+    // two's complement number: a negative gain subtracts. The colour matrix
+    // keeps the same mod 2^24 sum, so a negative gain plane wraps there, as
+    // a row sum over 1.0 does (follow the gateware: wrap where it wraps).
+    // Pipeline (variant V2, smaller): shared input registers -> one
+    // combinational DSP48 group of 5 taps (mixer_mac5, kept as hierarchy so
+    // that no register goes INTO a DSP48) -> one register -> dout. Timed for
+    // 74.25 MHz (XDC set_max_delay), not 108. A DSP48 with an internal register is a load of the regional
+    // pixel clock (BUFR) and must sit in clock region X1Y1, which has 20
+    // DSP48 sites, all but 3 used (build smix, placer error 30-657).
+    // Latency din -> dout: 3 pixel clocks (the other modes: 1).
+    // Operands, CTRL_1 per channel (all 0 = the old mode 1, bit for bit):
+    //   taps 0-2 = R, B, G lane of stream A or B ([0]), or
+    //     [3] DIFF   A - B (-255..255): with a delayed stream B = an edge /
+    //                comb filter (the BRAM delay, 0x4121_0000 ch2 [29:16])
+    //     [4] CENTRE the selected stream - 128 (-128..127; not with DIFF)
+    //   taps 3, 4 = din3, din4 (DDS), [5] DSIGN = two's complement
+    // Mode 5 (new): dout = GAIN_chan_0 [23:0], a signed constant (Q8.16:
+    // 0x010000 = 1.0, 0xFF0000 = -1.0); mode 4 K stays unsigned 16 bit.
+    reg [7:0]        pa [0:2], pb [0:2];	// stream A / B lanes
+    reg signed [8:0] pd [0:2];		// A - B
+    reg [15:0]       p3, p4;			// din3, din4
+    integer l;
+    always @(posedge pix_clk) begin
+      for (l = 0; l < 3; l = l + 1) begin
+        pa[l] <= pixA[l][7:0];
+        pb[l] <= pixB[l][7:0];
+        pd[l] <= $signed({1'b0, pixA[l][7:0]}) - $signed({1'b0, pixB[l][7:0]});
+      end
+      p3 <= din3[15:0];
+      p4 <= din4[15:0];
+    end
+
     genvar i;
     generate
       for (i = 0; i < OUT_NUM; i = i + 1) begin : gen_chan
         // stream select: 0 = A {din0,din1,din2}, 1 = B {din5,din6,din7}
         wire sel = ctrl[i][1][0];
-        // muxed RGB for mode 1
-        wire [IN_WIDTH-1:0] m0 = sel ? pixB[0] : pixA[0];
-        wire [IN_WIDTH-1:0] m1 = sel ? pixB[1] : pixA[1];
-        wire [IN_WIDTH-1:0] m2 = sel ? pixB[2] : pixA[2];
         // comparison / passthrough source: chans 0-2 red, 3-5 blue, 6-8 green
         // (bus lane order); CTRL_1 [2] = HDMI_0's video instead of HDMI_1
         wire [IN_WIDTH-1:0] cmp = ctrl[i][1][2] ? pix0[i/3] : (sel ? pixB[i/3] : pixA[i/3]);
@@ -240,14 +271,37 @@
         assign key_band[i] = (klo <= khi) ? (cmp >= klo && cmp <= khi)
                                           : (cmp >= klo || cmp <= khi);
 
+        // mode 1 operands and the two partial sums (registered here, in
+        // the fabric); "- 128" of an 8-bit value = its MSB inverted, signed
+        wire diff = ctrl[i][1][3], centre = ctrl[i][1][4], dsign = ctrl[i][1][5];
+        wire signed [17:0] x [0:4];
+        genvar t;
+        for (t = 0; t < 3; t = t + 1) begin : gen_x
+          wire [7:0] v = sel ? pb[t] : pa[t];
+          assign x[t] = diff   ? {{9{pd[t][8]}}, pd[t]} :
+                        centre ? {{10{~v[7]}}, ~v[7], v[6:0]} :
+                                 {10'd0, v};
+        end
+        assign x[3] = dsign ? {{2{p3[15]}}, p3} : {2'b00, p3};
+        assign x[4] = dsign ? {{2{p4[15]}}, p4} : {2'b00, p4};
+        wire [23:0] mc;
+        (* keep_hierarchy = "yes" *)
+        mixer_mac5 mac (.g0(gains[i][0][24:0]), .g1(gains[i][1][24:0]), .g2(gains[i][2][24:0]),
+                        .g3(gains[i][3][24:0]), .g4(gains[i][4][24:0]),
+                        .x0(x[0]), .x1(x[1]), .x2(x[2]), .x3(x[3]), .x4(x[4]), .p(mc));
+        reg [23:0] hc;
+        always @(posedge pix_clk)
+          hc <= mc;
+
         always @(posedge pix_clk)
         begin
           case (ctrl[i][0][7:0])
             8'h0:
               dout_r[i] <= 0;
             8'h1:
-              dout_r[i] <= gains[i][0]*m0 + gains[i][1]*m1 + gains[i][2]*m2
-                         + gains[i][3]*din3 + gains[i][4]*din4;
+              dout_r[i] <= hc;
+            8'h5:
+              dout_r[i] <= gains[i][0][23:0];
             8'h3:
               dout_r[i] <= {cmp, 8'hff};
             8'h4:
@@ -303,348 +357,13 @@
 
   	// User logic ends
 	endmodule
-  //
-  // // Stream select per output channel: ctrl[i][1][0]
-  // // 0 = stream A {din0,din1,din2}, 1 = stream B {din5,din6,din7}
-  // wire [IN_WIDTH-1:0] mR [OUT_NUM-1:0];
-  // wire [IN_WIDTH-1:0] mG [OUT_NUM-1:0];
-  // wire [IN_WIDTH-1:0] mB [OUT_NUM-1:0];
-	
-  // genvar gi;
-  // generate
-  //   for (gi = 0; gi < OUT_NUM; gi = gi + 1) begin : gen_pixmux
-  //     assign mR[gi] = ctrl[gi][1][0] ? din5 : din0;
-  //     assign mG[gi] = ctrl[gi][1][0] ? din6 : din1;
-  //     assign mB[gi] = ctrl[gi][1][0] ? din7 : din2;
-  //   end
-  // endgenerate
 
-  // //TODO figure out sane ctrl regs
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[0][0][7:0])
-  //       8'h0:
-  //         dout0 <= 0;
-  //       8'h1:
-  //         dout0 <= gains[0][0]*mR[0] + gains[0][1]*mG[0] + gains[0][2]*mB[0] + gains[0][3]*din3 
-  //           + gains[0][4]*din4;
-  //       8'h3:
-  //         dout0 <= {mR[0], 8'hff};
-  //       8'h4:
-  //         dout0 <= ctrl[0][0][31:16];
-        
-  //       //level clipping
-  //       8'h10:
-  //         dout0 <= (mR[0] >= ctrl[0][1][23:16]) ?  {mR[0], 8'hff} : 0;
-  //       8'h11:
-  //         dout0 <= (mR[0] <= ctrl[0][1][31:24]) ?  {mR[0], 8'hff} : 0;
-  //       8'h12:
-  //         dout0 <= (mR[0] == ctrl[0][1][23:16]) ?  {mR[0], 8'hff} : 0;
-  //       8'h13:
-  //         dout0 <= (mR[0] >= ctrl[0][1][23:16] && mR[0] <= ctrl[0][1][31:24]) ?  {mR[0], 8'hff} : 0;
-
-  //       8'h20:
-  //         dout0 <= (mR[0] >= ctrl[0][1][23:16]) ?  ctrl[0][0][31:16] : 0;
-  //       8'h21:
-  //         dout0 <= (mR[0] <= ctrl[0][1][31:24]) ?  ctrl[0][0][31:16] : 0;
-  //       8'h22:
-  //         dout0 <= (mR[0] == ctrl[0][1][23:16]) ?  ctrl[0][0][31:16] : 0;
-  //       8'h23:
-  //         dout0 <= (mR[0] >= ctrl[0][1][23:16] && mR[0] <= ctrl[0][1][31:24]) ?  ctrl[0][0][31:16] : 0;
-
-  //       default:
-  //         dout0 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[1][0][7:0])
-  //       8'h0:
-  //         dout1 <= 0;
-  //       8'h1:
-  //         dout1 <= gains[1][0]*mR[1] + gains[1][1]*mG[1] + gains[1][2]*mB[1] + gains[1][3]*din3 
-  //           + gains[1][4]*din4;
-  //       8'h3:
-  //         dout1 <= {mR[1], 8'hff};
-  //       8'h4:
-  //         dout1 <= ctrl[1][0][31:16];
-  //        //level clipping
-  //       8'h10:
-  //         dout1 <= (mR[1] >= ctrl[1][1][23:16]) ?  {mR[1], 8'hff} : 0;
-  //       8'h11:
-  //         dout1 <= (mR[1] <= ctrl[1][1][31:24]) ?  {mR[1], 8'hff} : 0;
-  //       8'h12:
-  //         dout1 <= (mR[1] == ctrl[1][1][23:16]) ?  {mR[1], 8'hff} : 0;
-  //       8'h13:
-  //         dout1 <= (mR[1] >= ctrl[1][1][23:16] && mR[1] <= ctrl[1][1][31:24]) ?  {mR[1], 8'hff} : 0;
-
-  //       8'h20:
-  //         dout1 <= (mR[1] >= ctrl[1][1][23:16]) ?  ctrl[1][0][31:16] : 0;
-  //       8'h21:
-  //         dout1 <= (mR[1] <= ctrl[1][1][31:24]) ?  ctrl[1][0][31:16] : 0;
-  //       8'h22:
-  //         dout1 <= (mR[1] == ctrl[1][1][23:16]) ?  ctrl[1][0][31:16] : 0;
-  //       8'h23:
-  //         dout1 <= (mR[1] >= ctrl[1][1][23:16] && mR[1] <= ctrl[1][1][31:24]) ?  ctrl[1][0][31:16] : 0;
-
-  //       default:
-  //         dout1 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[2][0][7:0])
-  //       8'h0:
-  //         dout2 <= 0;
-  //       8'h1:
-  //         dout2 <= gains[2][0]*mR[2] + gains[2][1]*mG[2] + gains[2][2]*mB[2] + gains[2][3]*din3 
-  //           + gains[2][4]*din4;
-  //       8'h3:
-  //         dout2 <= {mR[2], 8'hff};
-  //       8'h4:
-  //         dout2 <= ctrl[2][0][31:16];
-  //       //level clipping
-  //       8'h10:
-  //         dout2 <= (mR[2] >= ctrl[2][1][23:16]) ?  {mR[2], 8'hff} : 0;
-  //       8'h11:
-  //         dout2 <= (mR[2] <= ctrl[2][1][31:24]) ?  {mR[2], 8'hff} : 0;
-  //       8'h12:
-  //         dout2 <= (mR[2] == ctrl[2][1][23:16]) ?  {mR[2], 8'hff} : 0;
-  //       8'h13:
-  //         dout2 <= (mR[2] >= ctrl[2][1][23:16] && mR[2] <= ctrl[2][1][31:24]) ?  {mR[2], 8'hff} : 0;
-
-  //       8'h20:
-  //         dout2 <= (mR[2] >= ctrl[2][1][23:16]) ?  ctrl[2][0][31:16] : 0;
-  //       8'h21:
-  //         dout2 <= (mR[2] <= ctrl[2][1][31:24]) ?  ctrl[2][0][31:16] : 0;
-  //       8'h22:
-  //         dout2 <= (mR[2] == ctrl[2][1][23:16]) ?  ctrl[2][0][31:16] : 0;
-  //       8'h23:
-  //         dout2 <= (mR[2] >= ctrl[2][1][23:16] && mR[2] <= ctrl[2][1][31:24]) ?  ctrl[2][0][31:16] : 0;
-
-  //       default:
-  //         dout2 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[3][0][7:0])
-  //       8'h0:
-  //         dout3 <= 0;
-  //       8'h1:
-  //         dout3 <= gains[3][0]*mR[3] + gains[3][1]*mG[3] + gains[3][2]*mB[3] + gains[3][3]*din3 
-  //           + gains[3][4]*din4;
-  //       8'h3:
-  //         dout3 <= {din1, 8'hff};
-  //       8'h4:
-  //         dout3 <= ctrl[3][0][31:16];
-  //       //level clipping
-  //       8'h10:
-  //         dout3 <= (din1 >= ctrl[3][1][23:16]) ?  {din1, 8'hff} : 0;
-  //       8'h11:
-  //         dout3 <= (din1 <= ctrl[3][1][31:24]) ?  {din1, 8'hff} : 0;
-  //       8'h12:
-  //         dout3 <= (din1 == ctrl[3][1][23:16]) ?  {din1, 8'hff} : 0;
-  //       8'h13:
-  //         dout3 <= (din1 >= ctrl[3][1][23:16] && din1 <= ctrl[3][1][31:24]) ?  {din1, 8'hff} : 0;
-
-  //       8'h20:
-  //         dout3 <= (din1 >= ctrl[3][1][23:16]) ?  ctrl[3][0][31:16] : 0;
-  //       8'h21:
-  //         dout3 <= (din1 <= ctrl[3][1][31:24]) ?  ctrl[3][0][31:16] : 0;
-  //       8'h22:
-  //         dout3 <= (din1 == ctrl[3][1][23:16]) ?  ctrl[3][0][31:16] : 0;
-  //       8'h23:
-  //         dout3 <= (din1 >= ctrl[3][1][23:16] && din1 <= ctrl[3][1][31:24]) ?  ctrl[3][0][31:16] : 0;
-
-  //       default:
-  //         dout3 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[4][0][7:0])
-  //       8'h0:
-  //         dout4 <= 0;
-  //       8'h1:
-  //         dout4 <= gains[4][0]*din0 + gains[4][1]*din1 + gains[4][2]*din2 + gains[4][3]*din3 
-  //           + gains[4][4]*din4;
-  //       8'h3:
-  //         dout4 <= {din1, 8'hff};
-  //       8'h4:
-  //         dout4 <= ctrl[4][0][31:16];
-  //        //level clipping
-  //       8'h10:
-  //         dout4 <= (din1 >= ctrl[4][1][23:16]) ?  {din1, 8'hff} : 0;
-  //       8'h11:
-  //         dout4 <= (din1 <= ctrl[4][1][31:24]) ?  {din1, 8'hff} : 0;
-  //       8'h12:
-  //         dout4 <= (din1 == ctrl[4][1][23:16]) ?  {din1, 8'hff} : 0;
-  //       8'h13:
-  //         dout4 <= (din1 >= ctrl[4][1][23:16] && din1 <= ctrl[4][1][31:24]) ?  {din1, 8'hff} : 0;
-
-  //       8'h20:
-  //         dout4 <= (din1 >= ctrl[4][1][23:16]) ?  ctrl[4][0][31:16] : 0;
-  //       8'h21:
-  //         dout4 <= (din1 <= ctrl[4][1][31:24]) ?  ctrl[4][0][31:16] : 0;
-  //       8'h22:
-  //         dout4 <= (din1 == ctrl[4][1][23:16]) ?  ctrl[4][0][31:16] : 0;
-  //       8'h23:
-  //         dout4 <= (din1 >= ctrl[4][1][23:16] && din1 <= ctrl[4][1][31:24]) ?  ctrl[4][0][31:16] : 0;
-
-  //       default:
-  //         dout4 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[5][0][7:0])
-  //       8'h0:
-  //         dout5 <= 0;
-  //       8'h1:
-  //         dout5 <= gains[5][0]*din0 + gains[5][1]*din1 + gains[5][2]*din2 + gains[5][3]*din3 
-  //           + gains[5][4]*din4;
-  //       8'h3:
-  //         dout5 <= {din1, 8'hff};
-  //       8'h4:
-  //         dout5 <= ctrl[5][0][31:16];
-  //        //level clipping
-  //       8'h10:
-  //         dout5 <= (din1 >= ctrl[5][1][23:16]) ?  {din1, 8'hff} : 0;
-  //       8'h11:
-  //         dout5 <= (din1 <= ctrl[5][1][31:24]) ?  {din1, 8'hff} : 0;
-  //       8'h12:
-  //         dout5 <= (din1 == ctrl[5][1][23:16]) ?  {din1, 8'hff} : 0;
-  //       8'h13:
-  //         dout5 <= (din1 >= ctrl[5][1][23:16] && din1 <= ctrl[5][1][31:24]) ?  {din1, 8'hff} : 0;
-
-  //       8'h20:
-  //         dout5 <= (din1 >= ctrl[5][1][23:16]) ?  ctrl[5][0][31:16] : 0;
-  //       8'h21:
-  //         dout5 <= (din1 <= ctrl[5][1][31:24]) ?  ctrl[5][0][31:16] : 0;
-  //       8'h22:
-  //         dout5 <= (din1 == ctrl[5][1][23:16]) ?  ctrl[5][0][31:16] : 0;
-  //       8'h23:
-  //         dout5 <= (din1 >= ctrl[5][1][23:16] && din1 <= ctrl[5][1][31:24]) ?  ctrl[5][0][31:16] : 0;
-
-  //       default:
-  //         dout5 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[6][0][7:0])
-  //       8'h0:
-  //         dout6 <= 0;
-  //       8'h1:
-  //         dout6 <= gains[6][0]*din0 + gains[6][1]*din1 + gains[6][2]*din2 + gains[6][3]*din3 
-  //           + gains[6][4]*din4;
-  //       8'h3:
-  //         dout6 <= {din2, 8'hff};
-  //       8'h4:
-  //         dout6 <= ctrl[6][0][31:16];
-  //                  //level clipping
-  //       8'h10:
-  //         dout6 <= (din2 >= ctrl[6][1][23:16]) ?  {din2, 8'hff} : 0;
-  //       8'h11:
-  //         dout6 <= (din2 <= ctrl[6][1][31:24]) ?  {din2, 8'hff} : 0;
-  //       8'h12:
-  //         dout6 <= (din2 == ctrl[6][1][23:16]) ?  {din2, 8'hff} : 0;
-  //       8'h13:
-  //         dout6 <= (din2 >= ctrl[6][1][23:16] && din2 <= ctrl[6][1][31:24]) ?  {din2, 8'hff} : 0;
-
-  //       8'h20:
-  //         dout6 <= (din2 >= ctrl[6][1][23:16]) ?  ctrl[6][0][31:16] : 0;
-  //       8'h21:
-  //         dout6 <= (din2 <= ctrl[6][1][31:24]) ?  ctrl[6][0][31:16] : 0;
-  //       8'h22:
-  //         dout6 <= (din2 == ctrl[6][1][23:16]) ?  ctrl[6][0][31:16] : 0;
-  //       8'h23:
-  //         dout6 <= (din2 >= ctrl[6][1][23:16] && din2 <= ctrl[6][1][31:24]) ?  ctrl[6][0][31:16] : 0;
-
-  //       default:
-  //         dout6 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[7][0][7:0])
-  //       8'h0:
-  //         dout7 <= 0;
-  //       8'h1:
-  //         dout7 <= gains[7][0]*din0 + gains[7][1]*din1 + gains[7][2]*din2 + gains[7][3]*din3 
-  //           + gains[7][4]*din4;
-
-  //       8'h3:
-  //         dout7 <= {din2, 8'hff};
-  //       8'h4:
-  //         dout7 <= ctrl[7][0][31:16];
-  //       //level clipping
-  //       8'h10:
-  //         dout7 <= (din2 >= ctrl[7][1][23:16]) ?  {din2, 8'hff} : 0;
-  //       8'h11:
-  //         dout7 <= (din2 <= ctrl[7][1][31:24]) ?  {din2, 8'hff} : 0;
-  //       8'h12:
-  //         dout7 <= (din2 == ctrl[7][1][23:16]) ?  {din2, 8'hff} : 0;
-  //       8'h13:
-  //         dout7 <= (din2 >= ctrl[7][1][23:16] && din2 <= ctrl[7][1][31:24]) ?  {din2, 8'hff} : 0;
-
-  //       8'h20:
-  //         dout7 <= (din2 >= ctrl[7][1][23:16]) ?  ctrl[7][0][31:16] : 0;
-  //       8'h21:
-  //         dout7 <= (din2 <= ctrl[7][1][31:24]) ?  ctrl[7][0][31:16] : 0;
-  //       8'h22:
-  //         dout7 <= (din2 == ctrl[7][1][23:16]) ?  ctrl[7][0][31:16] : 0;
-  //       8'h23:
-  //         dout7 <= (din2 >= ctrl[7][1][23:16] && din2 <= ctrl[7][1][31:24]) ?  ctrl[7][0][31:16] : 0;
-        
-  //       default:
-  //         dout7 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-    
-  //   always @(posedge pix_clk)
-  //   begin
-  //     case (ctrl[8][0][7:0])
-  //       8'h0:
-  //         dout8 <= 0;
-  //       8'h1:
-  //         dout8 <= gains[8][0]*din0 + gains[8][1]*din1 + gains[8][2]*din2 + gains[8][3]*din3 
-  //           + gains[8][4]*din4;
-  //       8'h3:
-  //         dout8 <= {din2, 8'hff};
-  //       8'h4:
-  //         dout8 <= ctrl[8][0][31:16];
-  //          //level clipping
-  //       8'h10:
-  //         dout8 <= (din2 >= ctrl[8][1][23:16]) ?  {din2, 8'hff} : 0;
-  //       8'h11:
-  //         dout8 <= (din2 <= ctrl[8][1][31:24]) ?  {din2, 8'hff} : 0;
-  //       8'h12:
-  //         dout8 <= (din2 == ctrl[8][1][23:16]) ?  {din2, 8'hff} : 0;
-  //       8'h13:
-  //         dout8 <= (din2 >= ctrl[8][1][23:16] && din2 <= ctrl[8][1][31:24]) ?  {din2, 8'hff} : 0;
-
-  //       8'h20:
-  //         dout8 <= (din2 >= ctrl[8][1][23:16]) ?  ctrl[8][0][31:16] : 0;
-  //       8'h21:
-  //         dout8 <= (din2 <= ctrl[8][1][31:24]) ?  ctrl[8][0][31:16] : 0;
-  //       8'h22:
-  //         dout8 <= (din2 == ctrl[8][1][23:16]) ?  ctrl[8][0][31:16] : 0;
-  //       8'h23:
-  //         dout8 <= (din2 >= ctrl[8][1][23:16] && din2 <= ctrl[8][1][31:24]) ?  ctrl[8][0][31:16] : 0;
-
-  //       default:
-  //         dout8 <= 16'h7fff;//{OUT_WIDTH{1'b1}};
-  //     endcase
-  //   end
-  // 
-	// // User logic ends
-	// endmodule
+// Combinational signed MACs of mode 1 (mod 2^24): no registers, so the
+// DSP48s are not loads of the regional pixel clock (see mixer_v1_0).
+module mixer_mac5 (
+    input  wire signed [24:0] g0, g1, g2, g3, g4,
+    input  wire signed [17:0] x0, x1, x2, x3, x4,
+    output wire        [23:0] p);
+    wire signed [42:0] s = g0 * x0 + g1 * x1 + g2 * x2 + g3 * x3 + g4 * x4;
+    assign p = s[23:0];
+endmodule

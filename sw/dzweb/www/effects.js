@@ -4,7 +4,7 @@ import * as net from "./net.js";
 import { h, card, row } from "./ui.js";
 
 const MODES = [
-  [0, "0 zero"], [1, "1 MAC (sum of gains)"], [3, "3 pass"], [4, "4 constant K"],
+  [0, "0 zero"], [1, "1 MAC (sum of gains)"], [3, "3 pass"], [4, "4 constant K"], [5, "5 signed constant (g0)"],
   [0x10, "10 clip ≥ lo"], [0x11, "11 clip ≤ hi"], [0x12, "12 clip = lo"], [0x13, "13 clip band"],
   [0x20, "20 K if ≥ lo"], [0x21, "21 K if ≤ hi"], [0x22, "22 K if = lo"], [0x23, "23 K if band"],
 ];
@@ -19,6 +19,7 @@ const GROUPS = [ // title, path prefix
 
 let root;
 let fields = [];
+let hueUi = null;	// the Colour FX card's hue controls
 const controls = new Map(); // path -> { set(raw), el }
 
 function maxOf(width) {
@@ -38,6 +39,14 @@ function fieldControl(f, prefix = "") {
     const cb = h("input", { type: "checkbox", title: `${path} <0|1>`, onchange: () => net.msg(path, cb.checked ? 1 : 0) });
     controls.set(path, { set: (raw) => (cb.checked = !!raw) });
     return h("div.field", {}, label, cb, h("span"));
+  }
+  if (unit === "q16s") { // signed gain (mixer coreRevision 25): signed int, 0x10000 = 1.0
+    const half = 2 ** (width - 1);
+    const num = h("input", { type: "number", step: 1, min: -half, max: half - 1, value: 0,
+      title: `${path} <int>: signed, 0x10000 = 1.0` });
+    num.onchange = () => net.msg(path, Math.round(Number(num.value)) | 0);
+    controls.set(path, { set: (raw) => (num.value = raw >= half ? raw - 2 * half : raw) });
+    return h("div.field", {}, label, h("span"), num);
   }
   if (unit === "hz") {
     const num = h("input", { type: "number", step: "0.1", min: 0, title: `${path} <Hz, float>` });
@@ -73,17 +82,30 @@ const refreshSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeou
 function fxCard() {
   const deg = h("input", { type: "range", min: -180, max: 180, step: 1, value: 0,
     title: "/fx/hue/deg <degrees>  (or /fx/hue <deg> [gain])" });
-  const gain = h("input", { type: "range", min: 0, max: 1, step: 0.01, value: 1,
-    title: "/fx/hue/gain <0..1>" });
-  const degOut = h("span", {}, "0°");
+  const gain = h("input", { type: "range", min: 0, max: 2, step: 0.01, value: 1,
+    title: "/fx/hue/gain <0..1> (signed: 0..4)" });
+  const sat = h("input", { type: "range", min: -1, max: 3, step: 0.05, value: 1,
+    title: "/fx/hue/sat <f>: 1 = as is, 0 = grey, > 1 more, < 0 the complement\n(needs signed for > 1 and < 0)" });
+  const degOut = h("span", {}, "0°"), satOut = h("span", {}, "1.00");
   const sendHue = () => {
     degOut.textContent = `${deg.value}°`;
     net.throttled("/fx/hue", () => net.message("/fx/hue", net.float(Number(deg.value)),
       net.float(Number(gain.value))));	// = /fx/hue/deg + /fx/hue/gain
     refreshSoon();
   };
+  const sendSat = () => {
+    satOut.textContent = Number(sat.value).toFixed(2);
+    net.throttled("/fx/hue/sat", () => net.message("/fx/hue/sat", net.float(Number(sat.value))));
+    refreshSoon();
+  };
   deg.oninput = sendHue;
   gain.oninput = sendHue;
+  sat.oninput = sendSat;
+  const signed = h("input", { type: "checkbox",
+    title: "/fx/signed <0|1>: write the matrix as mode 5 signed constants (bitstream smix or later)\n" +
+      "exact hue at every angle, saturation, negative entries; results outside 0..255 wrap",
+    onchange: () => { net.msg("/fx/signed", signed.checked ? 1 : 0); sendHue(); } });
+  hueUi = { deg, degOut, gain, sat, satOut, signed };	// for the /fx/hue, /fx/signed replies (init)
   const pick = (v, t) => h("input", { type: "color", value: v, title: t });
   const mapR = pick("#ff0000", "where input red goes\n/fx/map <0xRRGGBB r> <g> <b>"),
     mapG = pick("#00ff00", "where input green goes\n/fx/map <r> <0xRRGGBB g> <b>"),
@@ -124,6 +146,8 @@ function fxCard() {
   return card("Colour FX (HDMI_0)",
     row("Hue", deg, degOut),
     row("Gain", gain),
+    row("Saturation", sat, satOut),
+    row("", h("label", {}, signed, " signed gains (mode 5)")),
     row("Map R G B →", mapR, mapG, mapB,
       h("button", { title: "/fx/map <0xRRGGBB> <0xRRGGBB> <0xRRGGBB>", onclick: () => { net.msg("/fx/map", hex24(mapR.value), hex24(mapG.value),
         hex24(mapB.value)); refreshSoon(); } }, "Apply")),
@@ -131,7 +155,8 @@ function fxCard() {
       net.msg("/fx/identity"); refreshSoon(); } }, "Identity"),
       h("button.ghost", { title: "the debazarosit.sh mixer setup\n/mixer/<c>/mode, /k, /lo, /hi (all 9 channels)", onclick: boot }, "Boot setup"), h("label", {}, wrap, " wrap")),
     h("p.hint", {}, "Hue and map set all 9 mixer channels to constant gains. " +
-      "Gains are unsigned: between 0°, 120° and 240° the colours lose saturation."),
+      "Unsigned (mode 4): between 0°, 120° and 240° the colours lose saturation, and saturation > 1 does little. " +
+      "Signed (mode 5): exact at every angle; as in the rest of the gateware, a result outside 0..255 wraps."),
     row("Key colour", keyCol, tol, tolOut),
     row("", h("label", {}, keyOn, " key on"),
       h("label", { title: "test HDMI_0's video instead of HDMI_1" }, keySrc, " test HDMI_0")),
@@ -207,14 +232,27 @@ function mixerTable() {
       controls.set(`${p}/${k}`, { set: (raw) => (cb.checked = !!raw) });
       return h("td", {}, cb);
     };
+    // a signed gain (mixer coreRevision 25): an int, the 24-bit two's complement
+    // value of gain [23:0] (0x10000 = 1.0; RGB gains are useful below ~255, the
+    // oscillator gains below that); g0 = the mode 5 constant
+    const sgain = (k) => {
+      const n = h("input", { type: "number", step: 1, min: -8388608, max: 8388607, value: 0, style: "width:6.5em",
+        title: `${p}/${k} <int>: signed, 0x10000 = 1.0, negative subtracts\n(raw unsigned: ${p}/gain/${k.slice(2)})`,
+        onchange: () => net.msg(`${p}/${k}`, Math.round(Number(n.value)) | 0) });
+      controls.set(`${p}/${k}`, { set: (raw) => (n.value = raw >= 0x800000 ? raw - 0x1000000 : raw) });
+      return h("td", {}, n);
+    };
     controls.set(`${p}/mode`, { set: (raw) => (mode.value = raw) });
     return h("tr", {}, h("td", {}, String(c)), h("td", {}, mode), num("k", 65535),
       num("lo", 255), num("hi", 255), bit("stream", "stream B (delayed copy)"),
       bit("key", "lo..hi band joins the colour key"), bit("src", "compare HDMI_0's video"),
-      ...[0, 1, 2, 3, 4].map((g) => num(`gain/${g}`, 0x7fffffff)));
+      bit("diff", "mode 1: R B G inputs = stream A - stream B (edge / comb with the delay)"),
+      bit("centre", "mode 1: R B G inputs - 128 (bipolar video)"),
+      bit("dsign", "mode 1: sine / saw (din3, din4) as two's complement"),
+      ...[0, 1, 2, 3, 4].map((g) => sgain(`g/${g}`)));
   };
   return h("div", { style: "overflow-x:auto" }, h("table.mixer", {},
-    h("thead", {}, h("tr", {}, ...["ch", "mode", "K", "lo", "hi", "B", "key", "src",
+    h("thead", {}, h("tr", {}, ...["ch", "mode", "K", "lo", "hi", "B", "key", "src", "A−B", "−128", "±dds",
       "g0 R", "g1 B", "g2 G", "g3 sin", "g4 saw"].map((t) => h("th", {}, t)))),
     h("tbody", {}, [...Array(9).keys()].map(tr))));
 }
@@ -235,7 +273,10 @@ async function load() {
   grid.prepend(xfadeCard()); // first: the quick test of /fx/xfade
   root.replaceChildren(grid, card("Mixer (HDMI_0 colour matrix, 9 channels)", mixerTable(),
     h("p.hint", {}, "Each channel makes one gain of the 3×3 colour matrix. Inputs: " +
-      "din0 R, din1 B, din2 G of HDMI_1 (stream A, or the delayed stream B), din3 sine, din4 saw.")));
+      "din0 R, din1 B, din2 G of HDMI_1 (stream A, or the delayed stream B), din3 sine, din4 saw. " +
+      "Gains g0..g4 are signed ints (0x10000 = 1.0, negative subtracts; bitstream smix or later). Mode 1 options: A−B (stream A minus " +
+      "the delayed stream B: edges / comb), −128 (bipolar video), ±dds (sine and saw signed). " +
+      "Mode 1 is timed for 720p60 only.")));
   refresh();
 }
 
@@ -252,13 +293,26 @@ export function init(el) {
     const [path, raw, norm] = m.args;
     controls.get(path)?.set(raw, norm);
   });
+  // the board's state: /fx/hue -> deg gain sat, /fx/signed -> i
+  net.on("/fx/hue", (m) => {
+    const u = hueUi, [d, g, s] = m.args;
+    if (!u) return;
+    if (document.activeElement !== u.deg) { u.deg.value = d; u.degOut.textContent = `${Math.round(d)}°`; }
+    if (document.activeElement !== u.gain) u.gain.value = g;
+    if (s !== undefined && document.activeElement !== u.sat) { u.sat.value = s; u.satOut.textContent = Number(s).toFixed(2); }
+  });
+  net.on("/fx/signed", (m) => { if (hueUi) hueUi.signed.checked = !!m.args[0]; });
 }
 
 export function connected() {
   load();
+  net.msg("/fx/hue");
+  net.msg("/fx/signed");
 }
 
 export function show() {
   if (fields.length) refresh();
   net.msg("/fx/xfade");
+  net.msg("/fx/hue");
+  net.msg("/fx/signed");
 }

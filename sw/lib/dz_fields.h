@@ -7,7 +7,8 @@
  *
  * Value rules, the same for every field:
  *   int   = raw field value (clamped to the field width)
- *   float = 0.0 .. 1.0 across the field (DZ_HZ: Hz; DZ_BOOL: != 0)
+ *   float = 0.0 .. 1.0 across the field (DZ_HZ: Hz; DZ_BOOL: != 0;
+ *           DZ_Q16S: a signed gain, 1.0 = 0x10000)
  *   DZ_RGB fields take 1 value (grey) or 3 values (r, g, b)
  *
  * Writes are read-modify-write against the hardware. Every register here
@@ -23,7 +24,9 @@ typedef enum {
 	DZ_RAW = 0,	/* float 0..1 spans the field                     */
 	DZ_BOOL,	/* any non-zero value = 1                         */
 	DZ_HZ,		/* value in Hz -> DDS phase increment             */
-	DZ_RGB		/* [23:0] three gain bytes in display lane order  */
+	DZ_RGB,		/* [23:0] three gain bytes in display lane order  */
+	DZ_Q16S		/* two's complement across the field, float 1.0 =
+			 * 0x10000 (mixer gains, coreRevision 25)        */
 } dz_unit;
 
 enum {

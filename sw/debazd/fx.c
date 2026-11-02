@@ -23,10 +23,19 @@
  *   /fx/hue f:deg [f:gain] rotate the hue about the grey axis (+ = R->G->B).
  *                          Without gain the last gain stays (default 1).
  *   /fx/hue/deg f, /fx/hue/gain f   one value alone (LFO: "/fx/hue/deg $f0")
- *   /fx/hue                -> /fx/hue f:deg f:gain
- *                          Negative coefficients are clipped (no signed
- *                          gains), so between multiples of 120 degrees the
- *                          colours lose some saturation.
+ *   /fx/hue                -> /fx/hue f:deg f:gain f:sat
+ *   /fx/hue/sat f          saturation (1 = as is, 0 = grey, > 1 more, < 0
+ *                          the complement), applied with the hue
+ *                          Unsigned (default): negative coefficients are
+ *                          clipped, so between multiples of 120 degrees the
+ *                          colours lose some saturation, and sat > 1 does
+ *                          little. With /fx/signed 1 they are exact.
+ *   /fx/signed i           1 = write the matrix as mode 5 signed constants
+ *                          (mixer coreRevision 25, build smix or later):
+ *                          entries -128..128, no clipping. As in the
+ *                          gateware, a negative result wraps (dark ->
+ *                          bright), as a row sum > 1.0 does. Older
+ *                          bitstreams store mode 5 and output 0x7FFF.
  *   /fx/map i:r i:g i:b    where each input primary goes: three 0xRRGGBB
  *                          colours (the matrix columns)
  *   /fx/wrap i             1 = allow row sums > 1.0 (wrap-around effect)
@@ -59,10 +68,11 @@
 #define K_MAX		0xFFFFu
 #define ROW_MAX		65793u		/* 255 * sum(K) must fit in 24 bits */
 #define MODE_CONST	4
+#define MODE_SCONST	5		/* signed constant: gain/0 [23:0], Q8.16 */
 
 static const int chan_of[3][3] = { { 0, 2, 1 }, { 6, 7, 8 }, { 3, 4, 5 } };
-static int wrap;
-static float hue_deg, hue_gain = 1.0f;		/* last /fx/hue */
+static int wrap, sgn;
+static float hue_deg, hue_gain = 1.0f, hue_sat = 1.0f;	/* last /fx/hue */
 static uint32_t key_col = 0x00FF00;		/* last /fx/key/color */
 static int key_tol = 24, key_have;
 
@@ -79,9 +89,30 @@ static float clamp01(float v)
 	return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
 }
 
-/* Write m (rows out R G B, columns in R G B) as mode-4 constants. */
+/* Write m (rows out R G B, columns in R G B) as mode-4 constants, or with
+ * /fx/signed as mode-5 signed constants (a row scaled when its sum is above
+ * 1.0, unless /fx/wrap: grey keeps its level; a saturated colour can still
+ * leave 0..255 and wraps, as in the gateware) */
 static void set_matrix(float m[3][3])
 {
+	if (sgn) {
+		for (int o = 0; o < 3; o++) {
+			double sum = 0, sc = 1;
+
+			for (int i = 0; i < 3; i++)	/* grey stays grey; colours may wrap */
+				sum += m[o][i];
+			if (!wrap && sum * K_ONE > ROW_MAX)
+				sc = ROW_MAX / (sum * K_ONE);
+			for (int i = 0; i < 3; i++) {
+				int c = chan_of[o][i];
+				dz_arg v = { 'f', 0, (float)(m[o][i] * sc), NULL };
+
+				dz_field_set(mix_field(c, "g/0"), &v, 1, NULL);
+				dz_field_write(mix_field(c, "mode"), MODE_SCONST);
+			}
+		}
+		return;
+	}
 	for (int o = 0; o < 3; o++) {
 		uint32_t k[3], sum = 0;
 
@@ -103,19 +134,26 @@ static void set_matrix(float m[3][3])
 	}
 }
 
+/* one matrix entry: mode 4 K or mode 5 g/0; other modes: none */
+static float entry(int c, float none)
+{
+	uint32_t mode = 0, k = 0;
+	const dz_field *g = mix_field(c, "g/0");
+
+	dz_field_read(mix_field(c, "mode"), &mode);
+	if (mode == MODE_SCONST && g && dz_field_read(g, &k) == 0)
+		return dz_field_to_float(g, k);
+	dz_field_read(mix_field(c, "k"), &k);
+	return mode == MODE_CONST ? (float)(k / K_ONE) : none;
+}
+
 static void reply_matrix(void)
 {
 	float v[9];
 
 	for (int o = 0; o < 3; o++)
-		for (int i = 0; i < 3; i++) {
-			int c = chan_of[o][i];
-			uint32_t mode = 0, k = 0;
-
-			dz_field_read(mix_field(c, "mode"), &mode);
-			dz_field_read(mix_field(c, "k"), &k);
-			v[o * 3 + i] = mode == MODE_CONST ? (float)(k / K_ONE) : -1.0f;
-		}
+		for (int i = 0; i < 3; i++)
+			v[o * 3 + i] = entry(chan_of[o][i], -1.0f);
 	dzd_reply("/fx/matrix", "fffffffff", v[0], v[1], v[2], v[3], v[4], v[5],
 		  v[6], v[7], v[8]);
 }
@@ -125,13 +163,34 @@ static float num(const dz_arg *a)
 	return a->type == 'f' ? a->f : (float)a->i;
 }
 
-/* Rotation about the grey axis (1,1,1): a circulant matrix. */
-static void hue_matrix(float deg, float gain, float m[3][3])
+/* hue gain: 0..1 unsigned (K max 0.99998), 0..4 signed */
+static float gain_arg(float v)
+{
+	return sgn ? (v < 0 ? 0 : v > 4 ? 4 : v) : clamp01(v);
+}
+
+/* Rotation about the grey axis (1,1,1) times the saturation (both
+ * circulant: they commute), times gain. Signed: exact; unsigned: the
+ * negative terms clipped and the row scaled back to gain. */
+static void hue_matrix(float deg, float gain, float sat, float m[3][3])
 {
 	double t = deg * M_PI / 180.0, c = cos(t), s = sin(t) / sqrt(3.0);
 	double d = (1.0 + 2.0 * c) / 3.0, up = (1.0 - c) / 3.0 + s,
 	       dn = (1.0 - c) / 3.0 - s, sum;
+	double a = (1.0 + 2.0 * sat) / 3.0, b = (1.0 - sat) / 3.0;	/* saturation */
+	double d2 = d * a + (up + dn) * b, up2 = up * a + (d + dn) * b, dn2 = dn * a + (d + up) * b;
 
+	d = d2;
+	up = up2;
+	dn = dn2;
+	if (sgn) {
+		for (int o = 0; o < 3; o++) {
+			m[o][o] = (float)(d * gain);
+			m[o][(o + 2) % 3] = (float)(up * gain);
+			m[o][(o + 1) % 3] = (float)(dn * gain);
+		}
+		return;
+	}
 	d = d < 0 ? 0 : d;
 	up = up < 0 ? 0 : up;
 	dn = dn < 0 ? 0 : dn;
@@ -174,6 +233,7 @@ static void key_set(uint32_t lo, uint32_t hi)
 void fx_state(state_cb cb, void *ctx)
 {
 	st_emit(cb, ctx, NULL, "/fx/wrap", "i", wrap);
+	st_emit(cb, ctx, NULL, "/fx/signed", "i", sgn);
 }
 
 int fx_dispatch(const dz_msg *m)
@@ -208,22 +268,25 @@ int fx_dispatch(const dz_msg *m)
 		return 1;
 	}
 	if (!strcmp(m->path, "/fx/hue") || !strcmp(m->path, "/fx/hue/deg") ||
-	    !strcmp(m->path, "/fx/hue/gain")) {
+	    !strcmp(m->path, "/fx/hue/gain") || !strcmp(m->path, "/fx/hue/sat")) {
 		float mt[3][3];
-		const char *sub = m->path + 7;		/* "", "/deg", "/gain" */
+		const char *sub = m->path + 7;		/* "", "/deg", "/gain", "/sat" */
 
 		if (n < 1) {
-			dzd_reply("/fx/hue", "ff", hue_deg, hue_gain);
+			dzd_reply("/fx/hue", "fff", hue_deg, hue_gain, hue_sat);
 			return 1;
 		}
 		if (!strcmp(sub, "/gain")) {
-			hue_gain = clamp01(num(&a[0]));
+			hue_gain = gain_arg(num(&a[0]));
+		} else if (!strcmp(sub, "/sat")) {
+			hue_sat = num(&a[0]);
+			hue_sat = hue_sat < -2 ? -2 : hue_sat > 4 ? 4 : hue_sat;
 		} else {
 			hue_deg = num(&a[0]);
 			if (!*sub && n >= 2)
-				hue_gain = clamp01(num(&a[1]));
+				hue_gain = gain_arg(num(&a[1]));
 		}
-		hue_matrix(hue_deg, hue_gain, mt);
+		hue_matrix(hue_deg, hue_gain, hue_sat, mt);
 		set_matrix(mt);
 		reply_matrix();
 		return 1;
@@ -237,14 +300,9 @@ int fx_dispatch(const dz_msg *m)
 			dzd_reply("/error", "ss", "/fx/matrix/<out><in> f (r, g, b)", m->path);
 			return 1;
 		}
-		for (int r = 0; r < 3; r++)		/* the matrix now (not mode 4 = 0) */
-			for (int c = 0; c < 3; c++) {
-				uint32_t mode = 0, k = 0;
-
-				dz_field_read(mix_field(chan_of[r][c], "mode"), &mode);
-				dz_field_read(mix_field(chan_of[r][c], "k"), &k);
-				mt[r][c] = mode == MODE_CONST ? (float)(k / K_ONE) : 0.0f;
-			}
+		for (int r = 0; r < 3; r++)		/* the matrix now (not mode 4 / 5 = 0) */
+			for (int c = 0; c < 3; c++)
+				mt[r][c] = entry(chan_of[r][c], 0.0f);
 		mt[o - rgb][i - rgb] = num(&a[0]);
 		set_matrix(mt);
 		reply_matrix();
@@ -266,6 +324,12 @@ int fx_dispatch(const dz_msg *m)
 		}
 		set_matrix(mt);
 		reply_matrix();
+		return 1;
+	}
+	if (!strcmp(m->path, "/fx/signed")) {
+		if (n >= 1)
+			sgn = a[0].i != 0;
+		dzd_reply("/fx/signed", "i", sgn);
 		return 1;
 	}
 	if (!strcmp(m->path, "/fx/wrap")) {

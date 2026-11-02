@@ -93,6 +93,20 @@ check wildcard    "/value \"/mixer/8/mode\""       q "/mixer/[0-8]/mode"
 q "/mixer/*/mode" 35 >/dev/null
 check wild-set    "/value \"/mixer/4/mode\" 35"    q /mixer/4/mode
 check no-addr     "no such address"                q /nothing/here
+# signed mixer gains (coreRevision 25): g/<n> = gain/<n> [23:0], 1.0 = 0x10000
+q /mixer/3/gain/2 0x12000000 >/dev/null
+q /mixer/3/g/2 -1.5 >/dev/null
+check sgain-raw   "/value \"/mixer/3/gain/2\" 318668800" q /mixer/3/gain/2	# 0x12FE8000: [31:24] kept
+check sgain-float "/value \"/mixer/3/g/2\" 16678912 -1.5" q /mixer/3/g/2
+q /mixer/3/g/2 500.0 >/dev/null
+check sgain-clamp "/value \"/mixer/3/g/2\" 8388607 " q /mixer/3/g/2
+q /mixer/3/g/2 -255 >/dev/null	# an int is the raw signed value (web Mixer table)
+check sgain-int   "/value \"/mixer/3/g/2\" 16776961 " q /mixer/3/g/2	# 0xFFFF01
+q /mixer/3/diff 1 >/dev/null
+check mix-diff    "/value \"/mixer/3/diff\" 1"   q /mixer/3/diff
+q /mixer/3/diff 0 >/dev/null; q /mixer/3/gain/2 0 >/dev/null
+n=$(q /state | grep -c '/mixer/3/g/')
+check sgain-state "state g aliases 0" echo "state g aliases $n"	# the dump keeps gain/<n> only
 # --- /fx colour matrix and key (fx.c) ---
 check fx-hue120   "/fx/matrix 0 0 0.999985 0.999985 0 0 0 0.999985 0" q /fx/hue 120
 check fx-hue60    "/fx/matrix 0.5 0 0.5 0.5 0.5 0 0 0.5 0.5" q /fx/hue 60
@@ -100,6 +114,15 @@ check fx-rownorm  "/fx/matrix 0.334641 0.334641 0.334641" q /fx/matrix 1 1 1 0 1
 check fx-chanmap  "/value \"/mixer/5/k\" 65535"   q /mixer/5/k
 check fx-chanmap2 "/value \"/mixer/2/k\" 21931"   q /mixer/2/k
 check fx-ident    "/fx/matrix 0.999985 0 0 0 0.999985 0 0 0 0.999985" q /fx/identity
+# signed matrix (mode 5): exact hue at 60 degrees has negative terms
+q /fx/signed 1 >/dev/null
+check fx-s-hue60  "/fx/matrix 0.666672 -0.333328 0.666672 0.666672 0.666672 -0.333328 -0.333328 0.666672 0.666672" q /fx/hue 60 1
+check fx-s-mode   "/value \"/mixer/0/mode\" 5"   q /mixer/0/mode
+q /fx/hue/deg 0 >/dev/null
+check fx-s-sat2   "/fx/matrix 1.66667 -0.333328 -0.333328" q /fx/hue/sat 2	# rows sum to 1
+check fx-s-entry  "/fx/matrix 1.66667 -0.5 -0.333328 " q /fx/matrix/rg -0.5
+q /fx/hue/sat 1 >/dev/null; q /fx/signed 0 >/dev/null
+check fx-u-back   "/fx/matrix 0.999985 0 0 0 0.999985 0 0 0 0.999985" q /fx/hue 0 1
 q /fx/key/color 0x00ff00 30 >/dev/null
 # box (0,225,0)..(30,255,30): R = chan 0, G = chan 6, B = chan 3
 check key-r-hi    "/value \"/mixer/0/hi\" 30 "      q /mixer/0/hi

@@ -419,6 +419,19 @@ The gains are unsigned, so a hue angle between the multiples of 120 degrees
 clips the negative terms: less saturation and brightness (60 degrees: red ->
 half-bright yellow).
 
+Signed gains (mixer coreRevision 25, branch signed-mixer): `dzctl /fx/signed 1`
+writes the matrix as mode 5 signed constants. Then the hue is exact at every
+angle, `/fx/hue/sat 2` gives more saturation (0 = grey, -1 = the
+complement), and `/fx/matrix` takes negative entries. As in the rest of the
+gateware, a result outside 0..255 wraps (no clamp). Older bitstreams show
+mode 5 as 0x7FFF: keep `/fx/signed 0` on them. Per channel, the fields
+`/mixer/<c>/g/<n>` set a gain as a signed number: an int is the raw 24-bit
+two's complement value (0x10000 = 1.0, -255 = 0xFFFF01; the web Mixer
+table uses ints), a float is scaled (1.0 = 0x10000); and
+`/mixer/<c>/diff`, `centre` and `dsign` select the mode 1 inputs: stream A
+minus stream B (with the BRAM delay `/hdmi/0/delay`: an edge or comb
+filter), the stream minus 128, and the DDS inputs as signed numbers.
+
 Colour key (needs the key bitstream, Oct 26 2026; older bitstreams ignore
 it): where the tested pixel is inside a colour box, HDMI_1's pixel replaces
 HDMI_0's. The box is the lo/hi of mixer channels 0 (R), 6 (G), 3 (B) with

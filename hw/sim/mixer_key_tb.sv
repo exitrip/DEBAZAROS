@@ -4,8 +4,12 @@
 //     thresholds, stream bits; the new KEY/SRC bits 0) and the same random
 //     pixels. All 9 douts must match on every pixel clock, and pix_out must be
 //     bg_in one pixel clock later.
+//     Mode 1 is pipelined since coreRevision 25: its douts are compared with
+//     the reference 2 pixel clocks earlier.
 //  2. colour key: CTRL_1 [1] KEY, [2] SRC per channel; channel 0 CTRL_0 [8]
 //     invert, [9] fill from stream B.
+//  3. signed mode 1 (coreRevision 25): negative gains, CTRL_1 [3] DIFF,
+//     [4] CENTRE, [5] DSIGN, the latency; mode 5 (signed constant).
 // Pixels are in pixel-bus lane order: R [23:16], B [15:8], G [7:0].
 `timescale 1ns/1ps
 module tb;
@@ -25,6 +29,7 @@ module tb;
   wire [23:0] pout;
   wire [23:0] o [0:8];
   wire [23:0] r [0:8];
+
 
   mixer_v1_0 #(.IN_WIDTH(16), .OUT_WIDTH(24)) dut (
     .pix_clk(pclk), .dout0(o[0]), .dout1(o[1]), .dout2(o[2]), .dout3(o[3]), .dout4(o[4]),
@@ -84,20 +89,30 @@ module tb;
     bg = $random; vid = $random;
   end
 
-  // equivalence check on every pixel clock while 'cmp' is set
+  // equivalence check on every pixel clock while 'cmp' is set; mode 1
+  // channels against the reference of 2 pixel clocks before
   reg cmp = 0;
-  integer k;
+  integer k, q;
+  reg [7:0] mode_of [0:8];
+  reg [23:0] hist [0:8][0:6];	// hist[k][d] = r[k] d + 1 pixel clocks ago
+  reg [23:0] want_k;
   always @(posedge pclk) begin
     #1;
     if (cmp) begin
-      for (k = 0; k < 9; k = k + 1)
-        if (o[k] !== r[k]) begin
+      for (k = 0; k < 9; k = k + 1) begin
+        want_k = mode_of[k] == 8'h01 ? hist[k][1] : r[k];
+        if (o[k] !== want_k) begin
           fail("dout differs from the reference");
-          $display("     chan %0d new %06x ref %06x", k, o[k], r[k]);
+          $display("     chan %0d mode %02x new %06x ref %06x", k, mode_of[k], o[k], want_k);
         end
+      end
       // bg changes on the falling edge: pix_out holds the bg_in of this edge
       if (pout !== bg) fail("pix_out != registered bg_in (key off)");
       checks = checks + 1;
+    end
+    for (k = 0; k < 9; k = k + 1) begin
+      for (q = 6; q > 0; q = q - 1) hist[k][q] = hist[k][q-1];
+      hist[k][0] = r[k];
     end
   end
 
@@ -108,6 +123,7 @@ module tb;
       8: rmode = 8'h20; 9: rmode = 8'h21; 10: rmode = 8'h22; 11: rmode = 8'h23;
       12: rmode = 8'h02; default: rmode = $random;	// unused modes -> default
     endcase
+    if (rmode == 8'h05) rmode = 8'h06;	// mode 5 is new (the reference: default)
   endfunction
 
   // set the HDMI_1 pixel (stream A) and HDMI_0's video, then check pix_out
@@ -117,6 +133,21 @@ module tb;
       d0 = h1[23:16]; d1 = h1[15:8]; d2 = h1[7:0]; vid = v0;
       @(posedge pclk); @(posedge pclk); #1;
       if (pout !== want) begin fail(name); $display("     got %06x want %06x", pout, want); end
+      else $display("ok   %0s", name);
+    end
+  endtask
+
+  // mode 1 on channel 0: stream A R, B lanes, din3, din4, stream B R, gain 0,
+  // CTRL_1; the other gains as written. Checks dout0 once the pipeline is full.
+  task sig(input [15:0] r_a, input [15:0] b_a, input [15:0] i3, input [15:0] i4, input [15:0] r_b,
+           input [31:0] g0, input [31:0] c1, input integer u1, input integer u2,
+           input [23:0] want, input [255:0] name);
+    begin
+      wr(ra(0, 0), g0); wr(ra(0, 9), c1);
+      @(negedge pclk);
+      d0 = r_a; d1 = b_a; d2 = 0; d3 = i3; d4 = i4; d5 = r_b; d6 = 0; d7 = 0;
+      repeat (12) @(posedge pclk); #1;
+      if (o[0] !== want) begin fail(name); $display("     got %06x want %06x", o[0], want); end
       else $display("ok   %0s", name);
     end
   endtask
@@ -137,11 +168,12 @@ module tb;
           wr(ra(c, n), (round % 3 == 0) ? ($random & 32'h1ff) : $random);
         // CTRL_0: mode, random [15:8] (new global bits in chan 0 only
         // matter for the key, which stays off), random K
-        wr(ra(c, 8), {16'($random), 8'($random), rmode(round * 9 + c)});
-        // CTRL_1: random thresholds and stream, KEY = SRC = 0
-        v = $random; wr(ra(c, 9), v & 32'hFFFF_FFF9);
+        mode_of[c] = rmode(round * 9 + c);
+        wr(ra(c, 8), {16'($random), 8'($random), mode_of[c]});
+        // CTRL_1: random thresholds and stream; KEY, SRC, DIFF, CENTRE, DSIGN 0
+        v = $random; wr(ra(c, 9), v & 32'hFFFF_FFC1);
       end
-      repeat (4) @(posedge pclk);
+      repeat (12) @(posedge pclk);	// the mode 1 pipeline fills
       cmp = 1;
       repeat (300) @(posedge pclk);
     end
@@ -151,7 +183,9 @@ module tb;
 
     // readback of the AXI registers (outputs are now the registers)
     wr(ra(4, 2), 32'hDEAD_BEEF); rd(ra(4, 2), v);
-    if (v !== 32'hDEAD_BEEF) fail("readback"); else $display("ok   readback");
+    if (v !== 32'h00AD_BEEF) fail("readback"); else $display("ok   readback (GAIN [31:24] reads 0)");
+    wr(ra(4, 9), 32'hDEAD_BEEF); rd(ra(4, 9), v);
+    if (v !== 32'hDEAD_BEEF) fail("CTRL readback"); else $display("ok   CTRL readback: all 32 bits");
 
     // ---- 2. colour key -----------------------------------------------------
     for (c = 0; c < 9; c = c + 1) begin
@@ -188,6 +222,36 @@ module tb;
     wr(ra(0, 8), 32'h1234_0004);
     @(posedge pclk); @(posedge pclk); #1;
     if (o[0] !== 24'h001234) fail("KEY changes the channel's gain"); else $display("ok   KEY leaves the gain");
+
+    // ---- 3. signed mode 1, mode 5 ------------------------------------------
+    for (n = 0; n < 5; n = n + 1) wr(ra(0, n), 32'h0);
+    wr(ra(0, 9), 32'h0); wr(ra(0, 8), 32'h0000_0001);
+    sig(16'h40, 16'h00, 16'h0, 16'h0, 16'h00, 32'h00FF_0000, 0, 0, 0, 24'hC00000, "mode 1: gain -1.0 x 0x40");
+    sig(16'h40, 16'h00, 16'h0, 16'h0, 16'h00, 32'hFFFF_0000, 0, 0, 0, 24'hC00000, "mode 1: gain [31:24] ignored");
+    wr(ra(0, 1), 32'h00FF_0000);	// tap 1 (B lane) -1.0
+    sig(16'h80, 16'h30, 16'h0, 16'h0, 16'h00, 32'h0001_0000, 0, 0, 0, 24'h500000, "mode 1: R - B");
+    wr(ra(0, 1), 32'h0);
+    sig(16'h30, 16'h00, 16'h0, 16'h0, 16'h50, 32'h0001_0000, 32'h8, 0, 0, 24'hE00000, "DIFF: A - B = -0x20");
+    sig(16'h40, 16'h00, 16'h0, 16'h0, 16'h00, 32'h0001_0000, 32'h10, 0, 0, 24'hC00000, "CENTRE: 0x40 - 128");
+    sig(16'h40, 16'h00, 16'h0, 16'h0, 16'hC0, 32'h0001_0000, 32'h11, 0, 0, 24'h400000, "CENTRE stream B: 0xC0 - 128");
+    wr(ra(0, 0), 32'h0); wr(ra(0, 3), 32'h1);
+    sig(16'h00, 16'h00, 16'hFFFF, 16'h0, 16'h00, 32'h0, 32'h0, 0, 0, 24'h00FFFF, "din3 unsigned 0xFFFF");
+    sig(16'h00, 16'h00, 16'hFFFF, 16'h0, 16'h00, 32'h0, 32'h20, 0, 0, 24'hFFFFFF, "DSIGN: din3 = -1");
+    wr(ra(0, 3), 32'h0);
+    // latency: a step on din0 reaches dout0 3 pixel clocks after the edge that takes it
+    wr(ra(0, 9), 32'h0); wr(ra(0, 0), 32'h0001_0000);
+    @(negedge pclk); d0 = 16'h00; repeat (12) @(posedge pclk);
+    @(negedge pclk); d0 = 16'h7F;
+    // n = the edge (1 = the edge that takes the input) on which dout0 changes
+    n = 0;
+    while (n < 12 && o[0] !== 24'h7F0000) begin @(posedge pclk); #1; n = n + 1; end
+    if (n !== 3) begin fail("mode 1 latency"); $display("     on edge %0d, want 3", n); end
+    else $display("ok   mode 1 latency: 3 pixel clocks (the other modes: 1)");
+    // mode 5: GAIN_0 [23:0] as a constant
+    wr(ra(0, 0), 32'h12FF_8000); wr(ra(0, 8), 32'h0000_0005);
+    @(posedge pclk); @(posedge pclk); #1;
+    if (o[0] !== 24'hFF8000) begin fail("mode 5"); $display("     got %06x", o[0]); end
+    else $display("ok   mode 5: signed constant -0.5");
 
     if (fails) $display("FAILED %0d", fails); else $display("ALL PASS");
     $finish;

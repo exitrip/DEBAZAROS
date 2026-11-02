@@ -28,6 +28,7 @@
 #include "dz_hw.h"
 #include "dz_map.h"
 
+#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -240,7 +241,7 @@ static const dz_field static_fields[] = {
 /* mixer 2.0: register index = chan*10 + n, byte offset = index*4 */
 #define MIX_CHANS	9
 #define MIX_GAINS	5
-#define MIX_PER_CHAN	(MIX_GAINS + 7)
+#define MIX_PER_CHAN	(2 * MIX_GAINS + 10)
 #define MIX_REG(c, n)	((((uint32_t)(c) * 10u) + (uint32_t)(n)) * 4u)
 #define N_STATIC	((int)(sizeof(static_fields) / sizeof(static_fields[0])))
 #define N_MIX		(MIX_CHANS * MIX_PER_CHAN)
@@ -278,11 +279,18 @@ void dz_fields_build(void)
 		static const char *gn[MIX_GAINS] = {
 			"gain/0", "gain/1", "gain/2", "gain/3", "gain/4" };
 
+		static const char *sn[MIX_GAINS] = { "g/0", "g/1", "g/2", "g/3", "g/4" };
+
 		for (int n = 0; n < MIX_GAINS; n++)
 			mix_add(&k, &p, c, gn[n], (uint32_t)n, 0, 32, DZ_RAW,
 				"weight of din0..4 (din0 R, din1 B, din2 G, din3 sine, din4 saw)");
+		/* the same bits [23:0] as a signed gain (mixer coreRevision 25: only
+		 * [23:0] ever counted, mod 2^24); the state dump keeps gain/<n> */
+		for (int n = 0; n < MIX_GAINS; n++)
+			mix_add(&k, &p, c, sn[n], (uint32_t)n, 0, 24, DZ_Q16S,
+				"signed weight, float 1.0 = 0x10000 (mode 1; g/0 = the mode 5 constant)");
 		mix_add(&k, &p, c, "mode", 8, 0, 8, DZ_RAW,
-			"0 zero, 1 MAC, 3 pass, 4 const K, 0x10-0x13 clip, 0x20-0x23 clip to K");
+			"0 zero, 1 MAC, 3 pass, 4 const K, 5 signed const g/0, 0x10-0x13 clip, 0x20-0x23 clip to K");
 		mix_add(&k, &p, c, "k", 8, 16, 16, DZ_RAW, "constant K (modes 4, 0x20-0x23)");
 		mix_add(&k, &p, c, "stream", 9, 0, 1, DZ_BOOL,
 			"0 = stream A (live HDMI_1), 1 = stream B (BRAM-delayed HDMI_1)");
@@ -292,6 +300,12 @@ void dz_fields_build(void)
 			"colour key: this channel's lo..hi band joins the key mask (AND)");
 		mix_add(&k, &p, c, "src", 9, 2, 1, DZ_BOOL,
 			"compare HDMI_0's video instead of HDMI_1 (key, modes 3, 0x1x, 0x2x)");
+		mix_add(&k, &p, c, "diff", 9, 3, 1, DZ_BOOL,
+			"mode 1: R B G inputs = stream A - stream B (edge / comb with the delay)");
+		mix_add(&k, &p, c, "centre", 9, 4, 1, DZ_BOOL,
+			"mode 1: R B G inputs - 128 (bipolar video; not with diff)");
+		mix_add(&k, &p, c, "dsign", 9, 5, 1, DZ_BOOL,
+			"mode 1: din3, din4 (DDS) as two's complement");
 	}
 	n_fields = k;
 }
@@ -362,6 +376,12 @@ uint32_t dz_field_from_float(const dz_field *f, float v)
 
 		return pinc > (double)max ? max : (uint32_t)(pinc + 0.5);
 	}
+	case DZ_Q16S: {			/* clamped to the field: 24 bit = -128 .. 128 */
+		double hi = (double)(max >> 1), q = (double)v * 65536.0;
+
+		q = q < -hi - 1 ? -hi - 1 : q > hi ? hi : q;
+		return (uint32_t)(int32_t)llround(q) & max;
+	}
 	default:
 		if (v <= 0.0f)
 			return 0;
@@ -380,6 +400,13 @@ float dz_field_to_float(const dz_field *f, uint32_t raw)
 		return raw ? 1.0f : 0.0f;
 	case DZ_HZ:
 		return (float)((double)raw * DZ_DDS_CLK_HZ / 4294967296.0);
+	case DZ_Q16S: {
+		int64_t sv = (int64_t)(raw & max);
+
+		if (sv > (int64_t)(max >> 1))
+			sv -= (int64_t)max + 1;
+		return (float)((double)sv / 65536.0);
+	}
 	default:
 		return max ? (float)((double)raw / max) : 0.0f;
 	}

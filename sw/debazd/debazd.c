@@ -19,6 +19,7 @@
  *                                    reserved memory; dzctl -s broadcasts it)
  *   /list [s:prefix]              -> /entry s:path s:help ... /entry/end i:count
  *   /fields [s:prefix]            -> /field s:path i:lo i:width s:unit i:ro
+ *                                    (unit raw | bool | hz | rgb | q16s = signed gain)
  *                                    s:help ... /field/end i:count  (for UIs)
  *   /files s:img|movies|audio     -> /file s:name ... /file/end i:count
  *   <field> value...              set a field (see sw/lib/dz_fields.h rules)
@@ -421,7 +422,7 @@ static void handle(dz_msg *m, void *ctx)
 		return;
 	}
 	if (!strcmp(m->path, "/fields")) {
-		static const char *units[] = { "raw", "bool", "hz", "rgb" };
+		static const char *units[] = { "raw", "bool", "hz", "rgb", "q16s" };
 		const char *pre = (m->n >= 1 && m->a[0].type == 's') ? m->a[0].s : "";
 		int count = 0;
 
@@ -431,7 +432,7 @@ static void handle(dz_msg *m, void *ctx)
 			if (strncmp(f->path, pre, strlen(pre)))
 				continue;
 			reply("/field", "siisis", f->path, f->lo, f->width,
-			      units[f->unit & 3], (f->flags & DZ_F_RO) ? 1 : 0, f->help);
+			      f->unit < 5 ? units[f->unit] : "raw", (f->flags & DZ_F_RO) ? 1 : 0, f->help);
 			count++;
 		}
 		reply("/field/end", "i", count);

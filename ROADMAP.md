@@ -28,7 +28,9 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
 | 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); BD integration DONE + bench-tested 2026-10-29 (build osc: bars, checkerboard; slices 100 %, FCLK2 -0.017 ns: closure runs); next: timing, software presets |
 | 17 | Cues, scenes, shows: snapshot / recall of the state with transitions, OSC-driven (section 15) | 16 | DOING: step 1 DONE 2026-10-30 (trans.c: field ramps in the frame tick, /fx/xfade, /trans/field; host-tested); next: field flags, LFO getter, cJSON, cues |
-| 18 | Image sequences: a folder of frames out of a display, variable fps, stop-motion controls (section 16) | 6, 11 | WORKS on the board 2026-11-01: anim.c player (both displays at once), frame save from the web (Paint tab), Media tab player card; open: mkmedia -A, onion skin, 1000-frame test |
+| 18 | Image sequences: a folder of frames out of a display, variable fps, stop-motion controls (section 16) | 6, 11 | WORKS on the board 2026-11-01: anim.c player (both displays at once), frame save from the web (Paint tab), Media tab player card, mkmedia -A, onion skin, 1000-frame test, web folder upload |
+| 19 | Signed mixer gains: mode 1 with signed operands (A - B, centre, signed DDS), mode 5 signed constant, exact hue / saturation (section 17) | 12 | WORKS on the board 2026-11-02 (branch signed-mixer, build smix4_ExtraTimingOpt): mode 5 + `/fx/signed` hue checked by eye, web UI; mode 1 untimed (17 ns) until task 20 |
+| 20 | Global pixel clock for the fabric (MMCM CLKOUT1 on a BUFG; OSERDES stay on BUFIO/BUFR behind a FIFO in hdmi_tx): ends the X1Y1 lock of ~6000 loads (section 17) | 19 | WORKS on the board 2026-11-02 (branch global-pclk, from main, build gpclkt_ExtraTimingOpt): all 9 output modes, capture, HDMI_0 audio; next: merge with signed-mixer, pipelined mode 1 + colour matrix |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -1884,3 +1886,130 @@ A plain memcpy reads an uncached slot at ~156 MB/s (NEON vldm 64 B: 15 ms
 vs 24, not worth it). The ring slots are 5-8 (display 0) and 9 10 1 3
 (display 1), `/anim/<d>/slots` changes them: anything drawn there is
 overwritten while a sequence plays.
+
+## 17. Signed mixer gains (2026-11-02, branch signed-mixer)
+
+**Finding: the arithmetic is already signed modulo 2^24.** Mode 1 (Σ gain ×
+din) and the colour matrix (9 xbip_multadd, P = A × B + C, out [23:0], the
+lane = [23:16]) keep only the low 24 bits of their sums. In modulo 2^24
+arithmetic, signed and unsigned numbers give the same bits. So a gain word
+read as a 24-bit two's complement number is a signed gain, and the matrix
+needs no change. The rule "clamp where the gateware clamps, wrap where it
+wraps" (user, 2026-11-02) then means: wrap everywhere, because no stage of
+the chain clamps (the matrix, the HDMI_1 packed-lane adders and the osc
+layers all wrap; colorGainMain cannot overflow).
+
+**Gateware (mixer coreRevision 25, the version on the board):**
+- Mode 1: shared input registers (stream A, stream B, A − B, din3, din4) ->
+  one combinational group of 5 DSP48 per channel (`mixer_mac5`,
+  keep_hierarchy: no register goes into a DSP48) -> a fabric register ->
+  dout. Latency 3 pixel clocks (the other modes 1: a mode 1 gain plane is 2
+  px later than the others). Routed ~17 ns: NOT timed (XDC false path, as
+  before), not even for 720p60; no setting uses mode 1.
+- CTRL_1 [3] DIFF (R/B/G inputs = A − B), [4] CENTRE (input − 128), [5]
+  DSIGN (din3/din4 two's complement). All 0 = the old mode 1, bit for bit.
+- Mode 5: dout = GAIN_chan_0 [23:0] (Q8.16 signed constant). Mode 4 K stays
+  unsigned (the boot setup's 0x8000 / 0xFFFF keep their meaning).
+- GAIN [31:24] is not stored any more and reads 0 (only [23:0] ever
+  counted): −360 FF, the slices that made it fit. The CTRL registers keep
+  all 32 bits (reserved for later use, user 2026-11-02).
+- Sim `sh hw/sim/run_mixer_tb.sh`: ALL PASS (12,000 random pixel clocks x
+  9 channels bit-exact vs 4e2d1820, mode 1 compared 2 px later; negative
+  gains, DIFF, CENTRE, DSIGN, latency, mode 5, GAIN / CTRL readback).
+
+**Build experiments (2026-11-02; the IP cache made a try ~5 min):**
+
+| Build | Mixer | Result |
+|---|---|---|
+| smix (1st) | systolic, DSP48 MREG/PREG | Place 30-657: 62 clocked DSP48 for the BUFR region X1Y1 (20 sites, 17 used) |
+| smix (2nd) | 2 comb groups (3+2 taps) + regs + adder | 37 slices short |
+| smixw / _eto | the same + word-write patch | "failed to commit" / 19 slices short |
+| smix2 (remote) | 1 group of 5 + patch | placed; pixel −7.6 ns, FCLK2 −0.22 |
+| smix3 | 1 group of 5, no patch | 2 slices short |
+| smix4 | smix3 + GAIN trim | default directive failed; **ExtraTimingOpt and AltSpreadLogic_high placed** |
+
+smix4_ExtraTimingOpt (on the board): FCLK0 +0.163, FCLK2 −0.111 (1
+endpoint, the capture datamover), pixel clock −8.07 ns at 108 MHz: the
+mode 1 sums (then not false-pathed: the set_max_delay matched nothing,
+brackets in -filter are a character class) and 236 endpoints colour
+matrix -> keyed pixel (pix_r, −5.5 ns: ~13.3 ns in sdly too, 720p60 ok).
+Lessons: a DSP48 with any internal register is a load of the regional pixel
+clock; at 100 % slices the directive decides (run 2-3 at once); the
+word-write patch is not needed (smix4 fits without it).
+
+**Board test (debaz-7130d5, 720p60):** the boot setup looks as before;
+`/fx/signed 1` + `/fx/hue 60 1` writes mode 5 with 0.667 / −0.333 / 0.667
+per row (the unsigned version: 0.5 / 0 / 0.5) and "generally seems to work"
+(user; a gradient on display 0 is hard to judge exactly). GAIN [31:24]
+reads 0, CTRL keeps 32 bits.
+
+**Software:** `DZ_Q16S` field unit; `/mixer/<c>/g/<n>` (signed alias of
+gain/<n> [23:0]: an int is the raw two's complement value, a float 1.0 =
+0x10000; the state dump keeps gain/<n>), `/mixer/<c>/diff`, `centre`,
+`dsign`; `/fx/signed 1` (matrix as mode 5: exact hue at every angle,
+`/fx/hue/sat`, negative entries; rows scaled only when their sum is over
+1.0); `/fx/hue` replies deg gain sat; `/fields` reports the unit `q16s`.
+Web Effects: "signed gains" switch, saturation slider, mode 5, the gains
+as signed ints (0 default; the useful RGB values are below ~255: ints, not
+floats, user 2026-11-02), A−B / −128 / ±dds columns. Host self-test: all
+checks pass.
+
+**Frame rate measurement (debazd disp.c, fixed 2026-11-02, old bug):** the
+period filter took only intervals within 0.5..1.5 x the period, so after
+60 -> 30 Hz it read 60 for ever (and /video/mode named the wrong mode;
+audio.c sets the HDMI audio rate from this value). And debazd polls (no
+VTC UIO node in this image): it slept for the MEASURED period, so after 30
+-> 60 Hz it saw every 2nd vsync and measured 30 Hz for ever. Now: the
+median of the last 16 intervals, and the poll never sleeps longer than the
+period from the clock registers (100 MHz x FB / DIV / CLKOUT1, or CLKOUT0 /
+5 on older bitstreams, / GHSIZE x GVSIZE). On the board all 9 modes read
+right 5 s after the switch.
+
+**Task 20, global pixel clock (branch `global-pclk`, worktree
+`../DEBAZAROS-gpclk`, from main = without the signed mixer):**
+- axi_dynclk revision 3: MMCM CLKOUT1 (divide 5 x CLKOUT0's) -> BUFG =
+  PXL_CLK_O, the pixel clock of all fabric logic. CLKOUT1 in the DRP table
+  (13 -> 15 entries, ClkReg1/2 0x0A/0x0B, XAPP888 masks), register CLK_O1
+  at +0x24 (+0x20 is the read-only reference frequency). BUFIO x5 + BUFR /
+  5 drive only the 8 OSERDES (new port PXL_CLK_DIV_O). Generic
+  kSerialBufg (default false): true = the 5x on a BUFG too (BUFG + BUFG,
+  no FIFO), but BUFG max = 464 MHz in the −1 grade (min period 2.155 ns,
+  from a routed report) = 92.8 MHz pixel: the 108 MHz timing would be out
+  of spec (user: keep 108).
+- The BUFR divider starts at one of 5 serial clocks after its CLR, so its
+  1x has an unknown phase against the BUFG 1x: hdmi_tx_cdc.v (8 words,
+  LUTRAM, gray pointers, resets from aRst_n in both domains; empty -> wait
+  for 4 words, full -> jump back to 4) between the encoders and the OSERDES
+  (hdmi_tx parameter CDC_FIFO = 1, new port SerdesDivClk). Sim
+  `run_hdmi_tx_tb.sh`: 15 x ALL PASS (the FIFO at the 5 phases, a stopped
+  read clock, a relock).
+- hdmi2 dynclk.c writes CLKOUT1 = 5 x clkdiv (integer dividers only, so
+  always exact); older bitstreams ignore +0x24. ⚠️ With an hdmi2 that does
+  not write it, CLKOUT1 keeps its last value: every mode with another serial
+  divider breaks (seen: 720p30 ran the fabric at 74.25 MHz). The change is
+  in both branches now.
+- XDC: create_generated_clock dynclk_pxl on CLKOUT1 (x27/25 = 108 MHz), in
+  the asynchronous group with FCLK0; dynclk_pxl <-> BUFR clock
+  datapath-only 9 ns.
+- BD Tcl: 5 lines (pin SerdesDivClk on HDMI_0 / HDMI_1, net from
+  axi_dynclk_0/PXL_CLK_DIV_O).
+- Builds: without more room it did not place either (34 slices short, all
+  3 directives): the FIFOs cost a few dozen slices and a global clock makes
+  no logic smaller. With the GAIN trim (mixer revision 24 on this branch)
+  ExtraTimingOpt and AltSpreadLogic_high placed. gpclkt_ExtraTimingOpt:
+  FCLK0 +0.101, FCLK2 −0.080 (1), pixel −2.758 ns (29 endpoints: 24 =
+  colour matrix -> pix_r, 11.8 ns, 4 levels; 5 mixer dout_r −0.04..−0.37),
+  FIFO crossing +5.9 ns, serial +0.185. (smix4 on the regional clock:
+  −8.07 ns, 452 endpoints.)
+- Board (2026-11-02): all 9 output modes 640x480 .. 1080p60 switch and run
+  (CLK_O1 = 5 x CLK_O each time, 2-3 video events per switch, none after),
+  displays good (user), capture re-arms after a switch, HDMI_2 audio in
+  (N 6144 / CTS 74250), ALSA capture hw:DEBAZ,2, HDMI_0 audio out by ear
+  (user), HDMI_1 audio packets without video events.
+- Open: the capture resets still hang off the output dynclk LOCKED: after
+  output mode switches the laptop sometimes sends a clock with no picture
+  (RX_SIZE 0; /capture/replug fixed it once) or stops driving (pLocked 0).
+
+**Next:** merge global-pclk and signed-mixer; then the mode 1 MAC and the
+colour matrix can use DSP48 registers (systolic, timed for 108 MHz), the
+colour-matrix path is the last pixel-clock failure.

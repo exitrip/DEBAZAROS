@@ -65,6 +65,18 @@ set xdc [list $repo/hw/xdc/ebaz4205.xdc]
 create_project -force $variant $out -part $part
 set_property target_language Verilog [current_project]
 set_property ip_repo_paths $ip_repos [current_project]
+# IP cache (2026-11-02): the out-of-context synthesis of each IP is kept
+# outside build/ (which every run deletes), so a build synthesises only the
+# IPs that changed (Vivado keys each entry on the IP, its settings and its
+# source checksums). DZ_IP_CACHE = the folder (default ~/dz-ipcache), "off"
+# = no cache.
+set ipcache [file normalize ~/dz-ipcache]
+if {[info exists ::env(DZ_IP_CACHE)]} { set ipcache $::env(DZ_IP_CACHE) }
+if {$ipcache ne "off"} {
+    file mkdir $ipcache
+    config_ip_cache -use_cache_location $ipcache
+    puts "INFO: IP cache $ipcache"
+}
 update_ip_catalog
 add_files -norecurse $rtl
 add_files -fileset constrs_1 -norecurse $xdc
@@ -139,7 +151,12 @@ foreach {var run step def} $directives {
     foreach r $runs { set_property STEPS.$step $v $r }
     puts "INFO: $step = $v ([llength $runs] run(s))"
 }
-launch_runs impl_1 -to_step write_bitstream -jobs 8
+# parallel runs (the per-IP synthesis): DZ_JOBS, default the core count - 4
+set jobs 8
+catch { set jobs [expr {max(2, [exec nproc] - 4)}] }
+if {[info exists ::env(DZ_JOBS)]} { set jobs $::env(DZ_JOBS) }
+puts "INFO: launch_runs -jobs $jobs"
+launch_runs impl_1 -to_step write_bitstream -jobs $jobs
 wait_on_run impl_1
 if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
     error "impl_1 failed - see $out/$variant.runs/impl_1/runme.log"

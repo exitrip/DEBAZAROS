@@ -98,6 +98,8 @@ static pthread_t       thr;
 static volatile int    run, vs_ok;
 static int             efd = -1, sim;
 static double          period = 1.0 / 60.0, jit_max;
+static double          dts[16];		/* the last 16 vsync intervals */
+static unsigned        dti;
 static unsigned long   frames;
 
 static double now(void)
@@ -107,6 +109,48 @@ static double now(void)
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return t.tv_sec + t.tv_nsec / 1e9;
 }
+
+/* the frame period from the clock registers (2026-11-02): the MMCM of
+ * axi_dynclk (100 MHz x FB / DIV / CLKOUT1, or CLKOUT0 / 5 on bitstreams
+ * before the global pixel clock) and the VTC totals; 0 = not readable.
+ * Read once per second (a few uncached reads). */
+static unsigned drp_div(uint32_t v)		/* hdmi2 dynclk.c ClkCountCalc layout */
+{
+	if (v & (1u << 22))			/* NO_COUNT: divide by 1 */
+		return 1;
+	return (v & 0x3F) + ((v >> 6) & 0x3F);
+}
+
+static double expected_period(void)
+{
+#if defined(HW_AXI_DYNCLK_0_BASE) && defined(HW_HDMI_0_V_TC_0_BASE)
+	static double ep, at;
+	double t = now();
+
+	if (t - at < 1.0)
+		return ep;
+	at = t;
+	ep = 0.0;
+	if (dz_map_simulating() || !dz_regs(HW_AXI_DYNCLK_0_BASE) || !dz_regs(HW_HDMI_0_V_TC_0_BASE))
+		return 0.0;
+	uint32_t o0 = dz_rd(HW_AXI_DYNCLK_0_BASE, 0x08), o1 = dz_rd(HW_AXI_DYNCLK_0_BASE, 0x24);
+	uint32_t fb = dz_rd(HW_AXI_DYNCLK_0_BASE, 0x0C), dv = dz_rd(HW_AXI_DYNCLK_0_BASE, 0x14);
+	uint32_t gh = dz_rd(HW_HDMI_0_V_TC_0_BASE, 0x70) & 0x1FFF, gv = dz_rd(HW_HDMI_0_V_TC_0_BASE, 0x74) & 0x1FFF;
+	unsigned m = drp_div(fb), d = (dv & (1u << 12)) ? 1 : (dv & 0x3F) + ((dv >> 6) & 0x3F);
+	unsigned o = o1 ? drp_div(o1) : 5 * drp_div(o0);	/* CLKOUT1 reads 0 on older bitstreams */
+
+	if (!m || !d || !o || gh < 100 || gv < 100)
+		return 0.0;
+	double pix = 100e6 * m / d / o;
+	if (pix < 10e6 || pix > 200e6)
+		return 0.0;
+	ep = (double)gh * gv / pix;
+	return ep;
+#else
+	return 0.0;
+#endif
+}
+
 
 static void sleep_until(double t)
 {
@@ -235,8 +279,15 @@ static void *vsync_main(void *arg)
 			/* wake 0.4 ms early (was 1.5): the status bit stays latched,
 			 * so a late wake costs precision, not a frame; the spin at
 			 * real-time priority took CPU from movie decoding */
-			if (vs_ok && last > 0.0 && last + period - 0.0004 > t)
-				sleep_until(last + period - 0.0004);
+			/* never longer than the frame period of the clock registers:
+			 * with a sleep of the MEASURED period, a change 30 -> 60 Hz
+			 * saw every 2nd vsync and measured 30 Hz for ever */
+			double sp = period, ep = expected_period();
+
+			if (ep > 0.0 && ep < sp)
+				sp = ep;
+			if (vs_ok && last > 0.0 && last + sp - 0.0004 > t)
+				sleep_until(last + sp - 0.0004);
 			deadline = now() + (vs_ok ? 0.004 : 0.0);
 			do {			/* poll window around the expected vsync */
 				if (dz_vsync_latched()) {
@@ -255,15 +306,34 @@ static void *vsync_main(void *arg)
 			continue;
 		}
 		t = now();
-		if (last > 0.0) {
+		/* The period (2026-11-02): the median of the last 16 intervals.
+		 * A missed vsync (one long interval) does not move it; a new
+		 * frame rate takes over after ~8 frames, up or down. (The old
+		 * filter took only intervals within 0.5..1.5 x the period: after
+		 * 60 -> 30 Hz it kept 60 for ever.) */
+		if (last > 0.0 && vs_ok) {
 			double dt = t - last;
 
-			if (dt > 0.5 * period && dt < 1.5 * period) {
-				double j = (dt - period) * 1e6;
+			if (dt > 0.004 && dt < 0.2) {
+				double srt[16], j;
+				int n;
 
-				period += (dt - period) * 0.05;
+				dts[dti++ % 16] = dt;
+				n = dti < 16 ? (int)dti : 16;
+				memcpy(srt, dts, sizeof(srt[0]) * (size_t)n);
+				for (int i = 1; i < n; i++)	/* insertion sort, n <= 16 */
+					for (int k = i; k > 0 && srt[k] < srt[k - 1]; k--) {
+						double x = srt[k];
+
+						srt[k] = srt[k - 1];
+						srt[k - 1] = x;
+					}
+				if (n >= 3)
+					period = srt[n / 2];
+				j = (dt - period) * 1e6;
 				j = j < 0 ? -j : j;
-				jit_max = j > jit_max ? j : jit_max * 0.999 + j * 0.001;
+				if (dt < 1.5 * period)		/* not a missed vsync */
+					jit_max = j > jit_max ? j : jit_max * 0.999 + j * 0.001;
 			}
 		}
 		if (!vs_ok)
@@ -373,6 +443,7 @@ void disp_close(void)
 int disp_frame_fd(void) { return efd; }
 int disp_vsync_ok(void) { return vs_ok; }
 double disp_frame_hz(void) { return vs_ok ? 1.0 / period : 0.0; }
+
 
 /* ---- OSC ---------------------------------------------------------------------- */
 static int slot_of(uint32_t a)

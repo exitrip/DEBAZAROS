@@ -19,7 +19,19 @@ vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in build
 # Same, into build/<dir>/ (use it while the GUI has build/<variant>/ open:
 # every run deletes its output folder).
 vivado -mode batch -source hw/build.tcl -tclargs ebaz4205_2out1in build <dir>
+
+# A second build at the same time on the PetaLinux build machine (a copy of
+# hw/ ip_repo/ IP_* in ~/dz-hwbuild there; its repo clone is not touched):
+sh hw/remote_build.sh start <dir> [<srctree>] [DZ_PLACE_DIRECTIVE=...]
+sh hw/remote_build.sh status|fetch|stop <dir>
 ```
+
+Build speed (2026-11-02): the out-of-context synthesis of each IP goes into
+an IP cache outside `build/` (`~/dz-ipcache`; `DZ_IP_CACHE=<dir>` or `off`),
+so a build synthesises again only the IPs that changed. `launch_runs` uses
+the core count − 4 jobs (`DZ_JOBS=n`). At 100 % slices the placer result is
+partly luck: run two directives at once, one here and one with
+`remote_build.sh`.
 
 Output in `build/<variant>/`:
 

@@ -9,8 +9,9 @@ mixers/oscillators via `devmem` for generative feedback effects.
 **What it is NOT:** the top-level `README.md`, `docs/`, and most folders describe the
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
-Working branch (Nov 1 2026): `hdmi-audio` (remote `debaz`) — all work since
-Oct 26 2026 is there (last commit 07609469 "audio reactivity ..."). `clanker` is the last stable
+Working branch (Nov 2 2026): `signed-mixer` (from main be86b642 = hdmi-audio
++ image sequences / paint / scope FFT). `global-pclk` (worktree
+../DEBAZAROS-gpclk, from main) = the global pixel clock. `clanker` is the last stable
 point; `nuMix` and the other branches are old.
 Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
 
@@ -40,7 +41,7 @@ live impl_2: same util (LUT +1, FF −12, BRAM/DSP equal), same timing character
 Export round-trip is clean except assign_bd_address line ORDER (nondeterministic).
 Since Oct 27 2026 build.tcl runs phys_opt + post-route phys_opt (AggressiveExplore):
 at ~95 % slices FCLK2 has ~0.1 ns inside the capture VDMA S2MM datamover and
-the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Since dz_osc2 (build osc, Oct 29 2026) slices are at 100 %: the default directives failed FCLK2 (-0.017); `DZ_PLACE_DIRECTIVE=ExtraPostPlacementOpt DZ_ROUTE_DIRECTIVE=AggressiveExplore` (env, read by build.tcl) gave +0.268 (Explore: +0.006). Parallel runs: the PetaLinux build machine has Vivado 2022.2 too (sources in ~/dz-hwbuild, not its repo).
+the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Since dz_osc2 (build osc, Oct 29 2026) slices are at 100 %: the default directives failed FCLK2 (-0.017); `DZ_PLACE_DIRECTIVE=ExtraPostPlacementOpt DZ_ROUTE_DIRECTIVE=AggressiveExplore` (env, read by build.tcl) gave +0.268 (Explore: +0.006). Parallel runs: the PetaLinux build machine has Vivado 2022.2 too (sources in ~/dz-hwbuild, not its repo): `sh hw/remote_build.sh start|status|fetch|stop <dir> [<srctree>] [DZ_...=]` (2026-11-02). Build speed (2026-11-02): IP cache `~/dz-ipcache` (DZ_IP_CACHE, "off"), launch_runs -jobs = cores − 4 (DZ_JOBS): a build that changes one IP reaches placement in ~5 min. At 100 % slices the placer directive decides: run 2-3 at once (ExtraTimingOpt and AltSpreadLogic_high placed smix4 and gpclkt, ExtraPostPlacementOpt did not). ⚠️ In -filter patterns `[*]` is a character class, not a literal bracket: a constraint on `gen_chan[*].x_reg[*]` matches nothing (CRITICAL WARNING 18-540, check the log).
 
 ## Folder map (after the cleanup of Oct 25 2026)
 
@@ -139,6 +140,14 @@ re-applies the boot mixer setup). Soft-reset capture first.
   (SerialClk) for both rgb2dvi instances; its `LOCKED_O` is the aRst_n for both output stages.
   Both displays therefore always run the same resolution; last `DisplayStart()` wins.
 
+**Global pixel clock: branch `global-pclk` (worktree ../DEBAZAROS-gpclk, from main,
+WORKS on the board Nov 2 2026, ROADMAP §17 task 20):** MMCM CLKOUT1 (5 x CLKOUT0's
+divide) on a BUFG = PXL_CLK_O for all fabric logic; BUFIO + BUFR only for the
+OSERDES (PXL_CLK_DIV_O) behind hdmi_tx_cdc.v (the BUFR phase is one of 5); DRP
+table + CLK_O1 register +0x24; hdmi2 dynclk.c writes it (both branches). ⚠️ An
+hdmi2 that does not write CLK_O1 breaks every mode with another serial divider.
+Pixel WNS −8.1 -> −2.8 ns (only the colour matrix left). Not merged yet. The
+text below describes the regional design of main / signed-mixer.
 **⚠️ Regional pixel-clock architecture (root cause of "fabric full" + 35 MHz ceiling):**
 the deployed axi_dynclk (stock Digilent, `Vivado.gen/.../ipshared/9097/src/axi_dynclk.vhd`)
 puts the MMCM 5× clock on a **BUFIO** (SerialClk) and derives PixelClk via **BUFR ÷5** —
@@ -413,9 +422,12 @@ VDMA memory ports: HDMI_0 → S_AXI_HP0, HDMI_1 → S_AXI_HP2, HDMI_2 capture �
 - n=0..4: GAIN_chan_0..4 (weights for din0..din4)
 - n=8: CTRL_chan_0 — [7:0] mode, [31:16] constant value K
 - n=9: CTRL_chan_1 — [0] stream select (0 = stream A din0/1/2, 1 = stream B
-  din5/6/7; per-channel, added Aug 2026), [23:16] threshold lo, [31:24] threshold hi
+  din5/6/7; per-channel, added Aug 2026), [23:16] threshold lo, [31:24] threshold hi;
+  coreRevision 25 (branch signed-mixer, Nov 2 2026): [3] DIFF (mode 1 R/B/G
+  inputs = A − B), [4] CENTRE (input − 128), [5] DSIGN (din3/din4 two's complement)
 
 Modes: 0=zero; 1=Σ gains[n]·din[n]; 3={din,8'hff} passthrough; 4=constant K;
+5=signed constant GAIN_chan_0[23:0] (coreRevision 25, Q8.16, 0xFF0000 = −1.0);
 0x10/0x11/0x12/0x13 = clip din (≥lo / ≤hi / ==lo / band) → {din,0xff} else 0;
 0x20/0x21/0x22/0x23 = same comparisons but output K else 0.
 Comparison/passthrough source: chans 0-2 use din0 (R), 3-5 din1 (**B**, lane
@@ -428,7 +440,24 @@ Output→matrix wiring: dout0→g_rr, dout1→g_br, dout2→g_gr, dout3→g_rg, 
 dout5→g_bg, dout6→g_rb, dout7→g_gb, dout8→g_bb.
 (dout7 ctrl[6]-vs-ctrl[7] copy-paste bug: FIXED and verified Aug 2026.)
 Multiply path is unregistered single-pixel-clock — a likely timing
-limiter at higher pixel clocks.
+limiter at higher pixel clocks. **Signed gains (coreRevision 25, Nov 2 2026,
+branch signed-mixer, ON THE BOARD as build smix4_ExtraTimingOpt; ROADMAP §17):**
+mode 1 and the colour matrix both keep only the low 24 bits of their sums,
+so signed and unsigned give the same bits: a gain word read as 24-bit two's
+complement is a signed gain, and negative results WRAP (as row sums > 1.0
+do; no stage of the chain clamps). Mode 1 = shared input regs -> one
+combinational 5-DSP48 group (`mixer_mac5`, keep_hierarchy) -> fabric reg ->
+dout, latency 3 px (other modes 1); routed ~17 ns = untimed (XDC false
+path), not supported, as before. Mode 5 = GAIN_0 [23:0] signed constant.
+GAIN [31:24] is not stored (reads 0; −360 FF, what made it fit); CTRL keeps
+32 bits (reserved). ⚠️ A DSP48 with ANY internal register is a load of the
+regional BUFR pixel clock and must sit in clock region X1Y1 (20 DSP sites,
+17 already clocked): a systolic version with DSP registers failed placement
+(Place 30-657). Keep pixel-domain DSPs register-free until the global pixel
+clock (branch global-pclk). Sim: `sh hw/sim/run_mixer_tb.sh`. Software:
+`/mixer/<c>/g/<n>` (signed alias of gain/<n>: int = raw two's complement,
+float 1.0 = 0x10000; web table uses ints), `/diff`, `/centre`, `/dsign`;
+`/fx/signed 1` writes the matrix as mode 5 (exact hue, `/fx/hue/sat`).
 
 **Colour matrix math (traced from the BD, Oct 26 2026; confirmed on the board
 by `/fx/matrix` readback):** the matrix multiplies **HDMI_0's own video**; the
@@ -760,6 +789,11 @@ H.264 18.5 fps) and even H.264 + dd hog -> 0 events, 0 underflows.
 0's VDMA (`dz_geom_w/h/stride`, fallback 1280x720); surfaces restart on a mode
 change, movies stop; hdmi2 boot mode no longer redraws slot 2 every 10 s;
 movie scaling fast_bilinear; vsync thread wakes 0.4 ms early (was 1.5).
+Frame rate (Nov 2): the median of the last 16 vsync intervals, and the poll
+never sleeps longer than the period from the clock registers (dynclk FB/DIV/
+CLK_O1 + VTC totals): the old filter read 60 Hz for ever after 60 -> 30 Hz
+(and 30 after 30 -> 60: the poll slept a measured 33 ms). debazd polls on
+this image (no VTC UIO node: "vsync by polling").
 **Picture N px right of DE (found Nov 1 2026):** the effects stages register
 the pixel data after v_axi4s_vid_out, but HSYNC/VSYNC/DE go straight to
 hdmi_tx: HDMI_1 data 3 clocks late (colorGainFeedback1 mult PipeStages 1 +
