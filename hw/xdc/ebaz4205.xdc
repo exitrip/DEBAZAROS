@@ -176,11 +176,22 @@ set_false_path -to [get_cells -quiet -hier -filter {NAME =~ *dz_regs_0/inst/in_s
 ## and its DDR load starves the displays (CLAUDE.md). It may glitch.
 ## (Build p148 timed 148.5 MHz: it could not close, and the placement spread.)
 create_generated_clock -name dynclk_ser -source [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKIN1] -multiply_by 27 -divide_by 5 [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKOUT0]
+## Global pixel clock (2026-11-02, ROADMAP.md task 20): MMCM CLKOUT1 (divide
+## = 5 x CLKOUT0's) on a BUFG = PXL_CLK_O for all fabric logic, 108 MHz =
+## 100 MHz x 27 / 25. The BUFR / 5 of the BUFIO serial clock (dynclk_ser /
+## 5, derived by Vivado) now drives only the OSERDES CLKDIV; its phase
+## against dynclk_pxl is one of 5 (the BUFR divider start): the TMDS words
+## cross in hdmi_tx_cdc.v (gray pointers, LUTRAM), so the paths from
+## dynclk_pxl to the BUFR clock are a CDC: datapath-only, under one period.
+create_generated_clock -name dynclk_pxl -source [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKIN1] -multiply_by 27 -divide_by 25 [get_pins ebaz4205_i/axi_dynclk_0/U0/Inst_mmcme2_drp/mmcm_adv_inst/CLKOUT1]
+set dynclk_div [get_clocks -of_objects [get_pins -hier -filter {NAME =~ *axi_dynclk_0/U0/*BUFR_inst/O}]]
+set_max_delay -datapath_only -from [get_clocks dynclk_pxl] -to $dynclk_div 9.0
+set_max_delay -datapath_only -from $dynclk_div -to [get_clocks dynclk_pxl] 9.0
 ## The MMCM runs from FCLK0, but at run-time ratios FCLK0 and the pixel clock
 ## have no fixed phase: every crossing is a designed CDC or a quasi-static
 ## register (GPIO gains, mixer and VTC settings), and the HDMI_0 DDS quotient
 ## (FCLK0) into the mixer is a known untimed crossing (value glitches only).
-set_clock_groups -asynchronous -group [get_clocks clk_fpga_0] -group [get_clocks -include_generated_clocks dynclk_ser]
+set_clock_groups -asynchronous -group [get_clocks clk_fpga_0] -group [get_clocks -include_generated_clocks {dynclk_ser dynclk_pxl}]
 ## Mixer mode 1 (sum of gain x input, DSP48 MACs cascaded across channels,
 ## 19 logic levels, ~16 ns) is NOT supported at these clocks: no setting uses
 ## it. Untimed, so the tools work on the paths in use.

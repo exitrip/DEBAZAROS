@@ -151,7 +151,9 @@ module tb;
 
     // readback of the AXI registers (outputs are now the registers)
     wr(ra(4, 2), 32'hDEAD_BEEF); rd(ra(4, 2), v);
-    if (v !== 32'hDEAD_BEEF) fail("readback"); else $display("ok   readback");
+    if (v !== 32'h00AD_BEEF) fail("readback"); else $display("ok   readback (GAIN [31:24] reads 0)");
+    wr(ra(4, 9), 32'hDEAD_BEEF); rd(ra(4, 9), v);
+    if (v !== 32'hDEAD_BEEF) fail("CTRL readback"); else $display("ok   CTRL readback: all 32 bits");
 
     // ---- 2. colour key -----------------------------------------------------
     for (c = 0; c < 9; c = c + 1) begin

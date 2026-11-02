@@ -2412,6 +2412,7 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   create_bd_pin -dir O -from 0 -to 0 HDMI_OEN
   create_bd_pin -dir I -from 0 -to 0 In2
   create_bd_pin -dir I -type clk PixelClk
+  create_bd_pin -dir I -type clk SerdesDivClk
   create_bd_pin -dir I -type clk SerialClk
   create_bd_pin -dir O -type clk TMDS_Clk_n_1
   create_bd_pin -dir O -type clk TMDS_Clk_p_1
@@ -2694,6 +2695,7 @@ proc create_hier_cell_HDMI_1 { parentCell nameHier } {
   connect_bd_net -net PS_ARESETN [get_bd_pins s_axi_aresetn] [get_bd_pins axi_vdma_0/axi_resetn]
   connect_bd_net -net PS_FCLK_CLK0 [get_bd_pins s_axi_aclk] [get_bd_pins axi_vdma_0/s_axi_lite_aclk]
   connect_bd_net -net PixelClk_1 [get_bd_pins PixelClk] [get_bd_pins c_addsub_0/CLK] [get_bd_pins c_addsub_1/CLK] [get_bd_pins c_addsub_2/CLK] [get_bd_pins c_addsub_3/CLK] [get_bd_pins c_addsub_4/CLK] [get_bd_pins colorGainFeedback1/pixClk_in] [get_bd_pins colorGainOscPhase/pixClk_in] [get_bd_pins colorGainOscSin/pixClk_in] [get_bd_pins div16_8_recip_0/clk] [get_bd_pins div16_8_recip_1/clk] [get_bd_pins hdmi_tx_0/PixelClk] [get_bd_pins v_axi4s_vid_out_0/vid_io_out_clk]
+  connect_bd_net -net SerdesDivClk_1 [get_bd_pins SerdesDivClk] [get_bd_pins hdmi_tx_0/SerdesDivClk]
   connect_bd_net -net SerialClk_1 [get_bd_pins SerialClk] [get_bd_pins hdmi_tx_0/SerialClk]
   connect_bd_net -net aRst_n_1 [get_bd_pins aRst_n] [get_bd_pins hdmi_tx_0/aRst_n] [get_bd_pins v_axi4s_vid_out_0/aresetn]
   connect_bd_net -net active_video_in_1 [get_bd_pins active_video_in] [get_bd_pins v_axi4s_vid_out_0/vtg_active_video]
@@ -2807,6 +2809,7 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   create_bd_pin -dir I -from 0 -to 0 -type intr In4
   create_bd_pin -dir I -type intr In5
   create_bd_pin -dir I -type clk PixelClk
+  create_bd_pin -dir I -type clk SerdesDivClk
   create_bd_pin -dir I SerialClk
   create_bd_pin -dir O TMDS_Clk_n_0
   create_bd_pin -dir O TMDS_Clk_p_0
@@ -3044,6 +3047,7 @@ proc create_hier_cell_HDMI_0 { parentCell nameHier } {
   connect_bd_net -net Net [get_bd_pins m_axis_mm2s_aclk] [get_bd_pins axi_interconnect_1/ACLK] [get_bd_pins axi_interconnect_1/M00_ACLK] [get_bd_pins axi_interconnect_1/S00_ACLK] [get_bd_pins axi_vdma_0/m_axi_mm2s_aclk] [get_bd_pins axi_vdma_0/m_axis_mm2s_aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins v_axi4s_vid_out_0/aclk]
   connect_bd_net -net PS_ARESETN [get_bd_pins s_axi_aresetn] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins mixerMatrix/s_axi_aresetn] [get_bd_pins v_tc_0/s_axi_aresetn]
   connect_bd_net -net PS_FCLK_CLK0 [get_bd_pins s_axi_aclk] [get_bd_pins axi_vdma_0/s_axi_lite_aclk] [get_bd_pins div16_8_recip_0/clk] [get_bd_pins div16_8_recip_1/clk] [get_bd_pins mixerMatrix/s_axi_aclk] [get_bd_pins v_tc_0/s_axi_aclk]
+  connect_bd_net -net SerdesDivClk_1 [get_bd_pins SerdesDivClk] [get_bd_pins hdmi_tx_0/SerdesDivClk]
   connect_bd_net -net SerialClk_1 [get_bd_pins SerialClk] [get_bd_pins hdmi_tx_0/SerialClk]
   connect_bd_net -net aRst_n_1 [get_bd_pins aRst_n] [get_bd_pins blk_mem_gen_0/wea] [get_bd_pins hdmi_tx_0/aRst_n] [get_bd_pins v_axi4s_vid_out_0/aresetn]
   connect_bd_net -net aud_l_1 [get_bd_pins aud_l] [get_bd_pins hdmi_tx_0/aud_l]
@@ -3388,6 +3392,7 @@ proc create_root_design { parentCell } {
   connect_bd_net -net TMDS_Data_n_2_1 [get_bd_ports TMDS_Data_n_2] [get_bd_pins HDMI_2/TMDS_Data_n_2]
   connect_bd_net -net TMDS_Data_p_2_1 [get_bd_ports TMDS_Data_p_2] [get_bd_pins HDMI_2/TMDS_Data_p_2]
   connect_bd_net -net axi_dynclk_0_LOCKED_O [get_bd_pins HDMI_0/aRst_n] [get_bd_pins HDMI_1/aRst_n] [get_bd_pins HDMI_2/aRst_n] [get_bd_pins HDMI_2/pRst_n] [get_bd_pins axi_dynclk_0/LOCKED_O] [get_bd_pins hdmi_audio_regs_0/dyn_locked]
+  connect_bd_net -net axi_dynclk_0_PXL_CLK_DIV_O [get_bd_pins HDMI_0/SerdesDivClk] [get_bd_pins HDMI_1/SerdesDivClk] [get_bd_pins axi_dynclk_0/PXL_CLK_DIV_O]
   connect_bd_net -net axi_dynclk_0_PXL_CLK_5X_O [get_bd_pins HDMI_0/SerialClk] [get_bd_pins HDMI_1/SerialClk] [get_bd_pins axi_dynclk_0/PXL_CLK_5X_O]
   connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins HDMI_0/PixelClk] [get_bd_pins HDMI_1/PixelClk] [get_bd_pins HDMI_2/tx_clk] [get_bd_pins axi_dynclk_0/PXL_CLK_O] [get_bd_pins hdmi_audio_regs_0/pxl_clk] [get_bd_pins pl_io_0/tx_clk]
   connect_bd_net -net dz_osc2_0_phase0 [get_bd_pins HDMI_0/osc_phase] [get_bd_pins dz_osc2_0/phase0]

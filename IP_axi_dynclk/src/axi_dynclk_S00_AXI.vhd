@@ -24,6 +24,7 @@ entity axi_dynclk_S00_AXI is
         CLK_DIV_REG                    :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
         CLK_LOCK_REG                   :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
         CLK_FLTR_REG                   :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
+        CLK_O1_REG                     :out std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0); -- +0x24 (2026-11-02)
 		-- User ports ends
 		-- Do not modify the ports beyond this line
 
@@ -123,6 +124,7 @@ architecture arch_imp of axi_dynclk_S00_AXI is
 	signal slv_reg5	:std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
 	signal slv_reg6	:std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
 	signal slv_reg7	:std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);
+	signal slv_reg9	:std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0);	-- CLKOUT1 (+0x24)
 	signal slv_reg8	:std_logic_vector(C_S_AXI_DATA_WIDTH-1 downto 0) := std_logic_vector(to_unsigned(kRefClkFreqHz, 32));
 	signal slv_reg_rden	: std_logic;
 	signal slv_reg_wren	: std_logic;
@@ -228,6 +230,7 @@ begin
 	      slv_reg5 <= (others => '0');
 	      slv_reg6 <= (others => '0');
 	      slv_reg7 <= (others => '0');
+	      slv_reg9 <= (others => '0');
 	    else
 	      loc_addr := axi_awaddr(ADDR_LSB + OPT_MEM_ADDR_BITS downto ADDR_LSB);
 	      if (slv_reg_wren = '1') then
@@ -296,6 +299,13 @@ begin
 	                slv_reg7(byte_index*8+7 downto byte_index*8) <= S_AXI_WDATA(byte_index*8+7 downto byte_index*8);
 	              end if;
 	            end loop;
+	          when b"1001" =>
+	            for byte_index in 0 to (C_S_AXI_DATA_WIDTH/8-1) loop
+	              if ( S_AXI_WSTRB(byte_index) = '1' ) then
+	                -- slave register 9: CLKOUT1 ClkReg2 & ClkReg1 (2026-11-02)
+	                slv_reg9(byte_index*8+7 downto byte_index*8) <= S_AXI_WDATA(byte_index*8+7 downto byte_index*8);
+	              end if;
+	            end loop;
 --             when b"1000" =>
 --                 for byte_index in 0 to (C_S_AXI_DATA_WIDTH/8-1) loop
 --                   if ( S_AXI_WSTRB(byte_index) = '1' ) then
@@ -313,6 +323,7 @@ begin
 	            slv_reg5 <= slv_reg5;
 	            slv_reg6 <= slv_reg6;
 	            slv_reg7 <= slv_reg7;
+	            slv_reg9 <= slv_reg9;
 	            slv_reg8 <= slv_reg8;
 	        end case;
 	      end if;
@@ -401,7 +412,7 @@ begin
 	-- and the slave is ready to accept the read address.
 	slv_reg_rden <= axi_arready and S_AXI_ARVALID and (not axi_rvalid) ;
 
-	process (slv_reg0, slv_reg1, slv_reg2, slv_reg3, slv_reg4, slv_reg5, slv_reg6, slv_reg7, slv_reg8, axi_araddr, S_AXI_ARESETN, slv_reg_rden)
+	process (slv_reg0, slv_reg1, slv_reg2, slv_reg3, slv_reg4, slv_reg5, slv_reg6, slv_reg7, slv_reg8, slv_reg9, axi_araddr, S_AXI_ARESETN, slv_reg_rden)
 	variable loc_addr :std_logic_vector(OPT_MEM_ADDR_BITS downto 0);
 	begin
 	    -- Address decoding for reading registers
@@ -425,6 +436,8 @@ begin
 	        reg_data_out <= slv_reg7;
          when b"1000" =>
             reg_data_out <= slv_reg8;  
+	      when b"1001" =>
+	        reg_data_out <= slv_reg9;
 	      when others =>
 	        reg_data_out  <= (others => '0');
 	    end case;
@@ -460,6 +473,7 @@ begin
         CLK_DIV_REG   <= slv_reg5;
         CLK_LOCK_REG   <= slv_reg6; 
         CLK_FLTR_REG    <= slv_reg7; 
+        CLK_O1_REG      <= slv_reg9;
 	-- User logic ends
 
 end arch_imp;

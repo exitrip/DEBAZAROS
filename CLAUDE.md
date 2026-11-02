@@ -139,6 +139,15 @@ re-applies the boot mixer setup). Soft-reset capture first.
   (SerialClk) for both rgb2dvi instances; its `LOCKED_O` is the aRst_n for both output stages.
   Both displays therefore always run the same resolution; last `DisplayStart()` wins.
 
+**Global pixel clock: branch `global-pclk` (THIS branch; a worktree next to the signed-mixer tree, from main,
+WORKS on the board Nov 2 2026, ROADMAP §17 task 20):** MMCM CLKOUT1 (5 x CLKOUT0's
+divide) on a BUFG = PXL_CLK_O for all fabric logic; BUFIO + BUFR only for the
+OSERDES (PXL_CLK_DIV_O) behind hdmi_tx_cdc.v (the BUFR phase is one of 5); DRP
+table + CLK_O1 register +0x24; hdmi2 dynclk.c writes it (both branches). ⚠️ An
+hdmi2 that does not write CLK_O1 breaks every mode with another serial divider.
+Pixel WNS −8.1 -> −2.8 ns (only the colour matrix left). Not merged yet. The
+text below describes the regional design it replaces. Details + results:
+ROADMAP.md section 17 of branch signed-mixer.
 **⚠️ Regional pixel-clock architecture (root cause of "fabric full" + 35 MHz ceiling):**
 the deployed axi_dynclk (stock Digilent, `Vivado.gen/.../ipshared/9097/src/axi_dynclk.vhd`)
 puts the MMCM 5× clock on a **BUFIO** (SerialClk) and derives PixelClk via **BUFR ÷5** —

@@ -124,6 +124,12 @@ u32 ClkFindReg (ClkConfig *regValues, ClkMode *clkParams)
 	if (regValues->clk0L == ERR_CLKCOUNTCALC)
 		return 0;
 
+	/* CLKOUT1: the 1x pixel clock on a BUFG, 5 x the serial divide
+	 * (integer: ClkFindParams uses integer dividers only) */
+	regValues->clk1 = ClkCountCalc(5 * clkParams->clkdiv);
+	if (regValues->clk1 == ERR_CLKCOUNTCALC)
+		return 0;
+
 	regValues->clkFBL = ClkCountCalc(clkParams->fbmult);
 	if (regValues->clkFBL == ERR_CLKCOUNTCALC)
 		return 0;
@@ -146,6 +152,7 @@ void ClkWriteReg (mm_IP * _mm_IP, ClkConfig *regValues, u32 dynClkAddr)
 {
 	// Xil_Out32(dynClkAddr + OFST_DYNCLK_CLK_L, regValues->clk0L);
 	IP_driver_write(_mm_IP, OFST_DYNCLK_CLK_L, regValues->clk0L);
+	IP_driver_write(_mm_IP, OFST_DYNCLK_CLK1, regValues->clk1);
 
 	// Xil_Out32(dynClkAddr + OFST_DYNCLK_FB_L, regValues->clkFBL);
 	IP_driver_write(_mm_IP, OFST_DYNCLK_FB_L, regValues->clkFBL);
@@ -181,10 +188,9 @@ double ClkFindParams(mm_IP * _mm_IP, double freq, ClkMode *bestPick)
 
 	/*
 	 * This is necessary because the MMCM actual is generating 5x the desired pixel clock, and that
-	 * clock is then run through a BUFR that divides it by 5 to generate the pixel clock. Note this
-	 * means the pixel clock is on the Regional clock network, not the global clock network. In the
-	 * future if options like these are parameterized in the axi_dynclk core, then this function will
-	 * need to change.
+	 * clock is then run through a BUFR that divides it by 5 for the OSERDES CLKDIV. Since axi_dynclk
+	 * revision 3 (2026-11-02) the fabric pixel clock is CLKOUT1 (divide 5 x clkdiv) on a BUFG
+	 * (ClkFindReg).
 	 */
 	freq = freq * 5.0;
 
