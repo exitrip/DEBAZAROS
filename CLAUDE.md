@@ -9,9 +9,11 @@ mixers/oscillators via `devmem` for generative feedback effects.
 **What it is NOT:** the top-level `README.md`, `docs/`, and most folders describe the
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
-Working branch (Nov 2 2026): `signed-mixer` (from main be86b642 = hdmi-audio
-+ image sequences / paint / scope FFT). `global-pclk` (worktree
-../DEBAZAROS-gpclk, from main) = the global pixel clock. `clanker` is the last stable
+Working branch (Nov 2 2026): **`dsp-pipe`** (worktree ../DEBAZAROS-dsp) = signed
+mixer + global pixel clock + mixer rev 26 (mode 1 and colour matrix in DSP48
+registers, ALL TIMING MET at 108 MHz, on the board as artifacts/..._dsp). Built
+on `signed-mixer` (main tree, = merge of `global-pclk`). `capture-reset` =
+paused experiments (not merged). `clanker` is the last stable
 point; `nuMix` and the other branches are old.
 Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
 
@@ -41,7 +43,7 @@ live impl_2: same util (LUT +1, FF −12, BRAM/DSP equal), same timing character
 Export round-trip is clean except assign_bd_address line ORDER (nondeterministic).
 Since Oct 27 2026 build.tcl runs phys_opt + post-route phys_opt (AggressiveExplore):
 at ~95 % slices FCLK2 has ~0.1 ns inside the capture VDMA S2MM datamover and
-the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Since dz_osc2 (build osc, Oct 29 2026) slices are at 100 %: the default directives failed FCLK2 (-0.017); `DZ_PLACE_DIRECTIVE=ExtraPostPlacementOpt DZ_ROUTE_DIRECTIVE=AggressiveExplore` (env, read by build.tcl) gave +0.268 (Explore: +0.006). Parallel runs: the PetaLinux build machine has Vivado 2022.2 too (sources in ~/dz-hwbuild, not its repo): `sh hw/remote_build.sh start|status|fetch|stop <dir> [<srctree>] [DZ_...=]` (2026-11-02). Build speed (2026-11-02): IP cache `~/dz-ipcache` (DZ_IP_CACHE, "off"), launch_runs -jobs = cores − 4 (DZ_JOBS): a build that changes one IP reaches placement in ~5 min. At 100 % slices the placer directive decides: run 2-3 at once (ExtraTimingOpt and AltSpreadLogic_high placed smix4 and gpclkt, ExtraPostPlacementOpt did not). ⚠️ In -filter patterns `[*]` is a character class, not a literal bracket: a constraint on `gen_chan[*].x_reg[*]` matches nothing (CRITICAL WARNING 18-540, check the log).
+the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Since dz_osc2 (build osc, Oct 29 2026) slices are at 100 %: the default directives failed FCLK2 (-0.017); `DZ_PLACE_DIRECTIVE=ExtraPostPlacementOpt DZ_ROUTE_DIRECTIVE=AggressiveExplore` (env, read by build.tcl) gave +0.268 (Explore: +0.006). ⚠️ Do NOT try the mixer word-only write patch again (user, Nov 2 2026): it failed to help placement 4 times. Parallel runs: the PetaLinux build machine has Vivado 2022.2 too (sources in ~/dz-hwbuild, not its repo): `sh hw/remote_build.sh start|status|fetch|stop <dir> [<srctree>] [DZ_...=]` (2026-11-02). Build speed (2026-11-02): IP cache `~/dz-ipcache` (DZ_IP_CACHE, "off"), launch_runs -jobs = cores − 4 (DZ_JOBS): a build that changes one IP reaches placement in ~5 min. At 100 % slices the placer directive decides: run 2-3 at once (ExtraTimingOpt and AltSpreadLogic_high placed smix4 and gpclkt, ExtraPostPlacementOpt did not). ⚠️ In -filter patterns `[*]` is a character class, not a literal bracket: a constraint on `gen_chan[*].x_reg[*]` matches nothing (CRITICAL WARNING 18-540, check the log).
 
 ## Folder map (after the cleanup of Oct 25 2026)
 
@@ -270,6 +272,18 @@ skips the RS write and just rewrites VSIZE = recommit). By devmem: write the
 address reg, then write VSIZE (MM2S 0x50 / S2MM 0xA0). Park-pointer-only
 changes between already-committed frames need no recommit.
 
+**Capture wedge: how to avoid it (user decision Nov 2 2026; the gateware fix,
+branch capture-reset, is paused: it did not place).** Seen twice on Nov 2:
+the capture VDMA, its interconnect and converter are reset by the OUTPUT
+dynclk LOCKED (HDMI_2/aRst_n), and an input that glitches while streaming
+can leave a half burst. In use: (1) do not switch the output mode
+(`/video/mode`, hdmi2 -r) while the capture streams a live input; (2) keep
+the laptop source from blanking during sessions that use it (GNOME switches
+its HDMI output off when idle: `gnome-session-inhibit --inhibit idle sleep
+N`; wake: gdbus org.gnome.Mutter.DisplayConfig PowerSaveMode <0>); (3) never
+pulse `/capture/replug` while frames arrive; (4) plreload refuses to load
+over a wedged capture: reboot (a PS reset clears the HP1 AFI; a reboot over
+ssh is enough, the user allows it to clear a wedge).
 **⚠️ NEVER halt an S2MM channel mid-frame (DMACR.RS=0 while streaming) — and
 NEVER JTAG-reflash the PL while capture is running (same wedge, confirmed by
 a second incident Aug 2026: reflash over live capture → stuck soft reset →

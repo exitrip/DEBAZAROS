@@ -2031,8 +2031,27 @@ clock; conflicts in docs, XDC, mixer component.xml only).
   for the first time ("All user specified timing constraints are met"):
   ASL_high pixel +0.399 ns at 108 MHz, FCLK2 +0.145, FCLK0 +0.368, FIFO
   crossing +2.69, serial +0.185, hold +0.023; ETO pixel +0.494, FCLK2
-  +0.038. LUT 14115, FF 20512, DSP 73, slices 100 %. NOT yet on the board:
-  plreload refused the load (capture wedged, needs a power cycle).
+  +0.038. LUT 14115, FF 20512, DSP 73, slices 100 %.
+- **ON THE BOARD 2026-11-02** (artifacts/..._dsp, = dsp_AltSpreadLogic_high):
+  all 9 output modes switch and run (rates right 5 s after the switch, 2-3
+  video events per switch), the capture kept running through all switches,
+  mode 1 DIFF (edges of HDMI_1 on HDMI_0's red) and the signed hue "look
+  good" (user). HDMI_0 sync delay 2-4 looks right (4 = the computed +4 px,
+  now the boot value; the 4:3 DVI monitor + HDMI-to-NTSC adapter make it
+  hard to judge). HDMI_1 wants ~8 (the 3-bit field ends at 7): its own
+  video and the feedback copy of HDMI_0 (now 4 px later, ~6 px in all) are
+  apart, so one sync delay cannot align both. The fix (pix_delay before
+  colorGainFeedback1/Din0 + a 4-bit sync delay, branch capture-reset
+  17062880) did not place with any of 3 directives, with or without
+  word-only writes.
+
+**Decisions (user, 2026-11-02):**
+- The mixer word-only write patch is NOT to be tried again: it failed to
+  help 4 times (Oct 29: 5 of 6 placements failed; smixw / smixw_eto; ww_*
+  x3 with pix_delay). hw/patches/mixer_word_writes_rev24.patch stays as a
+  record only.
+- Main line = branch dsp-pipe. Room for new logic needs a real saving first
+  (candidates in section 14; slices 100 %).
 
 **Capture wedge (2026-11-02, twice) and branch `capture-reset`:** the
 capture VDMA, its interconnect and the subset converter were reset by
@@ -2050,6 +2069,10 @@ Vivado), so a stopping input alone does not issue half bursts.
   ExtraPostPlacementOpt placed: FCLK0 −0.010 (1), FCLK2 −0.111 (1), pixel
   +0.004 (build capr_ExtraPostPlacementOpt, the candidate for the capture
   test); Explore: FCLK0 −0.032, FCLK2 −0.405; EarlyBlockPlacement: no place.
+- **PAUSED (user, 2026-11-02):** the wedge is intermittent and easy to
+  avoid (CLAUDE.md "capture wedge: how to avoid it"); branch capture-reset
+  keeps the work (own reset, packet FIFO try, HDMI_1 pix_delay, 4-bit sync
+  delay, word-only writes), not merged.
 - A recovery for an already stuck burst would be an own AXI shim before
   HP1 that completes outstanding W beats with WSTRB = 0 (AXI Firewall
   guards against a hanging slave, not an aborting master).

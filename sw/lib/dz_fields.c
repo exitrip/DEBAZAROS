@@ -144,7 +144,7 @@ static const dz_field static_fields[] = {
 	 * show blanking data). Boot values (plreload.sh), set by eye 2026-11-01:
 	 * HDMI_0 0 (no visible change at any value), HDMI_1 5.
 	 * Older bitstreams store the bits and ignore them. Not in /state. */
-	{ "/hdmi/0/sync_delay", AUD, 0x0C, 12, 3, DZ_RAW, 0, "HDMI_0 DE/sync delay in pixel clocks (0; no visible effect)" },
+	{ "/hdmi/0/sync_delay", AUD, 0x0C, 12, 3, DZ_RAW, 0, "HDMI_0 DE/sync delay in pixel clocks (4 with mixer rev 26: its pix_out is 4 px later)" },
 	{ "/hdmi/1/sync_delay", AUD, 0x00, 12, 3, DZ_RAW, 0, "HDMI_1 DE/sync delay in pixel clocks (5 = aligned, by eye)" },
 	{ "/audio/rx/loop",   AUD, 0x08, 0, 1,  DZ_BOOL, 0, "send the HDMI_2 input audio to the HDMI_1 output" },
 	{ "/audio/rx/clear",  AUD, 0x08, 1, 1,  DZ_BOOL, 0, "toggle: clear the input peak meters" },
