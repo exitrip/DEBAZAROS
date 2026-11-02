@@ -1,19 +1,20 @@
 # sw/ - DEBAZAROS userspace software
 
-Built with plain make and the gcc from Vitis 2022.2. No Vitis project, no BSP.
+Built with plain make: the gcc from Vitis 2022.2 for development, the Yocto
+cross compiler in the image (PetaLinux recipe `debaz-sw`). No Vitis project,
+no BSP.
 
 | Path | What it is |
 | --- | --- |
-| `debazd/` | The hardware daemon: the one owner of the PL registers and frame slots, controlled over OSC/UDP (port 9000). |
+| `debazd/` | The hardware daemon: the one owner of the PL registers and frame slots, controlled over OSC/UDP (port 9000). One file per area: `disp.c` (display routing, crops, `/video/mode`), `dds.c` (DDS patterns, AWG, audio scope), `lfo.c`, `trans.c` (field ramps, cross-fade), `state.c` (state dump, snapshots), `cue.c` (cues, scenes, shows), `react.c` (audio analysis), `ascii.c`, `fx.c` (colour matrix, key), `sound.c` (audio files, recording, sources), `audio.c` (48 kHz rate, HDMI_2 replug), `pwm.c`, `io.c`. Each file starts with its OSC addresses. |
 | `dzweb/` | Web app: a small HTTP + WebSocket server on the board (port 8080) and the browser pages in `dzweb/www/`. See "Web app" below. |
 | `dzctl/` | Command-line OSC client for debazd. Runs on the board and on the laptop. |
-| `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing (`dz_draw`). |
-| `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk, capture). Moved from the old Vitis workspace (jerkspace). |
-| `fbfeed/` | Copies raw frames from stdin into a frame slot (second video stream). |
+| `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing and movies (`dz_draw`), text (`dz_text`), program lookup (`dz_path`). |
+| `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk; capture only when debazd does not run). Moved from the old Vitis workspace (jerkspace). |
+| `fbfeed/` | Copies raw frames from stdin into a frame slot (movies; NEON yuv420p -> RGB, trails, ghost). |
 | `dzmosh/` | Live datamosh in the movie pipe (MPEG-4 Part 2 only): drops key frames, repeats P frames, flips bits, pauses; sets the frame pace. Commands on `/tmp/dzmosh.<slot>` (debazd `/movie/<s>/mosh\|bloom\|corrupt\|pause`). |
-| `debazd/ascii.c` | `/ascii/<d>/...`: a slot drawn as text (ASCII, shade, braille, half blocks, any UTF-8 characters) into another slot. |
-| `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). |
-| `tools/` | `capstat.sh` (capture status), `selftest.sh`, `vscode/` (debug setup). |
+| `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). Must match the bitstream that runs. |
+| `tools/` | Board scripts (`dzstart.sh`, `plreload.sh`, `dzsetup.sh`, `capstat.sh`, ...), laptop scripts (`mkmedia.sh`, `pushfonts.sh`), `selftest.sh`, `image/` (the image's systemd unit and default config), `vscode/` (debug setup). |
 
 ## Build and install
 
@@ -21,26 +22,45 @@ Built with plain make and the gcc from Vitis 2022.2. No Vitis project, no BSP.
 make              # ARM binaries -> out/arm/   (hdmi2: out/arm/hdmi2.elf)
 make NATIVE=1     # x86 binaries -> out/native/ (dzctl for the laptop)
 make test         # host self test, simulated hardware
-make install      # copy to the board: /home/ebaz/bin/
+make install TARGET=ebaz@<board-ip>   # copy to the board: /home/ebaz/bin/, /home/ebaz/www/
 make DEBUG=1      # -O0 -g for gdb
+make image-install DESTDIR=<dir>      # the image layout (used by the recipe)
 ```
 
-`make install` copies to `/home/ebaz/bin/`. The boot script `debazarosit.sh`
-still starts `/home/ebaz/hdmi2.elf` (the old build). Change that only when you
-decide to.
+Two installs can be on one card (2026-11-01, `lib/dz_path.h`):
 
-## Start order on the board
+| | Programs | Web app | Comes from |
+| --- | --- | --- | --- |
+| Image | `/usr/bin` | `/usr/share/debaz/www` | PetaLinux recipe `debaz-sw` (builds this folder) |
+| Development | `/home/ebaz/bin` | `/home/ebaz/www` | `make install` |
 
-1. Load the bitstream (JTAG, or fpga_manager).
-2. Run hdmi2 one time: it sets the video mode and starts the VDMAs.
-   debazd does not do this.
-3. Start the daemon: `sudo /home/ebaz/bin/debazd &` (`-v` logs every write).
-4. Control it: `dzctl ...` on the board, `dzctl -h <board-ip> ...` from the LAN.
-5. Optional, the web app: `/home/ebaz/bin/dzweb &` (no sudo), then open
-   `http://<board-ip>:8080/` in a browser.
+The development copy wins: debazd starts `dz_prog("fbfeed")` etc. from
+`$DZ_BIN`, else `/home/ebaz/bin`, else `/usr/bin`; the scripts choose their
+folder the same way; dzweb serves `/home/ebaz/www` when it has an
+`index.html`. Remove `/home/ebaz/bin` and `/home/ebaz/www` to go back to the
+image's software.
 
-Only one debazd runs at a time (`/tmp/debazd.lock`). Do not run the devmem
-loop of `debazarosit.sh` at the same time: both write the same registers.
+## Bring-up on the board
+
+`tools/dzstart.sh` brings a booted board to the working state. The image runs
+it at boot (`debaz.service`, log: `journalctl -u debaz`); by hand:
+`sudo sh <bin>/dzstart.sh` (`-n` = no PL load).
+
+1. If BITSTREAM is set in the config: load it (`plreload.sh`: stops hdmi2
+   and debazd, soft-resets the capture, loads, starts hdmi2 + debazd, then
+   `dzsetup.sh`). Empty = keep the bitstream of BOOT.BIN.
+2. Else start what does not run: hdmi2 (video mode), debazd; after a
+   power-up also `dzsetup.sh` (mixer boot setup and sync delays: without it
+   HDMI_0 is black).
+3. dzweb as user ebaz (port 8080).
+4. Checks: processes, `/ping`, VDMA status, capture.
+
+Config: `/home/ebaz/dzstart.conf` (per card), else `/etc/debaz/dzstart.conf`
+(image): `BITSTREAM=`, `HDMI2_ARGS="-r 1280x720"`, `WEB=1`.
+The video mode can change later without a reboot: `/video/mode 800x600`.
+
+Only one debazd runs at a time (`/tmp/debazd.lock`). hdmi2 does not touch
+the capture while debazd holds that lock.
 
 ## OSC interface (summary)
 
@@ -57,8 +77,9 @@ Full list: `dzctl /list`, or `debazd -l` (prints address, register, bits).
 | `/disp/<d>` | | reply: slot that display d shows (-1 = not a slot) |
 | `/capture/status` | | plocked, alocked, frames flowing, overflow, DMA status |
 | `/fields` | [prefix] | one `/field path lo width unit ro help` per field, then `/field/end count` |
-| `/files` | `img` or `movies` | one `/file name` per file in `/home/ebaz/img` or `/home/ebaz/movies`, then `/file/end count` |
-| `/subscribe` | [port] | send events to me: `/event/io`, `/event/hpd`, `/event/capture` |
+| `/files` | `img`, `movies`, `audio` or `fonts` | one `/file name` per file in `/media/debaz/<kind>` (fonts: `/usr/share/fonts`), then `/file/end count` |
+| `/subscribe` | [port] | send events to me: `/event/io`, `/event/hpd`, `/event/capture`, `/event/video`, `/event/mode`, ... |
+| `/video/mode` | [name] | the output mode of both displays (`/video/modes`); a name restarts hdmi2 `-r name` |
 | `/draw/<slot>/...`, `/img/...`, `/movie/...`, `/surface/...` | | drawing and playback, see `lib/dz_draw.h` |
 | `/fx/hue`, `/fx/map`, `/fx/matrix`, `/fx/key/...` | | colour matrix and colour key on HDMI_0, see "Colour FX" |
 
@@ -76,13 +97,14 @@ Without that bit the DDS ignores the new value.
 
 ## Web app (dzweb)
 
-`dzweb` serves the pages in `/home/ebaz/www` and connects browsers to
+`dzweb` serves the pages in `/home/ebaz/www` (else the image's
+`/usr/share/debaz/www`) and connects browsers to
 debazd. The browser sends OSC packets as WebSocket frames, and dzweb sends
 them to debazd over UDP. Replies and events come back the same way. Thus the
 browser uses the same OSC addresses as `dzctl`.
 
 ```sh
-/home/ebaz/bin/dzweb &      # -p 8080  -w /home/ebaz/www  -m /home/ebaz  -d 127.0.0.1 -o 9000  -v
+dzweb &      # -p 8080  -w <www>  -m /media/debaz  -d 127.0.0.1 -o 9000  -v   (dzstart.sh starts it as ebaz)
 ```
 
 | URL | What it does |
@@ -90,28 +112,43 @@ browser uses the same OSC addresses as `dzctl`.
 | `/` and other flat file names | static files from the www folder (no sub folders, `..` gives 404) |
 | `/units` | broadcasts `/info` on the LAN; JSON list of units (ip, variant, slots, host, MAC) |
 | `/osc` | WebSocket. Each binary frame is one OSC packet (message or bundle). |
-| `GET /media` | JSON: free bytes on the disk, files in `img/` and `movies/` (name, size, mtime) |
-| `GET /media/<img\|movies>/<name>` | download a file (`?dl`: as an attachment) |
-| `PUT /media/<img\|movies>/<name>` | upload a file (raw body with Content-Length) |
-| `DELETE /media/<img\|movies>/<name>` | delete a file |
+| `GET /media` | JSON: free bytes on the disk, files in `img/`, `movies/`, `audio/` (name, size, mtime) |
+| `GET /media/<kind>/<name>` | download a file (`?dl`: as an attachment) |
+| `PUT /media/<kind>/<name>` | upload a file (raw body with Content-Length) |
+| `DELETE /media/<kind>/<name>` | delete a file |
 
 Tabs in the app:
 
 - **Displays**: slot grid per display (12 slots), Home, Live input, Blank,
   frame sequencer. The page asks for a confirmation before a fast black
   strobe (photosensitivity).
-- **Effects**: all register fields. The page gets them from `/fields`, so a
-  new field in `dz_fields.c` shows without a change to the page. Mixer: a
-  table with 9 channels (mode, K, lo, hi, stream B, 5 gains).
-- **Oscillators**: the 16 LFOs. debazd reports only value and on/off, so the
-  page keeps its own copy of the settings in the browser.
-  "Send all settings" sends that copy again (for example after a debazd restart).
-- **Paint**: brush, line, pixel text, TrueType text and sprites on a
-  1280x720 canvas, in board coordinates. The canvas shows a local preview
-  only. Board effects (grab, transforms) show on the display.
-- **Media**: upload (drop files or choose them), download and delete images
-  and movies; use them as sprites, draw them, play movies; sprites from
+- **Wall**: output mode (`/video/mode`), input size, crops per display on a
+  tile map, manual crop sliders, a crop exerciser that counts video events.
+- **Effects**: cross-fade card, then all register fields. The page gets them
+  from `/fields`, so a new field in `dz_fields.c` shows without a change to
+  the page. Mixer: a table with 9 channels (mode, K, lo, hi, stream B, 5 gains).
+- **Oscillators**: the 16 LFOs, with the audio source row (`/audio/react`).
+  debazd reports only value and on/off, so the page keeps its own copy of
+  the settings in the browser: "Send all settings" sends that copy again
+  (after a debazd restart). A copy can be out of step with the board (the
+  On button, for example) when another client changed the LFO.
+- **DDS**: patterns, audio scope per channel, AWG draw panel, step table.
+- **Paint**: brush, line, shapes, gradients, paint bucket (fill), colour
+  pick, pixel text, TrueType text and sprites on a 1280x720 canvas, in board
+  coordinates. The canvas shows a local preview only. Board effects (grab,
+  transforms, Load) show on the display. **Live** sends each stroke at once;
+  **Batch** keeps the drawing in the browser with Undo / Redo (Ctrl+Z,
+  Ctrl+Shift+Z) until **Send** (Enter) replays it in order. Colour card: S/V
+  square, hue, alpha, hex/RGB, recent colours, palette. Brush card: sample,
+  presets, size / hardness / opacity / fill tolerance. Keys: B L R E P G F I
+  T = tools, [ ] = size, X = swap colours, Alt+click = pick. "Save frame"
+  card + timing sheet editor: see Image sequences.
+- **Media**: upload (drop files or choose them), download and delete images,
+  movies and audio; use them as sprites, draw them, play movies; datamosh and
+  movie effects cards (with live parameter dialogs), ASCII card, sprites from
   text, colour key.
+- **Audio**: output sources, file players, recording.
+- **Cues**: shows, scenes, cues (keyframe / delta), looks, transitions.
 - **Console**: all replies and events, and a command line
   (`/disp/1/show 5`, `"quoted text"` = one string, numbers with a point = float).
 
@@ -154,6 +191,7 @@ Full list in `lib/dz_draw.h`. Painting operations (Oct 2026):
 | `/draw/<s>/fade` | amount 0..1 [r g b] — pull all pixels toward a colour: trails |
 | `/draw/<s>/blend` | `normal`, `add` (light painting), `lighten`, `multiply` |
 | `/draw/<s>/alpha` | 0..1 for later operations |
+| `/draw/<s>/flood` | r g b x y [tol 0-255, default 32] — paint bucket: the connected area of similar colour, filled with the slot's `/fill` (solid, linear across the area, radial from the click) |
 | `/surface/<s>/grab` | [src slot] — copy the real slot content (live capture = 4, a playing movie) into the painting buffer: freeze it, then paint on it |
 | `/surface/<s>/peek` | x y — reply `/pixel s x y r g b` |
 | `/surface/<s>/save` | name — the painting buffer as `name.png` in `/home/ebaz/img`, encoded by a background ffmpeg (ready about 1 s later; `x.ppm` = PPM at once) |
@@ -252,6 +290,114 @@ dzctl /lfo/reset
 `every k` applies a target only on every k-th frame: use it for heavy
 targets (a full-frame fade takes 25–60 ms).
 
+Shape `audio` (2026-11-01): the value follows a feature of the audio
+analysis (`debazd/react.c`, source `/audio/react/source capture|peak|off`):
+
+```sh
+dzctl /audio/react/source capture          # HDMI 2 input via ALSA (all features)
+dzctl /lfo/0/audio bass                    # also selects shape audio
+dzctl /lfo/0/gain 0                        # 0 = auto (feature / its recent peak)
+dzctl /lfo/0/attack 0; dzctl /lfo/0/release 0.15
+dzctl /lfo/0/range 0 1000; dzctl /lfo/0/target /hdmi/0/delay; dzctl /lfo/0/on 1
+```
+
+Features: level, peak, bass (< 250 Hz), low, mid, high, air (> 8 kHz),
+flux, beat, band0..band15 (FFT 1024 by default, `/audio/react/fft`). A
+full-scale sine = 1; typical program material is 0.1-0.4, so use gain 0
+(auto) or 3-8. The capture device has one owner: `/audio/rec` pauses the
+analysis ("held: recording"), another program that holds it is reported
+as "busy: <pid> <name>" (`/audio/react` ends with the status).
+
+## DDS patterns, AWG, audio scope
+
+`debazd/dds.c` (OSC list at the top of the file): patterns that set several
+dz_osc2 registers from the running video mode (`/dds/<n>/bars`, `hbars`,
+`checker`, `slant`, `scroll`, `pulse`), the 16-step sequencer table, the
+2048-entry AWG table (`/dds/<n>/awg "v v v ..."`) and the audio scope:
+`/dds/<n>/scope <gain> <h|v|free|keep> <sum|l|r> <wave|fft|fftlin>` writes
+the newest 2048 samples of the capture, or the spectrum of that channel, into
+the AWG table each frame. The modes are:
+
+- h: across each line.
+- v: down the frame.
+- free: shape awg with no phase reset; set the rate with `/dds/<n>/hz`.
+
+Each part of the scope also has its own address:
+
+- `/dds/<n>/scope/skew f` makes it diagonal. In h, the cycle moves f cycles
+  from the top line to the bottom line. In v, f cycles across the width.
+- `/scope/seam mirror|fade` removes the jump where the cycle wraps (use it
+  with free, skew or v).
+- `/scope/trigger 1` starts the waveform at a rising zero crossing.
+- `/scope/smooth 0..0.99` smooths the table from frame to frame.
+- `/scope/table` returns 128 values of the last table.
+
+The fft source has a log frequency axis (47 Hz to 24 kHz at FFT 1024) and a
+range of 60 dB. Gain 1 puts a full-scale sine at the top. Cost on the board:
+about 6 % of a core per channel for the waveform and 9 % for the spectrum
+(the 2048 uncached writes take most of it). DDS 1 shows on HDMI_1 through
+the oscillator layers (`/hdmi/1/osc/sin/gain`).
+
+## Video mode and video wall
+
+`/video/mode 800x600` restarts hdmi2 with `-r 800x600` (both outputs share
+one pixel clock); movies stop and the crops go back to 0, 0 (`/event/mode`).
+`/disp/<d>/crop x y` shows the output-sized window at x, y of the slot (a
+slot is 1920 x 1080; the capture: its real size), applied at vsync, so it
+can move every frame. A small output mode over a large input gives the
+zoom (640x480 quarters of a 1280x960 input). The Wall tab has all of it.
+
+## Movies: datamosh, effects, ASCII
+
+`lib/dz_draw.c` (`/movie/<s>/...`): MPEG-4 Part 2 movies play through
+`dzmosh` (key-frame drops, bloom, corruption, pause); other codecs through
+one ffmpeg. `/movie/<s>/vf|af "preset|chain"` (checked filter chains, the
+movie restarts), live options `/movie/<s>/vf/<filter>/<option> v` (ffmpeg's
+runtime commands, queued every 110 ms), `/movie/<s>/trails d` and `ghost k`
+(in fbfeed). `debazd/ascii.c`: `/ascii/<d>/run <src>` draws a slot as text.
+
+## Image sequences (stop motion, drawn animation)
+
+`debazd/anim.c` + `lib/dz_img.c` (ROADMAP.md section 16): a folder
+`/media/debaz/anim/<name>/` of .jpg (or slow .png) frames plays out of a
+display: `/anim/<d>/play <name> [fps]`, `pause`, `step ±1`, `frame i`,
+`fps`, `mode loop|once|pingpong|random`, `end hold|black|stop`, `range`,
+`reverse`, `late hold|skip`, `/anim/<d>` = status, `/anim/list`. Decode
+threads (TurboJPEG, straight into the slot) fill a ring of 4 hidden slots
+(5-8 for display 0, 9 10 1 3 for display 1); the vsync thread flips, so
+every frame starts on a whole video frame. Optional `timing.txt`: lines
+`<file> [hold]` (hold in sequence frames, "on twos" = 2) and `# fps 12`.
+Folders of <= 4 files stay decoded ("resident", no CPU). Both displays can
+play at once. Budget (720p, measured): 46 KB frames 30 fps on each display
+at once; 250 KB frames 15 fps on each, 24 alone; 550 KB 12 fps (SD card).
+Build a folder from the web: Paint tab "Save frame" = `/anim/save <folder>
+[slot|capture|disp0|disp1] [quality] [hold]` adds the next fNNNNN.jpg (a
+hold > 1 starts timing.txt; later saves add their line; "Timing sheet…"
+opens the editor: thumbnails, holds, order, repeats, raw text = `/anim/sheet`
+and `/anim/sheet/put` in parts of 4 KB; dzweb serves the frames at
+`/media/anim/<folder>/<file>`, also PUT and DELETE) (live input
+for stop motion, a paint slot for drawn frames; 80-200 ms), `/anim/undo
+<folder>`; a display that plays the folder reloads after each save. Media
+tab "Image sequences" = the player for both displays, plus "Add a sequence"
+(drop or pick a folder / files: natural order, rename f00001.jpg …, fit +
+JPEG in the browser, progress) and Delete folder (`/anim/delete`). Onion
+skin for stop motion: `/anim/<d>/onion <folder> [opacity] [frames 1-3]
+[src slot, default the capture]` shows the live input with the last frames
+over it (12-20 fps; web Save frame card "onion" row); each save reloads it.
+Each save reports the file size (quality slider: smaller = faster). Laptop:
+`mkmedia -A <name>` (see Preparing media).
+
+## Cues, scenes and shows
+
+`debazd/state.c` + `debazd/cue.c` (ROADMAP.md section 15): `/state` dumps
+every target as one OSC message (~540); `/state/snap|recall|diff`. A show is
+a folder `/data/shows/<show>/` (`show.json`, `baseline.json`,
+`looks/*.json`, hand-editable). Cues are keyframes (everything) or deltas
+(tracking from the cue before); `/cue/record`, `/cue/go <scene> <n> [secs]
+[cut|fade|dip]`, `/cue/next`, `/look/save|apply`, `/show/save|load`. The
+Cues tab has all of it. LFOs are free running: cues set them up or switch
+them; an LFO left on may fight a fade.
+
 ## Colour FX: hue, colour map, colour key
 
 `debazd/fx.c`. The HDMI_0 colour matrix multiplies HDMI_0's video by 9
@@ -304,6 +450,7 @@ dzctl /audio/rx/auto 0       # watchdog off (default on: replug when the rate is
 ```sh
 bash sw/tools/mkmedia.sh ~/show-media                 # a folder of mixed files -> ./board-media/{img,movies,audio}
 bash sw/tools/mkmedia.sh -o /tmp/out -u clip.mov a.mp3 # files; -u = upload to the board (default ebaz@10.42.0.68 or $DZ_BOARD)
+bash sw/tools/mkmedia.sh -A walk -j 85 -u shots/      # image sequence: shots/* -> anim/walk/f00001.jpg ... (-r 12: movie frames at 12 fps + timing.txt)
 bash sw/tools/mkmedia.sh -h                            # all options
 ```
 

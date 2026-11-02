@@ -35,8 +35,8 @@
  *                                             f:flux f:beat s:status
  *   /audio/react/bands                     -> 16 x f
  * Use: /lfo/<n>/shape audio, /lfo/<n>/audio <feature> (lfo.c); the
- * waveform: /dds/<n>/scope (dds.c, writes the newest 2048 samples into the
- * AWG table each frame).
+ * waveform: /dds/<n>/scope (dds.c, writes the newest 2048 samples, or the
+ * spectrum of one channel (react_spectrum), into the AWG table each frame).
  */
 #define _GNU_SOURCE
 #include "debazd.h"
@@ -57,7 +57,7 @@
 
 #define REACT_FIFO	"/tmp/dzreact.fifo"
 #define PCM_STATUS	"/proc/asound/DEBAZ/pcm2c/sub0/status"
-#define RING		2048			/* mono samples kept: >= the largest N */
+#define RING		4096			/* samples kept: 2048 for the scope + a trigger search */
 #define NMAX		1024
 
 enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK };
@@ -157,8 +157,8 @@ static void fft_c(cpx *x, int m)
 	}
 }
 
-/* power spectrum of the newest n ring samples: pw[0..n/2] */
-static void spectrum(float *pw)
+/* power spectrum of the newest n samples of rb: pw[0..n/2] */
+static void spectrum(const float *rb, float *pw)
 {
 	int n = plan_n, m = n / 2;
 	cpx z[NMAX / 2];
@@ -168,8 +168,8 @@ static void spectrum(float *pw)
 		return;
 
 	for (int i = 0; i < m; i++) {
-		z[i].re = ring[(s + 2 * i) % RING] * win[2 * i];
-		z[i].im = ring[(s + 2 * i + 1) % RING] * win[2 * i + 1];
+		z[i].re = rb[(s + 2 * i) % RING] * win[2 * i];
+		z[i].im = rb[(s + 2 * i + 1) % RING] * win[2 * i + 1];
 	}
 	fft_c(z, m);
 	pw[0] = (z[0].re + z[0].im) * (z[0].re + z[0].im);
@@ -211,7 +211,7 @@ static void analyse(void)
 		mkplan(fft_n);
 	if (rfill < (unsigned)plan_n)
 		return;
-	spectrum(pw);
+	spectrum(ring, pw);
 	f_bass = bins_amp(pw, 1, hz_bin(250));
 	f_low  = bins_amp(pw, hz_bin(250), hz_bin(500));
 	f_mid  = bins_amp(pw, hz_bin(500), hz_bin(2000));
@@ -407,6 +407,35 @@ int react_samples(float *out, int n, int chan)
 	for (int i = 0; i < n; i++)
 		out[i] = r[(rpos + RING - (unsigned)n + (unsigned)i) % RING];
 	return n;
+}
+
+/* amplitude spectrum of the newest fft_n samples of one channel (0 = (L+R)/2,
+ * 1 = L, 2 = R): amp[0..fft_n/2], a full-scale sine = ~1 in its bin.
+ * Returns the bin count (fft_n/2 + 1; bin k = k x 48000 / fft_n Hz), 0 =
+ * no samples. One FFT per channel and frame (the DDS channels share it). */
+int react_spectrum(float *amp, int chan)
+{
+	static float cache[3][NMAX / 2 + 1];
+	static unsigned at[3] = { ~0u, ~0u, ~0u };
+	static int at_n[3];
+	const float *r = chan == 1 ? ringl : chan == 2 ? ringr : ring;
+	float pw[NMAX / 2 + 1];
+
+	if (chan < 0 || chan > 2 || src != SRC_CAPTURE || !running)
+		return 0;
+	if (plan_n != fft_n)
+		mkplan(fft_n);
+	if (rfill < (unsigned)plan_n)
+		return 0;
+	if (at[chan] != rpos || at_n[chan] != plan_n) {
+		spectrum(r, pw);
+		for (int k = 0; k <= plan_n / 2; k++)
+			cache[chan][k] = sqrtf(pw[k]) * (4.0f / plan_n);
+		at[chan] = rpos;
+		at_n[chan] = plan_n;
+	}
+	memcpy(amp, cache[chan], sizeof(float) * (size_t)(plan_n / 2 + 1));
+	return plan_n / 2 + 1;
 }
 
 /* another user of the capture PCM (sound.c recorder): pause / resume */

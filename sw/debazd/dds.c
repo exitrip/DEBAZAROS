@@ -37,19 +37,45 @@
  *   /dds/<n>/awg s:"v v v ..."       2..1024 points 0..65535 (one cycle); linear
  *                                    interpolation to 2048 entries (cyclic)
  *   /dds/<n>/awg                     -> /dds/<n>/awg s:points (the copy)
- *   /dds/<n>/scope f:gain [s:h|v|keep] [s:sum|l|r]   audio scope (2026-11-01): each frame
- *                                    the newest 2048 samples of the react.c
- *                                    capture source go into the AWG table
- *                                    (0x8000 + sample x gain, clamped). h = one
- *                                    cycle across the visible width (bars 1 awg:
- *                                    the waveform as brightness along each line),
- *                                    v = one cycle down the frame (hbars 1 awg),
+ *   /dds/<n>/scope f:gain [s:mode] [s:sum|l|r] [s:wave|fft|fftlin]   audio scope
+ *                                    (2026-11-01): each frame the react.c capture
+ *                                    source goes into the AWG table.
+ *                                    Sources: wave = the newest 2048 samples
+ *                                    (0x8000 + sample x gain, clamped; default);
+ *                                    fft = the spectrum of the channel, log
+ *                                    frequency (47 Hz .. 24 kHz at fft 1024) and
+ *                                    60 dB (20 log10(amp x gain) + 60) / 60:
+ *                                    gain 1 = a full-scale sine at the top;
+ *                                    fftlin = linear frequency, amp x gain.
+ *                                    Modes: h = one cycle across the visible
+ *                                    width (bars 1 awg: brightness along each
+ *                                    line), v = one cycle down the frame (hbars
+ *                                    1 awg), free = shape awg, free running: no
+ *                                    phase reset, PINC stays (set /dds/<n>/hz),
  *                                    keep = the pattern stays (default h).
  *                                    gain 0 = off (the table keeps the last frame).
  *                                    sum = (L+R)/2 (default), l / r = one channel
- *   /dds/<n>/scope/gain f, /scope/mode s, /scope/channel s   one value alone
- *                                    (LFO targets, e.g. "/dds/1/scope/gain $f0")
- *   /dds/<n>/scope                   -> /dds/<n>/scope f:gain s:mode s:channel
+ *   /dds/<n>/scope/gain f, /scope/mode s, /scope/channel s, /scope/source s
+ *                                    one value alone (LFO targets, e.g.
+ *                                    "/dds/1/scope/gain $f0")
+ *   /dds/<n>/scope/skew f            the diagonal (2026-11-02): h = the cycle
+ *                                    moves f cycles from the top to the bottom
+ *                                    line (signed, LINESTEP); v = f cycles across
+ *                                    the width (PINC; negative = the table read
+ *                                    backwards). 0 = straight (default)
+ *   /dds/<n>/scope/seam s:off|mirror|fade   the two ends of the table: mirror =
+ *                                    the source compressed into the first half and
+ *                                    mirrored, fade = the last 1/8 fades into the
+ *                                    first entry. No jump where the cycle wraps
+ *                                    (free running, h and v with skew)
+ *   /dds/<n>/scope/trigger i:0|1     wave: start at a rising zero crossing (a
+ *                                    still picture of a periodic sound)
+ *   /dds/<n>/scope/smooth f          0..0.99: each entry = smooth x the last
+ *                                    frame + (1 - smooth) x the new value
+ *   /dds/<n>/scope/table             -> s: every 16th entry of the last table (128)
+ *                                       (0..65535, before a backwards read)
+ *   /dds/<n>/scope                   -> /dds/<n>/scope f:gain s:mode s:channel s:source
+ *                                       f:skew s:seam i:trigger f:smooth
  *   /dds/raster                      -> /dds/raster f:line_hz f:frame_hz
  *                                       i:htotal i:vtotal i:width i:height
  * shape: sine saw sawdown tri square pulse awg, or 0..6.
@@ -117,11 +143,28 @@ static struct {
 
 /* audio scope per channel */
 static const char *const chan_names[] = { "sum", "l", "r" };
+static const char *const src_names[] = { "wave", "fft", "fftlin" };
+static const char *const seam_names[] = { "off", "mirror", "fade" };
+static const char *const mode_names[] = { "h", "v", "free", "keep" };
+enum { SM_H, SM_V, SM_FREE, SM_KEEP };
 static struct {
 	float gain;			/* 0 = off */
-	char  mode[8];
+	int   mode;			/* SM_* */
 	int   chan;			/* 0 sum, 1 L, 2 R (react_samples) */
-} S[2] = { { 0, "h", 0 }, { 0, "h", 0 } };
+	int   src;			/* 0 wave, 1 fft, 2 fftlin */
+	int   seam, trig;
+	float skew, smooth;
+	float last[AWG_N];		/* for smooth */
+} S[2];
+
+static int name_arg(const char *c, const char *const *names, int n)
+{
+	for (int i = 0; i < n; i++)
+		if (!strcmp(c, names[i]))
+			return i;
+	return -1;
+}
+#define NAMES(t) t, (int)(sizeof(t) / sizeof(t[0]))
 
 static int chan_arg(const char *c)
 {
@@ -341,16 +384,55 @@ static void pattern(int n, raster r, double vis)
 	}
 }
 
-/* the scope's pattern: one AWG cycle across the width (h) or down (v) */
+/* the scope's pattern: one AWG cycle across the width (h) or down (v), with
+ * the skew; free = shape awg without a reset (PINC stays) */
 static void scope_pattern(int n, raster r, double vis)
 {
-	if (S[n].gain <= 0 || S[n].mode[0] == 'k')
+	int hh = r.h > 0 ? r.h : 720;
+
+	if (S[n].gain <= 0 || S[n].mode == SM_KEEP)
 		return;
-	P[n].pat = S[n].mode[0] == 'h' ? P_BARS : P_HBARS;
 	P[n].count = 1;
-	P[n].shift = 0;
 	P[n].shape = 6;			/* awg */
-	pattern(n, r, vis);
+	if (S[n].mode == SM_FREE) {
+		P[n].pat = P_NONE;
+		clean(n);
+		wr(n, R_CTRL, C_SHAPE(6));
+	} else if (S[n].mode == SM_H) {
+		P[n].pat = S[n].skew != 0 ? P_SLANT : P_BARS;
+		P[n].shift = S[n].skew / hh;
+		pattern(n, r, vis);
+	} else {
+		/* v: acc runs |skew| x vis cycles per line, LINESTEP adds the rest of
+		 * 1/h (dz_osc_ch.v: acc reset at vsync, line_off += LSTEP at hsync);
+		 * a negative skew reads the table backwards (dds_tick) */
+		double k = fabs(S[n].skew), dir = S[n].skew < 0 ? -1.0 : 1.0;
+
+		P[n].pat = P_HBARS;
+		P[n].shift = 0;
+		clean(n);
+		wr(n, R_PINC, PINC_VALID | inc_hz(k * vis * r.line_hz));
+		wr(n, R_LSTEP, cycles32(dir / hh - k * vis));
+		wr(n, R_CTRL, C_SHAPE(6) | C_RESET(RST_VSYNC));
+	}
+}
+
+/* a new skew while the scope runs: only PINC / LINESTEP (no clean(): an LFO
+ * may send it every frame) */
+static void scope_skew(int n, raster r, double vis)
+{
+	int hh = r.h > 0 ? r.h : 720;
+
+	if (S[n].mode == SM_H) {
+		P[n].pat = S[n].skew != 0 ? P_SLANT : P_BARS;
+		P[n].shift = S[n].skew / hh;
+		wr(n, R_LSTEP, cycles32(P[n].shift));
+	} else if (S[n].mode == SM_V) {
+		double k = fabs(S[n].skew), dir = S[n].skew < 0 ? -1.0 : 1.0;
+
+		wr(n, R_PINC, PINC_VALID | inc_hz(k * vis * r.line_hz));
+		wr(n, R_LSTEP, cycles32(dir / hh - k * vis));
+	}
 }
 
 int dds_dispatch(const dz_msg *m)
@@ -374,7 +456,8 @@ int dds_dispatch(const dz_msg *m)
 	static const char *const cmds[] = { "wave", "bars", "hbars", "checker", "slant", "scroll",
 					    "pulse", "off", "step", "steps", "awg", "shift",
 					    "count", "cols", "rows", "pattern", "scope", "scope/gain",
-					    "scope/mode", "scope/channel" };
+					    "scope/mode", "scope/channel", "scope/source", "scope/skew",
+					    "scope/seam", "scope/trigger", "scope/smooth", "scope/table" };
 	int known = !strncmp(c, "step/", 5);	/* /dds/<n>/step/<i>: the state model */
 	for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++)
 		if (!strcmp(c, cmds[i]))
@@ -498,17 +581,21 @@ int dds_dispatch(const dz_msg *m)
 			 len, ph);
 	} else if (!strcmp(c, "scope")) {
 		if (m->n == 0) {
-			dzd_reply(p, "fss", S[n].gain, S[n].mode, chan_names[S[n].chan]);
+			dzd_reply(p, "fsssfsif", S[n].gain, mode_names[S[n].mode], chan_names[S[n].chan],
+				  src_names[S[n].src], S[n].skew, seam_names[S[n].seam], S[n].trig,
+				  S[n].smooth);
 			return 1;
 		}
-		const char *md = m->n >= 2 && m->a[1].type == 's' ? m->a[1].s : "h";
+		int md = m->n >= 2 && m->a[1].type == 's' ? name_arg(m->a[1].s, NAMES(mode_names)) : SM_H;
 		int chn = m->n >= 3 && m->a[2].type == 's' ? chan_arg(m->a[2].s) : S[n].chan;
-		if ((strcmp(md, "h") && strcmp(md, "v") && strcmp(md, "keep")) || chn < 0)
+		int sr = m->n >= 4 && m->a[3].type == 's' ? name_arg(m->a[3].s, NAMES(src_names)) : S[n].src;
+		if (md < 0 || chn < 0 || sr < 0)
 			goto bad;
-		int was_on = S[n].gain > 0, mode_new = strcmp(md, S[n].mode) != 0;
+		int was_on = S[n].gain > 0, mode_new = md != S[n].mode;
 		S[n].gain = (float)argf(&m->a[0]);
 		S[n].chan = chn;
-		snprintf(S[n].mode, sizeof(S[n].mode), "%s", md);
+		S[n].src = sr;
+		S[n].mode = md;
 		if (!was_on || mode_new)
 			scope_pattern(n, r, vis);
 	} else if (!strcmp(c, "scope/gain")) {
@@ -518,17 +605,56 @@ int dds_dispatch(const dz_msg *m)
 		S[n].gain = (float)argf(&m->a[0]);
 		if (!was_on)			/* an LFO sends this every frame: pattern once */
 			scope_pattern(n, r, vis);
-	} else if (!strcmp(c, "scope/mode")) {
-		if (m->n < 1 || m->a[0].type != 's' ||
-		    (strcmp(m->a[0].s, "h") && strcmp(m->a[0].s, "v") && strcmp(m->a[0].s, "keep")))
+	} else if (!strcmp(c, "scope/mode") || !strcmp(c, "scope/channel") ||
+		   !strcmp(c, "scope/source") || !strcmp(c, "scope/seam")) {
+		int v = -1;
+		if (m->n >= 1 && m->a[0].type == 's') {
+			if (c[6] == 'm')
+				v = name_arg(m->a[0].s, NAMES(mode_names));
+			else if (c[6] == 'c')
+				v = chan_arg(m->a[0].s);
+			else if (c[7] == 'o')
+				v = name_arg(m->a[0].s, NAMES(src_names));
+			else
+				v = name_arg(m->a[0].s, NAMES(seam_names));
+		}
+		if (v < 0)
 			goto bad;
-		snprintf(S[n].mode, sizeof(S[n].mode), "%s", m->a[0].s);
-		scope_pattern(n, r, vis);
-	} else if (!strcmp(c, "scope/channel")) {
-		int chn = m->n >= 1 && m->a[0].type == 's' ? chan_arg(m->a[0].s) : -1;
-		if (chn < 0)
+		if (c[6] == 'm') {
+			S[n].mode = v;
+			scope_pattern(n, r, vis);
+		} else if (c[6] == 'c') {
+			S[n].chan = v;
+		} else if (c[7] == 'o') {
+			S[n].src = v;
+		} else {
+			S[n].seam = v;
+		}
+	} else if (!strcmp(c, "scope/skew")) {
+		if (m->n < 1)
 			goto bad;
-		S[n].chan = chn;
+		S[n].skew = (float)argf(&m->a[0]);
+		if (S[n].gain > 0)		/* LFO-friendly: only the registers of the skew */
+			scope_skew(n, r, vis);
+	} else if (!strcmp(c, "scope/table")) {	/* every 16th entry of the last frame */
+		char b[AWG_N / 16 * 6 + 1];
+		size_t o = 0;
+		for (int k = 0; k < AWG_N / 16; k++) {
+			float v = S[n].last[16 * k] * 65535.0f;
+			o += (size_t)snprintf(b + o, sizeof(b) - o, k ? " %d" : "%d",
+					      v < 0 ? 0 : v > 65535 ? 65535 : (int)v);
+		}
+		dzd_reply(p, "s", b);
+		return 1;
+	} else if (!strcmp(c, "scope/trigger")) {
+		if (m->n < 1)
+			goto bad;
+		S[n].trig = argf(&m->a[0]) != 0;
+	} else if (!strcmp(c, "scope/smooth")) {
+		if (m->n < 1)
+			goto bad;
+		double v = argf(&m->a[0]);
+		S[n].smooth = (float)(v < 0 ? 0 : v > 0.99 ? 0.99 : v);
 	} else if (!strcmp(c, "steps")) {
 		reply_steps(n);
 		return 1;
@@ -547,11 +673,59 @@ bad:
 	return 1;
 }
 
-/* audio scope: the newest samples into the AWG table (2048 writes per
- * channel and frame) */
+/* the newest 2048 samples, -1..1; with the trigger from the last rising zero
+ * crossing that still leaves 2048 samples after it */
+static int scope_wave(int n, float *t)
+{
+	static float buf[AWG_N * 2];
+	int k0 = AWG_N;
+
+	if (!S[n].trig)
+		return react_samples(t, AWG_N, S[n].chan);
+	if (!react_samples(buf, AWG_N * 2, S[n].chan))
+		return 0;
+	for (int k = AWG_N; k > 0; k--)		/* small hysteresis: no noise triggers */
+		if (buf[k - 1] < 0 && buf[k] >= 0 && (k < 8 || buf[k - 8] < -0.002f)) {
+			k0 = k;
+			break;
+		}
+	memcpy(t, buf + k0, sizeof(float) * AWG_N);
+	return AWG_N;
+}
+
+/* the spectrum on 2048 entries, 0..1: fft = log frequency (bin 1 .. the top)
+ * and 60 dB; fftlin = linear frequency and amplitude */
+static int scope_fft(int n, float *t)
+{
+	static float amp[1024 / 2 + 1], pos_t[2][AWG_N];
+	static int pos_top[2];
+	int nb = react_spectrum(amp, S[n].chan), top, lg = S[n].src == 1;
+	float g = S[n].gain;
+
+	if (nb < 3)
+		return 0;
+	top = nb - 1;
+	if (pos_top[lg] != top) {		/* the bin of each entry (fft size changes) */
+		for (int k = 0; k < AWG_N; k++)
+			pos_t[lg][k] = (float)(lg ? pow((double)top, (double)k / (AWG_N - 1))
+						  : 1.0 + (double)k * (top - 1) / (AWG_N - 1));
+		pos_top[lg] = top;
+	}
+	for (int k = 0; k < AWG_N; k++) {
+		float pos = pos_t[lg][k];
+		int i = (int)pos;
+		float fr = pos - (float)i, a = i >= top ? amp[top] : amp[i] * (1 - fr) + amp[i + 1] * fr;
+
+		t[k] = lg ? (20.0f * log10f(a * g + 1e-9f) + 60.0f) * (1.0f / 60.0f) : a * g;
+	}
+	return AWG_N;
+}
+
+/* audio scope: the newest samples or the spectrum into the AWG table (2048
+ * writes per channel and frame) */
 void dds_tick(void)
 {
-	static float smp[AWG_N];
+	static float t[AWG_N], u[AWG_N];
 	int ok = -1;
 
 	for (int n = 0; n < 2; n++) {
@@ -559,10 +733,41 @@ void dds_tick(void)
 			continue;
 		if (ok < 0)
 			ok = present();
-		if (!ok || !react_samples(smp, AWG_N, S[n].chan))
+		if (!ok)
 			return;
+		if (S[n].src == 0) {
+			if (!scope_wave(n, t))
+				continue;
+			for (int k = 0; k < AWG_N; k++)	/* 0..1, 0.5 = silence */
+				t[k] = 0.5f + t[k] * S[n].gain * 0.5f;
+		} else if (!scope_fft(n, t)) {
+			continue;
+		}
+		if (S[n].seam == 1) {		/* first half: every 2nd entry, then mirrored */
+			for (int k = 0; k < AWG_N / 2; k++)
+				u[k] = u[AWG_N - 1 - k] = t[2 * k];
+			memcpy(t, u, sizeof(t));
+		} else if (S[n].seam == 2) {	/* the last 1/8 fades into the first entry */
+			const int L = AWG_N / 8;
+
+			for (int i = 0; i < L; i++) {
+				float w = (float)(i + 1) / L;
+
+				t[AWG_N - L + i] = t[AWG_N - L + i] * (1 - w) + t[0] * w;
+			}
+		}
+		if (S[n].smooth > 0) {
+			float a = S[n].smooth;
+
+			for (int k = 0; k < AWG_N; k++)
+				t[k] = S[n].last[k] = S[n].last[k] * a + t[k] * (1 - a);
+		} else {
+			memcpy(S[n].last, t, sizeof(t));
+		}
+		/* v with a negative skew reads the phase backwards (scope_pattern) */
+		int back = S[n].mode == SM_V && S[n].skew < 0;
 		for (int k = 0; k < AWG_N; k++) {
-			float v = 32768.0f + smp[k] * S[n].gain * 32767.0f;
+			float v = t[back ? (AWG_N - k) % AWG_N : k] * 65535.0f;
 
 			v = v < 0 ? 0 : v > 65535 ? 65535 : v;
 			wr(n, R_AWG + 4u * (uint32_t)k, (uint32_t)v);
@@ -597,7 +802,16 @@ void dds_state(state_cb cb, void *ctx)
 			st_emit(cb, ctx, NULL, p, "s", pts);
 		}
 		snprintf(p, sizeof(p), "/dds/%d/scope", n);
-		st_emit(cb, ctx, NULL, p, "fss", S[n].gain, S[n].mode, chan_names[S[n].chan]);
+		st_emit(cb, ctx, NULL, p, "fsss", S[n].gain, mode_names[S[n].mode], chan_names[S[n].chan],
+			src_names[S[n].src]);
+		snprintf(p, sizeof(p), "/dds/%d/scope/skew", n);
+		st_emit(cb, ctx, NULL, p, "f", S[n].skew);
+		snprintf(p, sizeof(p), "/dds/%d/scope/seam", n);
+		st_emit(cb, ctx, NULL, p, "s", seam_names[S[n].seam]);
+		snprintf(p, sizeof(p), "/dds/%d/scope/trigger", n);
+		st_emit(cb, ctx, NULL, p, "i", S[n].trig);
+		snprintf(p, sizeof(p), "/dds/%d/scope/smooth", n);
+		st_emit(cb, ctx, NULL, p, "f", S[n].smooth);
 	}
 }
 

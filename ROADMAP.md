@@ -28,6 +28,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
 | 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); BD integration DONE + bench-tested 2026-10-29 (build osc: bars, checkerboard; slices 100 %, FCLK2 -0.017 ns: closure runs); next: timing, software presets |
 | 17 | Cues, scenes, shows: snapshot / recall of the state with transitions, OSC-driven (section 15) | 16 | DOING: step 1 DONE 2026-10-30 (trans.c: field ramps in the frame tick, /fx/xfade, /trans/field; host-tested); next: field flags, LFO getter, cJSON, cues |
+| 18 | Image sequences: a folder of frames out of a display, variable fps, stop-motion controls (section 16) | 6, 11 | WORKS on the board 2026-11-01: anim.c player (both displays at once), frame save from the web (Paint tab), Media tab player card; open: mkmedia -A, onion skin, 1000-frame test |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -512,13 +513,14 @@ VDMA MM2S (window: start, HSIZE, VSIZE, STRIDE) -> subset converter
 
 ## 10. SD card image and software deploy (plan, 2026-10-25)
 
-Open points found 2026-10-29: (a) no TrueType fonts in the image
-(/usr/share/fonts missing; dz_text ttf fails) - add a font package
-(e.g. Liberation) to the rootfs; (b) nothing starts the software at boot:
-sw/tools/dzstart.sh does the bring-up by hand (plreload of the dev
-bitstream + dzweb + checks); a systemd unit that runs it after
-debaz-firstboot is the next step (the dev bitstream must be in
-/lib/firmware and named in /home/ebaz/dzstart.conf).
+Open points found 2026-10-29, ADDRESSED 2026-11-01 by recipe `debaz-sw`
+(PetaLinux/README.md; built in a sandbox, not yet on a card): (a) fonts:
+liberation-fonts + ttf-dejavu sans/mono/serif as its dependencies (the CJK
+fallback DroidSansFallbackFull is not in it: recipe ttf-droid clones the
+Android frameworks repository); (b) start at boot: `debaz.service` runs
+`dzstart.sh` (BITSTREAM empty = BOOT.BIN's, then `dzsetup.sh`), and the
+image's BOOT.BIN carries the current bitstream (`_sdly` XSA, same PS7 as
+`_pwm`), so no PL load at boot.
 
 Goal: one image for every card (16 GB or larger). Flash it, and the unit
 works; per-unit identity lives in small files, not in the image.
@@ -613,25 +615,27 @@ works; per-unit identity lives in small files, not in the image.
 
 Three ways, in this order of work:
 
-1. Now (development): `make -C sw install` over the network, unchanged.
-2. Image (recommended next): a meta-user recipe `debaz-sw` that builds
-   `sw/` with the Yocto cross compiler (the Makefiles are plain; set
-   `CC`/`CFLAGS` from the recipe) and installs `/usr/bin/{debazd,dzctl,
-   dzweb,fbfeed,hdmi2,vsync_probe}`, `/usr/share/debaz/www`, the scripts,
-   the bitstreams (`/lib/firmware`) and the systemd units. The recipe
-   reads the source from the repo (`EXTERNALSRC`), so a rebuild picks up
-   the current `sw/`.
-3. Option for quick images: a recipe that installs prebuilt binaries from
-   `sw/out/arm/` (no compile in Yocto).
+1. Development: `make -C sw install` over the network, unchanged. It
+   installs to `/home/ebaz/{bin,www}`, which WINS over the image's files
+   (`sw/lib/dz_path.h`: debazd, dzweb and the scripts look there first).
+2. Image: DONE 2026-11-01 (sandbox build): recipe `debaz-sw` builds `sw/`
+   with the Yocto cross compiler (`make image-install DESTDIR=`; the source
+   comes through `FILESEXTRAPATHS` from the checked-out repo, as
+   debaz-firstboot) and installs `/usr/bin`, `/usr/share/debaz/www`,
+   `/etc/debaz/dzstart.conf`, `debaz.service` and the bitstreams of
+   `DEBAZ_BITSTREAMS` in `/lib/firmware`. Decision for the recipe (and
+   against install-after-image for the fleet): one flashed card = one
+   working unit, and the software, the bitstream in BOOT.BIN and
+   `hw_map.h` come from one commit.
+3. (not needed) prebuilt binaries from `sw/out/arm/`.
 
 ### Start-up (replaces debazarosit.sh)
 
-systemd units, in order: `debaz-firstboot` (media partition, data
-partition, ssh keys, hostname from the MAC) -> `debaz-pl` (optional:
-load a non-default variant + overlay from a setting in `/data`; the
-default variant is already in BOOT.BIN) -> `debaz-display` (hdmi2: video
-mode, VDMAs) -> `debazd` -> `dzweb` -> `debaz-scene` (apply the unit's
-start scene: mixer setup, movie, LFOs - from `/data` or the media card).
+Now (2026-11-01): `debaz-firstboot` -> `debaz` (one oneshot unit that runs
+`dzstart.sh`: optional PL load, hdmi2, debazd, `dzsetup.sh`, dzweb; log
+`journalctl -u debaz`). Later, if needed: separate units per daemon with
+restart on failure, and a start scene (a show / cue from `/data/shows`,
+see section 15) instead of only the mixer boot setup.
 
 ### Read-only root (after the above works)
 
@@ -1713,3 +1717,170 @@ except with dip. /fx/xfade = the one real video cross-fade (HDMI_1 only).
    errors, frames-before-rate applied right). Board: show demo (4 cues incl.
    1.5, look glow in 2 cues), check 0 issues.
 6. Later: audio volume, saved surfaces, generated cues, several units.
+
+## 16. Image sequences: a large folder of frames out of a display (plan 2026-11-01)
+
+Goal: play a folder of drawn or stop-motion frames (hundreds to thousands
+of images, far more than the 8 free frame slots) out of one display at a
+variable frame rate, frame-exact, with stop-motion controls (hold, step,
+ping-pong, timing sheet). Movies stay the tool for long footage; this is
+for frames that are made one at a time.
+
+### Measurements (2026-11-01, board debaz-7130d5, 720p output)
+
+Test program: TurboJPEG (libturbojpeg.so.0, NEON, libjpeg-turbo 2.1) via
+dlopen, decode to BGRX directly into a hidden slot (stride 7680). Test
+files: `/media/debaz/bench/` (frames of a 720p clip, a 720p pan over a
+photo with light and heavy grain, 1080p, a 4000x3000 photo, PNGs).
+
+| Source | Bytes/frame | Decode | fps, 1 core | fps, 2 cores (idle) |
+| --- | --- | --- | --- | --- |
+| 720p JPEG, soft (movie stills) | 46 KB | 31 ms (25 with FASTDCT) | 32 | 62 (79 FASTDCT) |
+| 720p JPEG, detail + light grain | 250 KB | 63 ms | 15.4 | 30.1 |
+| 720p JPEG, heavy grain | 550 KB | 110 ms | 6 (SD card bound) | - |
+| 1080p JPEG, soft | 65 KB | 85 ms | 11 | - |
+| 4000x3000 photo, scaled 1/4 on decode | 2.3 MB | 530 ms | 1.7 | - |
+| ffmpeg image2 sequence -> bgra (JPEG 250 KB) | | | 2.8 | |
+| ffmpeg PNG sequence -> bgra | 0.45-2.6 MB | | 3-7 | |
+| today's `/draw/<s>/img` (one ffmpeg per image) | | 0.8-1.7 s per image | | |
+
+- Decode time follows the COMPRESSED size (Huffman decode), not the
+  pixel count: a 1/4 scaled decode of a big photo is still slow.
+- Decoding directly into the slot costs the same as into cached RAM; the
+  copy from RAM to the slot would add 12 ms. Decode into the slot.
+- With a movie playing on the other display (decoder + fbfeed ~1.5
+  cores), one core is left: 24 fps (46 KB) / 9-15 fps (250 KB).
+- SD card read: 10-11 MB/s. Limit = 10 MB/s / bytes per frame (250 KB:
+  40 fps, 550 KB: 18 fps). Cold reads were serial with the decode in the
+  test (+26 ms at 250 KB): read-ahead must hide them.
+- RAM: 146 MB, ~87 MB available: a folder up to ~50 MB stays in the page
+  cache after the first loop; decoded frames do NOT fit in RAM
+  (3.7 MB each). The reserved memory has 8 free slots (12 minus 0, 2,
+  capture 4, black 11).
+- ffmpeg is the wrong tool here (no NEON in its MJPEG decoder and
+  bgra conversion, a process per image). PNG decode is 5-10x slower than
+  JPEG at the same picture: convert on the host.
+
+### Design
+
+**Files.** One folder per sequence in `/media/debaz/anim/<name>/`. Frames
+= `*.jpg` (main) and `*.png` (slow, allowed), natural sort order
+(f2 < f10). Optional `timing.txt` = a timing sheet: lines `<file> [frames]`
+(frames at the sequence rate, "on twos" = 2; a file may come back) and `# fps 12`; without it every
+file is one frame at the set fps. mkmedia gets `-A` (sequence mode): any
+image format ffmpeg reads -> baseline JPEG, display size, 4:2:0, q 85,
+numbered in the source order; `-A` also reports bytes per frame and the
+expected fps from the table above.
+
+**Player (debazd `anim.c`, one per display).**
+- A ring of 3 slots per player (2 players = 6 of the 8 free slots): one
+  shown, up to 2 decoded ahead. Decode worker threads (normal priority,
+  one per player; a single player may use 2 workers on 2 frames at once).
+- Decoder = new `lib/dz_img.c`: TurboJPEG and libpng (simplified
+  `png_image` API) by dlopen (no headers in the Vitis toolchain; a missing
+  library = that format off, with an error). Output fit to the display
+  size: TurboJPEG scale factors 1/1 .. 1/8 (the largest that fits), then
+  centred with black bars; no fine resize (mkmedia makes the right size).
+- Read-ahead: `posix_fadvise(WILLNEED)` on the next 4-8 files.
+- Clock: the vsync thread (frame-exact, as `/disp/<d>/seq`) adds fps / output
+  rate per vsync and flips when the sum passes 1 (any fps 0.1-60, "on
+  twos" without a timing sheet). The flip uses the existing front-slot
+  change of disp.c, so crops, blank and the effects work as for any slot.
+- Late frame (not decoded at its vsync): `late hold` (default: wait, never
+  lose a drawn frame; the time stretches) or `late skip` (keep time, drop
+  frames: for sequences with sound). Status counts late frames.
+- Short loops: if a sequence has <= ring frames, decode once and run from
+  the slots (CPU 0, like `/disp/<d>/seq` today).
+- Modes: loop, once (end = hold | black | home), pingpong, random;
+  range in..out; reverse. Random access is free (a file per frame): frame
+  n, step +-1 while paused = scrub.
+
+**OSC (`/anim/<d>/...`; `/disp/<d>/seq` keeps its slot flipbook).**
+`play "name" [fps]`, `stop`, `pause [1|0]`, `fps f`, `mode loop|once|
+pingpong|random`, `end hold|black|home`, `range in out`, `reverse 0|1`,
+`frame n`, `step n`, `late hold|skip`, `ahead n` (read-ahead), and the query
+`/anim/<d>` -> name, frames, position, fps set, fps real, late count,
+decode ms mean / max, state. `/files anim` = folders with frame counts.
+Tracked in `/state` (name, fps, mode, end, range, late, playing; position
+only when paused) so cues start and stop sequences. Optional sound: the
+existing audio player started with the sequence (`late skip` to stay in
+sync).
+
+**Web.** Media tab card "Image sequence": folder list (frames, MB, expected
+fps), transport, fps slider, mode, late policy, scrub slider, live status.
+Upload of a folder = dzweb `/media` PUT per file into `anim/<name>/`.
+
+**Boot run mode.** An installation that only plays a sequence: a cue that
+starts it (task 17) + "start a show / cue at boot" in dzstart.conf (open
+item, also for other shows).
+
+### Budget and rules for artists
+
+- 720p JPEG <= ~150 KB per frame (q 85, little grain): 20+ fps with a
+  movie on the other display, 30+ on an idle board.
+- 2 sequences at once (one per display) share the 2 cores: 250 KB
+  frames ~15 fps each.
+- 1080p: 3x the cost per pixel at the same quality; plan 10 fps per core.
+- Grain/noise is the most costly content (2x the bytes, half the fps).
+
+### Steps
+
+1. DONE 2026-11-01: `lib/dz_img.c` (TurboJPEG + libpng by dlopen, fit,
+   decode into a slot; JPEG encoder); `/draw/<s>/img` uses it for JPEG/PNG
+   (ffmpeg stays the fallback for other formats).
+2. DONE 2026-11-01: `debazd/anim.c` (ring of 4 slots per display, 2 decode
+   threads, read-ahead, vsync clock in disp.c, modes, late hold|skip,
+   resident short loops, timing sheet, OSC, status, state + cues, `/files
+   anim`); selftest anim-* (22 checks: pixels, borders, PNG, sheet, recall,
+   save / undo).
+3. DONE 2026-11-01 on the board (sdly bitstream, 720p60): one display
+   clip46 (46 KB) 30 fps = 30.01 real, 0 late; 60 fps -> 45 (decode-bound,
+   late hold stretches); pan250 (250 KB) 15 / 24 fps exact, 0 late;
+   grain550 (550 KB) 12 fps exact (23 % I/O wait). Two displays at once:
+   clip46 30 + 30 = 29.8 + 30.0; pan250 15 + 15 exact; pan250 12 +
+   grain550 8 exact; pan250 24 + clip46 24 -> 18 + 23.5 (over budget).
+   1000-frame folders DONE 2026-11-01 (cold page cache): grain1000 (129 KB,
+   127 MB > the 87 MB free RAM) 24 fps = 24.27, 0 late, decode 43 ms;
+   long1000 (41 KB) 30 fps exact; next to a 12 fps 720p movie on display 0:
+   grain1000 15 fps exact, 24 fps -> 24.3 with 4 late (hold) / 23.8 (skip);
+   the movie kept its 12 fps, 0 video events.
+4. Frame capture DONE 2026-11-01 (the request: build a folder from the web
+   for stop motion or drawn animation): `/anim/save <folder> [slot|capture|
+   disp0|disp1] [quality]` adds the next fNNNNN.jpg (720p 78 ms: copy out of
+   the slot 24 ms + encode/write 51; 1080p input 205 ms), `/anim/undo`; a
+   display that plays the folder reloads. The reply ends with the file size;
+   web: quality slider + size + expected fps per save. DONE later the same
+   day: mkmedia `-A NAME [-j Q] [-r fps] [-u]` (folders / images / movie
+   frames -> one numbered sequence, cjpeg at the exact quality, parallel;
+   1002 frames in 3-17 s); web upload of a folder or files (Media tab "Add a
+   sequence": drop / pick, natural order, rename, fit + JPEG in the browser,
+   24 files/s measured); `/anim/delete`; onion skin `/anim/<d>/onion folder
+   [opacity] [frames] [src]` (the capture or a slot under the last 1-3
+   frames; NEON blend; 1080p input on 720p: 19.5 fps with 1 frame, 12.5 with
+   3; a save reloads it; web Save frame card "onion" row). Lesson: a 64-bit
+   division per pixel (nearest resample) is a libgcc call on the A9: 330 ms
+   per frame; a column table per frame: 70 ms; C blend 32 ms per layer,
+   NEON 14.
+5b. DONE 2026-11-01 (user requests): timing sheet = a hold on each save
+   (`/anim/save ... hold`) + editor (Paint "Timing sheet…": thumbnails via
+   dzweb `/media/anim/<folder>/<file>`, hold, move, repeat, remove, raw text;
+   `/anim/sheet`, `/anim/sheet/put` in parts: OSC packets are 8 KB). Paint
+   tab: full colour picker (colorpick.js), Live / Batch (local undo / redo,
+   Send replays in order; tested: an undone stroke never reaches the board),
+   Brush card (sample, presets, big size / hardness / opacity / tolerance),
+   paint bucket `/draw/<s>/flood` (dz_shape_flood: scanline mask, the slot's
+   solid / linear / radial fill), eyedropper, brush outline cursor, keys.
+5. DONE 2026-11-01: web Media tab "Image sequences" card (both displays:
+   folder, play / pause / step / stop, fps, mode, late, scrub, live status),
+   Paint tab "Save frame (animation)" card (folder, source, quality, Save
+   = Ctrl+Enter, Undo, preview loop).
+6. Image (recipe debaz-sw): `libturbojpeg` + `libpng` in RDEPENDS (DONE
+   2026-11-01; both are in the 2026-11-01 sandbox image; the Oct 28 card
+   has libturbojpeg but NO libpng: PNG off there).
+
+Lessons: `dz_slot()` checks the reservation (/proc/iomem) on EVERY call:
+cache the pointer (a per-row call made a 720p copy 157 ms instead of 24).
+A plain memcpy reads an uncached slot at ~156 MB/s (NEON vldm 64 B: 15 ms
+vs 24, not worth it). The ring slots are 5-8 (display 0) and 9 10 1 3
+(display 1), `/anim/<d>/slots` changes them: anything drawn there is
+overwritten while a sequence plays.

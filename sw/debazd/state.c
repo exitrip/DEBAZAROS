@@ -211,6 +211,7 @@ void state_dump(state_cb cb, void *ctx)
 	movie_state(cb, ctx);
 	sound_state(cb, ctx);
 	disp_state(cb, ctx);
+	anim_state(cb, ctx);
 	ascii_state(cb, ctx);
 	dds_state(cb, ctx);
 	react_state(cb, ctx);
@@ -365,7 +366,8 @@ static int rank_of(const char *a)
 		{ "/movie/", "/vf", 10 }, { "/movie/", "/af", 10 }, { "/movie/", "/trails", 10 },
 		{ "/movie/", "/ghost", 10 }, { "/movie/", "/file", 11 }, { "/movie/", "", 12 },
 		{ "/audio/out/", "/source", 20 }, { "/audio/out/", "/file", 21 },
-		{ "/disp/", "", 30 },
+		{ "/disp/", "", 30 }, { "/anim/", "/play", 32 }, { "/anim/", "/pause", 33 },
+		{ "/anim/", "", 31 },
 		{ "/ascii/", "/chars", 40 }, { "/ascii/", "/run", 42 }, { "/ascii/", "", 41 },
 		{ "/dds/", "", 50 }, { "/audio/react/", "", 55 },
 		{ "/lfo/", "/rate", 60 }, { "/lfo/", "/frames", 61 }, { "/lfo/", "/on", 63 },

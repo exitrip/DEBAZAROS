@@ -3898,6 +3898,7 @@ CONFIG_debaz-audio=y
 # user packages 
 #
 CONFIG_debaz-firstboot=y
+CONFIG_debaz-sw=y
 CONFIG_exfat-utils=y
 CONFIG_htop=y
 CONFIG_luajit=y

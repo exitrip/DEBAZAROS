@@ -15,6 +15,8 @@
  *
  * OSC (d = 0, 1 or a pattern):
  *   /disp/<d>/source s:what ...    "show" slot | "capture" | "seq" rate slots...
+ *                                  | "anim" (an image sequence of anim.c plays:
+ *                                  set by /anim/<d>/play, a no-op here)
  *                                  (one address for what the display shows:
  *                                  the state model / cues)
  *   /disp/<d>/show i:slot          front = slot (next frame)
@@ -55,6 +57,7 @@
 #include "debazd.h"
 #include "dz_hw.h"
 #include "dz_map.h"
+#include "dz_path.h"
 #include "dz_vdma.h"
 
 #include <dirent.h>
@@ -85,6 +88,8 @@ typedef struct {
 	uint32_t want_off;
 	int      cx, cy;		/* crop origin, pixels (requested) */
 	int      seqn, seqpos, rate, cnt, seqon, seqstop;
+	int      anim;			/* anim.c drives store 0          */
+	uint32_t anim_addr;		/* the slot it shows (0 = none yet) */
 } dstate;
 
 static dstate          D[DZ_DISPLAYS];
@@ -123,10 +128,12 @@ static void apply(int d)
 	dstate *s = &D[d];
 
 	if (s->want_crop) {
+		uint32_t base = s->anim && s->anim_addr ? s->anim_addr : s->front;
+
 		s->off = s->want_off;
 		s->want_crop = 0;
-		if (!s->seqon && !s->want && s->front)
-			dz_disp_set_store(d, STORE_FRONT, s->front + s->off);
+		if (!s->seqon && !s->want && base)
+			dz_disp_set_store(d, STORE_FRONT, base + s->off);
 	}
 	if (s->seqstop) {
 		s->seqon = s->seqstop = 0;
@@ -159,6 +166,45 @@ static void apply(int d)
 			dz_disp_park(d, STORE_FRONT);
 		}
 	}
+}
+
+/* image sequence (anim.c): its next frame, once per video frame */
+static void anim_apply(int d)
+{
+	dstate *s = &D[d];
+	uint32_t a;
+
+	if (!s->anim || s->seqon)
+		return;
+	a = anim_vsync(d);
+	if (!a)
+		return;
+	s->anim_addr = a;
+	dz_disp_set_store(d, STORE_FRONT, a + s->off);
+	if (!s->blanked)
+		dz_disp_park(d, STORE_FRONT);
+}
+
+/* anim.c starts / stops driving display d; stop = the front slot again */
+void disp_anim_attach(int d, int on)
+{
+	pthread_mutex_lock(&mu);
+	D[d].anim = on;
+	D[d].anim_addr = 0;
+	if (!on && D[d].front && !D[d].seqon) {
+		dz_disp_set_store(d, STORE_FRONT, D[d].front + D[d].off);
+		park_front_or_blank(d);
+	}
+	pthread_mutex_unlock(&mu);
+}
+
+/* no vsync (host tests, displays off): one frame from the main loop timer */
+void disp_anim_frame(void)
+{
+	pthread_mutex_lock(&mu);
+	for (int d = 0; d < DZ_DISPLAYS; d++)
+		anim_apply(d);
+	pthread_mutex_unlock(&mu);
 }
 
 /* ---- vsync thread ----------------------------------------------------------- */
@@ -226,8 +272,10 @@ static void *vsync_main(void *arg)
 		vs_ok = 1;
 		pthread_mutex_lock(&mu);
 		frames++;
-		for (int d = 0; d < DZ_DISPLAYS; d++)
+		for (int d = 0; d < DZ_DISPLAYS; d++) {
 			apply(d);
+			anim_apply(d);
+		}
 		pthread_mutex_unlock(&mu);
 		if (efd >= 0) {
 			uint64_t one = 1;
@@ -356,7 +404,9 @@ void disp_state(state_cb cb, void *ctx)
 		cy = D[d].cy;
 		pthread_mutex_unlock(&mu);
 		snprintf(key, sizeof(key), "/disp/%d/source", d);
-		if (seqon && seqn > 0) {
+		if (anim_on(d)) {
+			st_emit(cb, ctx, NULL, key, "s", "anim");
+		} else if (seqon && seqn > 0) {
 			dz_arg sa[SEQ_MAX + 2];
 			int k2 = 0;
 
@@ -469,14 +519,14 @@ static void hdmi2_stop(void)
 
 /* hdmi2.elf -r name, detached (double fork, all inherited fds closed: the OSC
  * socket and the /tmp/debazd.lock flock must not live on in hdmi2).
- * DZ_HDMI2 = another program (host tests). */
+ * DZ_HDMI2 = another program (host tests); else dz_prog("hdmi2.elf"). */
 static int hdmi2_start(const char *name)
 {
 	const char *prog = getenv("DZ_HDMI2");
 	pid_t pid;
 
 	if (!prog || !*prog)
-		prog = "/home/ebaz/bin/hdmi2.elf";
+		prog = dz_prog("hdmi2.elf");	/* dev copy, else the image's */
 	if (access(prog, X_OK))
 		return -1;
 	pid = fork();
@@ -594,8 +644,10 @@ int disp_dispatch(const dz_msg *m)
 				mm.n = 0;
 				for (int k = 2; k < n && mm.n < DZ_OSC_MAX_ARGS; k++)
 					mm.a[mm.n++] = a[k];
+			} else if (!strcmp(a[0].s, "anim")) {
+				continue;			/* set by /anim/<d>/play */
 			} else if (strcmp(a[0].s, "capture")) {
-				dzd_reply("/error", "ss", "source: show <slot> | capture | seq <rate> <slots...>", m->path);
+				dzd_reply("/error", "ss", "source: show <slot> | capture | seq <rate> <slots...> | anim", m->path);
 				continue;
 			}
 			dzd_handle_internal(&mm);
@@ -612,6 +664,10 @@ int disp_dispatch(const dz_msg *m)
 			dzd_reply("/error", "ss", "display not running (run hdmi2 first)", base);
 			continue;
 		}
+		/* another source for the display: the image sequence stops */
+		if ((!strcmp(op, "show") || !strcmp(op, "home") || !strcmp(op, "capture") ||
+		     !strcmp(op, "seq")) && anim_on(d))
+			anim_stop(d);
 
 		pthread_mutex_lock(&mu);
 		if (!strcmp(op, "show") || !strcmp(op, "home")) {

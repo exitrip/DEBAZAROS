@@ -1,0 +1,20 @@
+# debaz.service (image, recipe debaz-sw, 2026-11-01): bring the unit up at
+# boot with dzstart.sh: optional PL load (BITSTREAM in the config), hdmi2
+# (video mode), debazd, the boot setup of the PL registers, dzweb (as ebaz).
+# Config: /home/ebaz/dzstart.conf, else /etc/debaz/dzstart.conf.
+# Log: journalctl -u debaz. Stop at boot: systemctl disable debaz.
+[Unit]
+Description=DEBAZAROS bring-up (displays, debazd, dzweb)
+After=debaz-firstboot.service local-fs.target network.target sound.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DZSTART_BG=1
+ExecStart=/bin/sh /usr/bin/dzstart.sh
+TimeoutStartSec=120
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

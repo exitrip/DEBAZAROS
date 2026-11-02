@@ -3,7 +3,8 @@
  *
  *   dzweb [-p port] [-w wwwdir] [-m mediadir] [-d host] [-o oscport] [-v]
  *     -p PORT   HTTP port (default 8080)
- *     -w DIR    web app files (default /home/ebaz/www)
+ *     -w DIR    web app files (default /home/ebaz/www if it has index.html,
+ *               else /usr/share/debaz/www: the image's copy, dz_path.h)
  *     -m DIR    media root with img/, movies/ and audio/ (default /media/debaz,
  *               the exFAT media partition)
  *     -d HOST   debazd host (default 127.0.0.1), -o its UDP port (9000)
@@ -18,6 +19,8 @@
  *   GET    /media/<img|movies|audio>/<name>  download a file (?dl: as attachment)
  *   PUT    /media/<img|movies|audio>/<name>  upload (raw body, Content-Length)
  *   DELETE /media/<img|movies|audio>/<name>  delete
+ *   GET|PUT|DELETE /media/anim/<folder>/<name>  frames of an image sequence
+ *                                      (debazd anim.c; PUT makes the folder)
  *     Media folders are <media>/img, movies and audio (-m, default
  *     /media/debaz), the folders debazd reads. Names: [A-Za-z0-9._-], as in
  *     debazd. An upload goes to .<name>.part and is renamed when complete.
@@ -28,6 +31,7 @@
 #define _GNU_SOURCE
 #define _FILE_OFFSET_BITS 64		/* movies can be > 2 GB */
 #include "dz_osc.h"
+#include "dz_path.h"
 
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -54,7 +58,7 @@
 #define DISK_KEEP	(64LL << 20)	/* never fill the root file system */
 
 static int  verbose;
-static char www[256] = "/home/ebaz/www";
+static char www[256];			/* -w, else dz_www_dir() */
 static char media[128] = "/media/debaz";
 static struct sockaddr_in dzd;		/* debazd address */
 static volatile sig_atomic_t stop;
@@ -373,6 +377,31 @@ static int media_path(const char *url, char *out, size_t sz, char *part, size_t 
 		return -1;
 	memcpy(kind, s, (size_t)(e - s));
 	kind[e - s] = 0;
+	if (!strcmp(kind, "anim")) {		/* anim/<folder>/<name> */
+		char folder[100];
+		const char *sl = strchr(e + 1, '/');
+
+		if (!sl || (size_t)(sl - e - 1) >= sizeof(folder))
+			return -1;
+		memcpy(folder, e + 1, (size_t)(sl - e - 1));
+		folder[sl - e - 1] = 0;
+		snprintf(name, sizeof(name), "%s", sl + 1);
+		if (!media_name_ok(folder) || !media_name_ok(name))
+			return -1;
+		if ((size_t)snprintf(out, sz, "%s/anim/%s/%s", media, folder, name) >= sz)
+			return -1;			/* never a cut path */
+		if (part) {			/* an upload: the folder may be new */
+			char d[300];
+
+			snprintf(d, sizeof(d), "%.127s/anim", media);
+			mkdir(d, 0755);
+			snprintf(d, sizeof(d), "%.127s/anim/%.96s", media, folder);
+			mkdir(d, 0755);
+			if ((size_t)snprintf(part, psz, "%s/anim/%s/.%s.part", media, folder, name) >= psz)
+				return -1;
+		}
+		return 0;
+	}
 	if (strcmp(kind, "img") && strcmp(kind, "movies") && strcmp(kind, "audio"))
 		return -1;
 	snprintf(name, sizeof(name), "%s", e + 1);
@@ -780,6 +809,8 @@ int main(int argc, char **argv)
 			return 2;
 		}
 	}
+	if (!www[0])
+		snprintf(www, sizeof(www), "%s", dz_www_dir());
 	memset(&dzd, 0, sizeof(dzd));
 	dzd.sin_family = AF_INET;
 	dzd.sin_port = htons((uint16_t)oport);

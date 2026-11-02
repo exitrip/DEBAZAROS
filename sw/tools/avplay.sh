@@ -39,7 +39,7 @@ shift $((OPTIND - 1))
 f=$1
 [ -f "$f" ] || f=/media/debaz/movies/$1
 [ -f "$f" ] || { echo "no file $1"; exit 1; }
-D=/home/ebaz/bin
+D=${DZ_BIN:-/home/ebaz/bin}; [ -x "$D/debazd" ] || D=/usr/bin	# dev copy, else the image (dz_path.h)
 
 # slot of the display at home: display 0 = slot 0 (/dev/fb0), display 1 = slot 2
 if [ "$out" = 0 ]; then dst="-d /dev/fb0 -o 0"; tx=tx0; else dst="-a 0x08FD2000"; tx=tx; fi

@@ -9,8 +9,8 @@ mixers/oscillators via `devmem` for generative feedback effects.
 **What it is NOT:** the top-level `README.md`, `docs/`, and most folders describe the
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
-Working branch (Nov 1 2026): `hdmi-audio` (remote `debaz`, pushed) — all work since
-Oct 26 2026 is there, 23 commits ahead of `clanker`. `clanker` is the last stable
+Working branch (Nov 1 2026): `hdmi-audio` (remote `debaz`) — all work since
+Oct 26 2026 is there (last commit 07609469 "audio reactivity ..."). `clanker` is the last stable
 point; `nuMix` and the other branches are old.
 Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
 
@@ -46,7 +46,7 @@ the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Si
 
 | Path | Notes |
 |---|---|
-| `hw/` | Gateware as Tcl: `hw/bd/<variant>.tcl` (BD source of truth), `hw/rtl/` (4 module-ref RTL files), `hw/xdc/ebaz4205.xdc`, `build.tcl`, `export_bd.tcl`, `repackage_ip.tcl`, `hw_map.tcl`, `patches/` (dvi2rgb vs Digilent f4613ff). See `hw/README.md` |
+| `hw/` | Gateware as Tcl: `hw/bd/<variant>.tcl` (BD source of truth), `hw/rtl/` (module-ref RTL: hdmi_tx, dz_osc, dz_regs, pl_io, fsync_gen, dividers), `hw/xdc/ebaz4205.xdc`, `build.tcl`, `export_bd.tcl`, `repackage_ip.tcl`, `hw_map.tcl`, `patches/` (dvi2rgb vs Digilent f4613ff). See `hw/README.md` |
 | `ip_repo/if/`, `ip_repo/mixer_1_0/` | Digilent TMDS interface def (vendored); custom mixer IP, vlnv `user.org:user:mixer:2.0` (folder name says 1_0) |
 | `IP_dvi2rgb/`, `IP_rgb2dvi/`, `IP_axi_dynclk/` | Digilent IP repos used by the build (dvi2rgb = local fork, see `hw/patches/`) |
 | `artifacts/` | Bitstreams/XSA in use + README (one row per build, always current): BOOT fallback 20250916, legacy dev 20261019_dvi2ms, first Tcl build 20261025, and the dev bitstream in use = `ebaz4205_2out1in_20261029_osc_epo` (= _osc with closed timing). Read that README for the build chain and which build a board runs |
@@ -74,12 +74,26 @@ External (not in repo):
   (Ubuntu 22.04; the project is that machine's repo clone `~/Documents/projects/DEBAZAROS/PetaLinux`;
   build/ and images/ live only there).
 
-## PetaLinux (state 2026-10-25; procedure in `PetaLinux/README.md`)
+## PetaLinux (state 2026-11-01; procedure in `PetaLinux/README.md`)
 
 - Builds pass on the build machine with the Tcl XSA (FSBL: FCLK3 = 200 MHz), the
   single dtsi (no PL nodes, NAND on, 96 MB), and a 200 MB rootfs (ffmpeg, LuaJIT,
   libjpeg-turbo, pixman, exFAT, mtd-utils; no package manager, no Qt/SDR load).
-  Images NOT yet on any card (next: spare test card).
+  Test card Oct 26 PASS; the bench board debaz-7130d5 runs the **Oct 28 image**
+  (XSA `_pwm` = BOOT.BIN bitstream, debaz-firstboot, debaz-audio) + `make install`.
+- **Recipe `debaz-sw` (2026-11-01, sandbox build on the build machine, NOT yet
+  on a card):** builds `sw/` in Yocto (`make image-install`), `/usr/bin`,
+  `/usr/share/debaz/www`, `/etc/debaz/dzstart.conf`, `debaz.service` (runs
+  dzstart.sh at boot), bitstreams `_sdly` + `_osc_epo` in /lib/firmware, fonts.
+  With it the XSA is `_sdly` (ps7_init.c identical to `_pwm`: only the BOOT.BIN
+  bitstream changes) -> no PL load at boot. Dev copy in /home/ebaz/{bin,www}
+  wins (`sw/lib/dz_path.h`). Sandbox = `~/dz-sandbox/` on the build machine
+  (copy of the project + working tree; this project's sstate as a mirror).
+- ⚠️ The build machine's clone (`~/Documents/projects/DEBAZAROS`) is at
+  c1372066 with uncommitted edits from the Oct 28 builds — ALL are older
+  versions of files in commit 725f9751 or identical to HEAD (checked
+  2026-11-01; only sw/README.md differs, older too). Stash or reset them
+  before the next ff-merge of a bundle (the merge refuses otherwise).
 - After EVERY XSA import: `petalinux-build -c fsbl-firmware -x cleansstate` and the
   same for `device-tree` (stale xsct workspace -> "Failed to generate bsp").
 - `silentconfig` rewrites `configs/*`: copy the rewritten files back into the repo
@@ -105,8 +119,9 @@ was built from — a bitstream-only fpga_manager reload NEVER updates them. Afte
 changing any PCW_FPGAx frequency in the BD, either rebuild BOOT.BIN from the new
 XSA or poke the SLCR at runtime (unlock 0xF8000008=0xDF0D, then FPGAx_CLK_CTRL
 at 0xF8000170/180/190/1A0; IOPLL=1600 MHz, value fields DIV0[13:8] DIV1[25:20]).
-debazarosit.sh now sets FPGA3=0x00100800 (1600/8=200 MHz) as a boot workaround;
-remove once BOOT.BIN is rebuilt. Symptom of the trap: dvi2rgb aLocked stuck low
+The PetaLinux images since Oct 26 set FCLK3 = 200 MHz in the FSBL; only old
+cards (Jan 2025 image) need the poke FPGA3=0x00100800 (debazarosit.sh did it).
+Symptom of the trap: dvi2rgb aLocked stuck low
 (IDELAYCTRL never ready on a 25 MHz "200 MHz" RefClk) with everything else
 checking out perfectly.
 
@@ -150,7 +165,8 @@ DDR (HP0 for HDMI_0 / HP2 for HDMI_1)
   → axis_subset_converter (32→24 bit, TDATA_REMAP: tdata[23:16],tdata[7:0],tdata[15:8])
   → v_axi4s_vid_out (+ v_tc timing gen, enable_detection=false)
   → [effects stage, differs per channel — below]
-  → rgb2dvi (kGenerateSerialClk=false, clocks from axi_dynclk)
+  → hdmi_tx (hw/rtl/hdmi_tx, since Oct 26/27; was rgb2dvi kGenerateSerialClk=false;
+    clocks from axi_dynclk; DE/sync delay ctrl[14:12] since build sdly)
   → TMDS out
 ```
 
@@ -520,7 +536,12 @@ bit 31 is ignored** — always write 0x8000_0000 | PINC (dz_fields does).
 
 ## Software stack
 
-Boot: SD card PetaLinux → `debazit.service` (systemd oneshot) → `/home/ebaz/debazarosit.sh`:
+Boot NOW (Nov 2026): the Oct 28 image starts only debaz-firstboot; bring-up =
+`sudo sh /home/ebaz/bin/dzstart.sh` by hand (below). The next image (recipe
+debaz-sw) runs it at boot as `debaz.service`.
+
+HISTORY - boot of the Jan 2025 image (first installation): SD card PetaLinux →
+`debazit.service` (systemd oneshot) → `/home/ebaz/debazarosit.sh`:
 1. Loads bitstream via fpga_manager (`debaz4205_wrapper_20250916.bit.bin` in /lib/firmware)
 2. Mixer setup via devmem: chans {1,2,3,4,6,8} → mode 0x23 band-clip (0x20..0xed → out
    0xffff); chans {0,5,7} → mode 4 constant 0x8000
@@ -555,10 +576,10 @@ and moves the capture to slot 1 when slot 4 is not reserved.
 **Device tree — NEW (2026-10-25):** the only dtsi is now
 `PetaLinux/project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`
 (96 MB, one simplefb 1280x2160, fpga-full region, NO PL nodes via
-`CONFIG_SUBSYSTEM_REMOVE_PL_DTB=y`; the root copy was removed). The running board
-(Jan 2025 image + `/boot/system.dtb` 96M) still binds xilinx-vdma to the display VDMAs,
-xilinx-vtc, and has stale audio_formatter/i2s/mixer1-8 nodes until the new image is
-deployed. History of the old dtsi:
+`CONFIG_SUBSYSTEM_REMOVE_PL_DTB=y`; the root copy was removed). In use on the
+bench board since the Oct 28 image. (Old Jan 2025 cards: `/boot/system.dtb` 96M,
+still bind xilinx-vdma/vtc and have stale audio_formatter/i2s/mixer1-8 nodes.)
+History of the old dtsi:
 **Device tree** (old root `system-user.dtsi`): reserved-memory `removed-dma-pool`
 **128 MB** @0x0800_0000 in the REPO (no-map, `reg = <0x08000000 0x08000000>`, commit
 45a668cb, Jul 2026) — that value FAILS on this U-Boot (see below); use 96 MB. Until 2026-10-24 **the bench board ran 16 MB** (verified Oct 2026:
@@ -919,7 +940,7 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   NOT in a second frame, and never reach disp1 at 0x08FD_2000 (fb0 ends at 0x08A8_C000).
   Unify in one memory_map.h (keep 1080p pitch, 6 slots for 3 displays, fb0 = slot 0 only)
   — done for sw/ in `sw/lib/dz_hw.h`. Needs the 128 MB reservation on the board (see
-  Device tree: the bench board still runs 16 MB).
+  Device tree: 96 MB on the board since Oct 24; 128 MB is rejected).
 - MEASURED Oct 2026: slot WRITES via /dev/fb0 ≈ 630 MB/s and via /dev/mem ≈ 660 MB/s (not
   slow); fbfeed through a pipe ≈ 25 fps @720p (pipe-limited); ffmpeg mpeg4 720p: decode
   36 fps, +bgra 20 fps, +uyvy422 6 fps. ffmpeg's yuv→rgb has no ARM fast path: debazd
@@ -945,9 +966,13 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   WEB): plreload of the dev bitstream (hdmi2, debazd, mixer setup) + dzweb as
   ebaz (setpriv: `su` kills it at session end; remove the old /tmp/dzweb.log
   first, root may not write ebaz's file in sticky /tmp), then checks; runs
-  itself detached (setsid), log /tmp/dzstart.log; `-n` = no PL load. The card
-  starts NONE of the software at boot, and the installed debazd needs the dev
-  bitstream (osc map: DDS 1 at 0x43D0_4000 is a bus error on the boot PL).
+  itself detached (setsid), log /tmp/dzstart.log; `-n` = no PL load. The Oct 28
+  card starts NONE of the software at boot, and the installed debazd needs the
+  dev bitstream (osc map: DDS 1 at 0x43D0_4000 is a bus error on the boot PL).
+  Nov 1: the boot setup (mixer + sync delays) is `sw/tools/dzsetup.sh` (plreload
+  and dzstart run it; dzstart only when it started hdmi2 itself = fresh PL);
+  config fallback /etc/debaz/dzstart.conf (image); BITSTREAM empty = no PL load
+  (BOOT.BIN's bitstream); programs from $DZ_BIN, /home/ebaz/bin, else /usr/bin.
 - **Oct 29 2026 web/draw additions:** tab DDS (sw/dzweb/www/dds.js: patterns,
   step table, AWG draw panel; hover = OSC address), tab Wall (wall.js: crop
   tiles + exerciser that counts /event/video, PASS = 0 events); debazd
@@ -1058,6 +1083,34 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   DZ_REACT_CMD = tone generator, a fake arecord in PATH (hand-over).
   Movie-audio source: not yet (plan: s16 tap of the audio ffmpeg into a
   FIFO that debazd always drains).
+  Nov 2: scope source `fft` (log Hz, 60 dB) / `fftlin` of L, R or sum
+  (react_spectrum, one FFT per channel and frame), mode `free` (awg, no
+  reset, PINC stays), `/dds/<n>/scope/skew` (h: LINESTEP; v: PINC +
+  LINESTEP, negative = table written backwards), `/seam mirror|fade`,
+  `/trigger` (RING 4096), `/smooth`, `/table` readback. Tested on the board
+  with DZ_REACT_CMD = an ffmpeg lavfi tone (440 L, 1800 R): peaks at the
+  computed entries, registers as computed. CPU: off 4 %, fft 13 %, two
+  channels fft 22 %.
+- **Image sequences (ROADMAP.md section 16, task 18; WORKS on the board
+  Nov 1 2026):** `debazd/anim.c` (`/anim/<d>/play name [fps]`, ring slots
+  5-8 / 9 10 1 3, vsync flips, both displays at once), `lib/dz_img.c`
+  (TurboJPEG/libpng dlopen, JPEG encoder), `/anim/save <folder>
+  [slot|capture|disp0|disp1]` + `/anim/undo` (web Paint "Save frame"),
+  Media tab player card, timing sheet (hold on save, `/anim/sheet[/put]`,
+  web editor), Paint tab Live/Batch + undo, colour picker, paint bucket
+  `/draw/<s>/flood`, onion skin `/anim/<d>/onion`, web folder upload (dzweb
+  `/media/anim/<folder>/<file>`), `/anim/delete`, `mkmedia -A`; ⚠️ snap
+  Chromium (headless tests) cannot read /tmp: put upload test files in
+  $HOME; test folders on the board /media/debaz/anim/
+  {clip46,pan250,grain550,long1000,grain1000}. ⚠️ dz_slot() parses /proc/iomem per call:
+  cache its pointer. Measurements:
+  measured TurboJPEG (dlopen libturbojpeg.so.0, decode straight into a
+  slot): 720p 31 ms at 46 KB, 63 ms at 250 KB, 110 ms at 550 KB per frame
+  (decode time follows the FILE size); 2 cores scale (30 / 62 fps idle);
+  ffmpeg image2 2.8 fps, PNG 3-7 fps, today's /draw/img 0.8-1.7 s. SD card
+  10-11 MB/s. The exFAT media partition is noexec (test binaries go to
+  /home/ebaz). Test files in /media/debaz/bench/. Recipe debaz-sw
+  RDEPENDS libturbojpeg + libpng (Oct 28 card: no libpng).
 - **Single-value OSC setters (Nov 1 2026; for LFO targets, scripts, cues):**
   `/disp/<d>/crop/x|y i`, `/fx/hue/deg f` + `/fx/hue/gain f` (+ `/fx/hue` query;
   `/fx/hue deg` without gain now KEEPS the last gain, was 1.0), `/fx/key/tol i`
@@ -1124,10 +1177,10 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
 1. **Cleanup + documentation pass** without breaking the fragile Vivado project
    (READMEs are all SDR-era; legacy folders to prune/archive)
 2. **Better driver C code** + proper PetaLinux kernel/DTS config (replace devmem pokes
-   and /dev/mem mmap with UIO or real drivers; reserved-memory: 128 MB in the repo but
-   the board still runs 16 MB — install PetaLinux/dtb/system-128M.dtb; in progress Aug 2026: per-display simple-framebuffer nodes so disp1 gets a
-   /dev/fb — building on the PetaLinux machine, not yet run on hardware. Keep the dtsi in
-   PetaLinux/ in sync with the repo root; it went stale once)
+   and /dev/mem mmap with UIO or real drivers; reserved-memory: 96 MB in the image
+   dtsi (done Oct 2026; 128 MB is rejected by this U-Boot). Per-display
+   simple-framebuffer nodes need the simplefb patch (see "Two independent
+   framebuffers"); not done: debazd/fbfeed write the slots directly)
 3. **Gateware stability/usage/timing**: feedback path unstable above ~35 MHz pixel clock
    (720p30 limit) — primary suspect is the BUFR single-region pixel clock (see Clocking)
    plus unregistered multiply chains;

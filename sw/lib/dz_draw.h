@@ -23,7 +23,7 @@
  *   /draw/<s>/square           r g b x y size [thickness] [angle]
  *   /draw/<s>/circle           r g b cx cy radius [thickness]
  *   /draw/<s>/ellipse          r g b cx cy rx ry [thickness] [angle]
- *   /draw/<s>/polygon, /star, /starpoly, /fill, /gradient/radial: dz_shape.h
+ *   /draw/<s>/polygon, /star, /starpoly, /fill, /gradient/radial, /flood: dz_shape.h
  *   /draw/<s>/line             r g b x0 y0 x1 y1 [width]   (1 = thin, else round)
  *   /draw/<s>/brush            r g b x y radius [hardness] (soft stamp, 0..1)
  *   /draw/<s>/stroke           r g b radius hardness x0 y0 x1 y1 [x y ...]
@@ -98,15 +98,17 @@
 #include <sys/types.h>
 #include "dz_osc.h"
 
+#include "dz_path.h"
+
 #ifndef DZ_DZMOSH
-#define DZ_DZMOSH	"/home/ebaz/bin/dzmosh"
+#define DZ_DZMOSH	dz_prog("dzmosh")	/* /home/ebaz/bin, else /usr/bin (dz_path.h) */
 #endif
 #define DZ_MOSH_CTL	"/tmp/dzmosh.%d"	/* control FIFO per slot */
 #define DZ_FBFEED_CTL	"/tmp/fbfeed.%d"	/* fbfeed's (trails, ghost) */
 #define DZ_FFV_CTL	"/tmp/ffv.%d"		/* decoder ffmpeg's stdin: commands */
 #define DZ_FFA_CTL	"/tmp/ffa.%d"		/* audio ffmpeg's stdin */
 #ifndef DZ_FBFEED
-#define DZ_FBFEED	"/home/ebaz/bin/fbfeed"
+#define DZ_FBFEED	dz_prog("fbfeed")
 #endif
 /* media folders (2026-10-28): on the exFAT media partition (label
  * DEBAZMEDIA, mounted by debaz-firstboot / fstab); without it /media/debaz

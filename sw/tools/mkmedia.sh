@@ -32,6 +32,17 @@
 #   -m MEDIA  media root on the board (default /media/debaz: the exFAT media
 #             partition; older cards: /home/ebaz)
 #   -R MB     space to keep free on the board (default 256)
+#   -A NAME   image sequence mode (debazd anim.c, ROADMAP.md section 16): all
+#             inputs become ONE sequence OUT/anim/NAME/f00001.jpg ... (the
+#             arguments in their order, a folder in natural order of its
+#             paths: f2 before f10): image files and
+#             folders, and the frames of movie files (at -r fps when -r is
+#             given, else every frame). Display size (-s), baseline JPEG
+#             4:2:0 at -j quality; the folder is made new each run. -r also
+#             writes timing.txt "# fps r". -u: rsync to MEDIA/anim/NAME on
+#             the board (--delete: the board's folder = this sequence)
+#   -j Q      JPEG quality 1-100 for -A (default 85; lower = smaller files =
+#             faster playback: 720p ~150 KB plays ~20+ fps next to a movie)
 #
 # Folders are searched recursively; the type comes from the extension.
 # Formats, chosen for the A9 (measurements in CLAUDE.md / ROADMAP.md):
@@ -45,13 +56,15 @@
 set -u
 
 out=./board-media size=1280x720 fps=25 q=4 fill=0 afmt=wav noaudio=0 dur=
-force=0 upload=0 board=${DZ_BOARD:-} rroot=/media/debaz reserve_mb=256
-usage() { sed -n '5,38p' "$0"; exit 2; }
-while getopts o:s:r:q:fa:nt:Fum:R:h opt; do
+force=0 upload=0 board=${DZ_BOARD:-} rroot=/media/debaz reserve_mb=256 anim= jq=85 fps_set=0
+usage() { awk 'NR >= 5 && /^#/ { sub(/^# ?/, ""); print; next } NR >= 5 { exit }' "$0"; exit 2; }
+while getopts o:s:r:q:fa:nt:Fum:R:A:j:h opt; do
 	case $opt in
 	o) out=$OPTARG ;;
 	s) size=$OPTARG ;;
-	r) fps=$OPTARG ;;
+	r) fps=$OPTARG; fps_set=1 ;;
+	A) anim=$OPTARG ;;
+	j) jq=$OPTARG ;;
 	q) q=$OPTARG ;;
 	f) fill=1 ;;
 	a) afmt=$OPTARG ;;
@@ -191,6 +204,105 @@ do_image() {	# in out
 	run_ffmpeg 0 -i "$in" -frames:v 1 \
 		-vf "scale='min($w,iw)':'min($h,ih)':force_original_aspect_ratio=decrease" "$o"
 }
+
+# ---- -A: one image sequence -------------------------------------------------------
+# convert_frame IN OUT: fit into w x h (never enlarged), JPEG quality jq
+convert_frame() {
+	local in=$1 o=$2 vf="scale='min($w,iw)':'min($h,ih)':force_original_aspect_ratio=decrease"
+	if command -v cjpeg > /dev/null; then	# exact quality, baseline 4:2:0
+		ffmpeg -hide_banner -nostdin -loglevel error -i "$in" -frames:v 1 -vf "$vf" \
+			-pix_fmt rgb24 -f image2pipe -c:v ppm - | cjpeg -quality "$jq" -optimize > "$o.part" &&
+			mv -f "$o.part" "$o"
+	else				# ffmpeg's scale 2..31 (approximately)
+		ffmpeg -hide_banner -nostdin -loglevel error -y -i "$in" -frames:v 1 -vf "$vf" \
+			-pix_fmt yuvj420p -q:v $(( 2 + (100 - jq) * 29 / 100 )) -f image2 "$o.part.jpg" &&
+			mv -f "$o.part.jpg" "$o"
+	fi
+}
+do_anim() {
+	local name adir n=0 f ext list movies=() m start total_b avg kb
+	name=$(clean_name "$anim")
+	adir="$out/anim/$name"
+	mkdir -p "$adir"
+	rm -f "$adir"/f[0-9]*.jpg "$adir/timing.txt"
+	list=$(mktemp)
+	for arg in "$@"; do	# the arguments in their order, each folder in natural order
+		if [ -d "$arg" ]; then find "$arg" -type f ! -name '.*' | sort -V
+		elif [ -f "$arg" ]; then printf '%s\n' "$arg"
+		else echo "${Y}not found: $arg${N}" >&2; fi
+	done > "$list.all"
+	# images in order; movies are cut into frames where they come in the order
+	while IFS= read -r f; do
+		ext=${f##*.}; ext=${ext,,}
+		if [[ $ext =~ ^($IMAGE)$ ]]; then n=$((n + 1)); printf '%s\t%s\n' "$n" "$f" >> "$list"
+		elif [[ $ext =~ ^($VIDEO)$ ]]; then
+			n=$((n + 1)); printf '%s\tMOVIE:%s\n' "$n" "$f" >> "$list"
+		fi
+	done < "$list.all"
+	[ -s "$list" ] || { echo "no images or movies"; rm -f "$list" "$list.all"; exit 1; }
+	local fpsf="" note=""
+	[ "$fps_set" = 1 ] && fpsf="fps=$fps," note=", movies at $fps fps, timing.txt"
+	echo "${B}mkmedia -A${N} $name: $(wc -l < "$list") input(s) -> $adir   (${size}, JPEG q $jq$note)"
+	local t0=$SECONDS idx=0
+	export -f convert_frame
+	export w h jq
+	# movies first get their frame numbers in sequence: process in order, images in parallel batches
+	local batch; batch=$(mktemp)
+	flush_batch() {
+		[ -s "$batch" ] || return 0
+		tr '\n' '\0' < "$batch" | xargs -0 -n 2 -P "$(nproc)" bash -c 'convert_frame "$0" "$1"' 2>&1 | sed 's/^/    /'
+		: > "$batch"
+	}
+	while IFS=$'\t' read -r _ f; do
+		if [[ $f == MOVIE:* ]]; then
+			flush_batch
+			m=${f#MOVIE:}
+			start=$((idx + 1))
+			echo "    ${D}frames of $m${N}"
+			ffmpeg -hide_banner -nostdin -loglevel error -i "$m" \
+				-vf "${fpsf}scale='min($w,iw)':'min($h,ih)':force_original_aspect_ratio=decrease" \
+				-pix_fmt yuvj420p -q:v $(( 2 + (100 - jq) * 29 / 100 )) -start_number "$start" \
+				"$adir/f%05d.jpg" || echo "    ${R}FAILED${N} $m"
+			idx=$(find "$adir" -maxdepth 1 -name 'f[0-9]*.jpg' | wc -l)
+		else
+			idx=$((idx + 1))
+			printf '%s\n%s\n' "$f" "$adir/$(printf 'f%05d.jpg' "$idx")" >> "$batch"
+		fi
+	done < "$list"
+	flush_batch
+	rm -f "$list" "$list.all" "$batch"
+	[ "$fps_set" = 1 ] && printf '# fps %s\n' "$fps" > "$adir/timing.txt.head"
+	if [ -f "$adir/timing.txt.head" ]; then	# fps only: every frame once, in order
+		{ cat "$adir/timing.txt.head"; (cd "$adir" && ls f[0-9]*.jpg | sort -V); } > "$adir/timing.txt"
+		rm -f "$adir/timing.txt.head"
+	fi
+	n=$(find "$adir" -maxdepth 1 -name 'f[0-9]*.jpg' | wc -l)
+	total_b=$(du -cb "$adir"/f[0-9]*.jpg 2>/dev/null | tail -1 | cut -f1)
+	avg=$(( n > 0 ? total_b / n : 0 )); kb=$(( avg / 1024 ))
+	echo "${G}done${N} in $((SECONDS - t0)) s: $n frames, $(human "$total_b"), ${kb} kB per frame"
+	awk -v kb="$kb" 'BEGIN { ms = 25 + 0.16 * kb; a = 2000 / ms; t = 1000 / ms;
+		sd = 10240 / (kb > 0 ? kb : 1); if (a > sd) a = sd; if (t > sd / 2) t = sd / 2;
+		if (a > 60) a = 60; if (t > 60) t = 60
+		printf "    expected at 720p: ~%.0f fps alone, ~%.0f fps with a sequence on the other display\n", a, t }'
+	if [ $upload = 1 ]; then
+		local ssh_opt="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
+		local sshc="ssh $ssh_opt" avail
+		command -v sshpass > /dev/null && sshc="sshpass -p '${DZ_PASS:-}' ssh $ssh_opt"
+		avail=$(eval "$sshc" "$board" "\"mkdir -p '$rroot/anim/$name' && df -Pk '$rroot' | tail -1\"" < /dev/null |
+			awk '{ printf "%.0f", $4 * 1024 }')
+		if [ -z "$avail" ]; then echo "${R}upload: no connection to $board${N}"; exit 1; fi
+		if [ $((avail - total_b)) -lt $((reserve_mb * 1024 * 1024)) ]; then
+			echo "${R}upload: no room on the board ($(human "$avail") free, ${reserve_mb} MB must stay free)${N}"; exit 1
+		fi
+		echo "${B}upload${N} -> $board:$rroot/anim/$name/"
+		rsync -rt --delete --stats --exclude '.*' -e "$sshc" "$adir/" "$board:$rroot/anim/$name/" |
+			grep -E "Number of regular files transferred|Total transferred file size" | sed 's/^/    /'
+		[ "${PIPESTATUS[0]}" = 0 ] || { echo "${R}upload failed${N}"; exit 1; }
+		echo "    play: dzctl -h ${board#*@} /anim/0/play $name"
+	fi
+	exit 0
+}
+[ -n "$anim" ] && do_anim "$@"
 
 # ---- collect the inputs --------------------------------------------------------
 declare -a files=()

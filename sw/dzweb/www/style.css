@@ -119,7 +119,8 @@ input[type="range"] { accent-color: var(--accent); flex: 1 1 120px; min-width: 1
 .meter > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .1s linear; }
 
 /* paint */
-.paint { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1fr) 300px; }
+.paint { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1fr) 330px; }
+.paint > div > .card { min-width: 0; }
 @media (max-width: 900px) { .paint { grid-template-columns: 1fr; } }
 .canvas-wrap { position: relative; background: #000; border-radius: var(--radius); overflow: hidden;
   border: 1px solid var(--line); aspect-ratio: 16 / 9; }
@@ -187,3 +188,47 @@ code.fxchain { word-break: break-all; color: var(--accent); }
 pre.insp { max-height: 360px; overflow: auto; background: var(--panel2); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px; font-size: 12px; white-space: pre; }
 .mixer tr.on td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* anim.js: timing sheet editor */
+dialog.sheetdlg { width: min(720px, calc(100vw - 32px)); }
+.sheet-list { max-height: 60vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; }
+.sheet-row { display: grid; grid-template-columns: 2.6em 96px 1fr auto auto auto auto auto; gap: 6px;
+  align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.sheet-row img { width: 96px; height: 54px; object-fit: contain; background: #000; border-radius: 4px; }
+.sheet-file { font-family: var(--mono); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+textarea.sheet-raw { width: 100%; box-sizing: border-box; font: 13px/1.4 var(--mono); background: var(--panel2);
+  color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; }
+
+/* paint.js: mode bar, brush card; colorpick.js */
+.modebar { flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; }
+.seg button.on, .tools button.on { background: var(--accent); color: var(--accent-ink); }
+.brush-prev { width: 100%; height: auto; border-radius: 8px; display: block; margin-bottom: 8px; }
+.big-row { display: grid; grid-template-columns: 5.4em minmax(0, 1fr) 4.4em 1.4em; gap: 6px; align-items: center; margin: 8px 0; }
+.big-row .cp-num { width: 100%; box-sizing: border-box; }
+.big-row label { font-weight: 600; }
+.big-range { width: 100%; height: 26px; accent-color: var(--accent); }
+.cp { display: grid; gap: 6px; min-width: 0; }
+.cp-top { display: flex; gap: 10px; align-items: center; }
+.cp-pair { position: relative; width: 64px; height: 56px; flex: none; }
+.cp-swatch { position: absolute; left: 0; top: 0; width: 42px; height: 42px; border: 2px solid var(--line);
+  border-radius: 8px; padding: 0; cursor: pointer; z-index: 1; }
+.cp-swatch.small { left: 22px; top: 18px; width: 34px; height: 34px; z-index: 0; }
+.cp-swatch.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); z-index: 2; }
+.cp-pair .ghost { position: absolute; right: -6px; top: -6px; padding: 0 4px; font-size: 12px; }
+.cp-fields { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.cp-hex { width: 7.5em; font-family: var(--mono); }
+.cp-rgb { display: flex; gap: 4px; }
+.cp-rgb .cp-num { flex: 1; width: 0; min-width: 0; box-sizing: border-box; }
+.cp-num { width: 4.2em; }
+.cp-al { display: flex; gap: 4px; align-items: center; font-size: 13px; color: var(--dim); }
+.cp-sv { width: 100%; height: auto; aspect-ratio: 236 / 140; border-radius: 6px; cursor: crosshair; touch-action: none; }
+.cp-bar { width: 100%; height: 18px; border-radius: 4px; cursor: ew-resize; touch-action: none; }
+.cp-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.cp-chip { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+button:disabled { opacity: 0.35; cursor: default; }
+.anim-up { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
+.anim-up h3 { margin: 4px 0; font-size: 0.95rem; }
+.anim-row { border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 6px; }
+.anim-up .meter { flex: 1; min-width: 120px; }

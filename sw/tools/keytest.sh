@@ -3,7 +3,7 @@
 # Display 0: colour bars + a green rectangle; display 1: a movie in slot 6.
 # Expected on display 0: the rectangle and the green bar show HDMI_1's
 # picture; the other bars do not change. "off" = key off, boot mixer look.
-D=/home/ebaz/bin
+D=${DZ_BIN:-/home/ebaz/bin}; [ -x "$D/debazd" ] || D=/usr/bin	# dev copy, else the image (dz_path.h)
 if [ "$1" = off ]; then
 	$D/dzctl /fx/key/off
 	$D/dzctl /fx/key/source 0

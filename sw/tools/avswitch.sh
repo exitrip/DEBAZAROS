@@ -24,7 +24,7 @@ shift $((OPTIND - 1))
 f=$1
 [ -f "$f" ] || f=/media/debaz/movies/$1
 [ -f "$f" ] || { echo "no file $1"; exit 1; }
-D=/home/ebaz/bin
+D=${DZ_BIN:-/home/ebaz/bin}; [ -x "$D/debazd" ] || D=/usr/bin	# dev copy, else the image (dz_path.h)
 Z="$D/dzctl -t 5"		# do not wait 400 ms for more replies
 SLOT1=0x087E9000			# 0x0800_0000 + 1 x 8294400
 

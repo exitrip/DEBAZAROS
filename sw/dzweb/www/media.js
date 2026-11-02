@@ -3,6 +3,7 @@
 import * as net from "./net.js";
 import { h, card, row, hexToRgb, toast } from "./ui.js";
 import * as movfx from "./movfx.js";
+import * as anim from "./anim.js";
 
 const KINDS = {
   img: { title: "Images", dir: "/media/debaz/img", accept: "image/*,.ppm" },
@@ -170,6 +171,7 @@ export function init(root) {
         row(null, h("button", { title: "/movie/<slot>/stop", onclick: () => net.msg(`/movie/${slotSel.value}/stop`) }, "Stop movie in slot")),
         h("p.hint", {}, "Movies decode on the board (about 12–20 fps per 720p stream). " +
           "File names change to A-Z a-z 0-9 . _ - on upload.")),
+      anim.playerCard(),
       movfx.moshCard(() => slotSel.value),
       movfx.asciiCard(() => slotSel.value, slotPicker),
       card(`${KINDS.audio.title} (${KINDS.audio.dir})`, dropZone("audio"), uploads.audio, lists.audio,
@@ -206,9 +208,11 @@ function fxRefresh() {
 export function connected() {
   refresh();
   fxRefresh();
+  anim.playerShow();
 }
 
 export function show() {
   refresh();
   fxRefresh();
+  anim.playerShow();
 }

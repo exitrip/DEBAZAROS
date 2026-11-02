@@ -12,7 +12,7 @@
 set -x
 BIN=$1
 shift
-D=/home/ebaz/bin
+D=${DZ_BIN:-/home/ebaz/bin}; [ -x "$D/debazd" ] || D=/usr/bin	# dev copy, else the image (dz_path.h)
 [ -f /tmp/$BIN ] || { echo "no /tmp/$BIN"; exit 1; }
 # ALSA driver debaz-audio (2026-10-28): a PL access from the kernel during
 # the load is a kernel fault, so no DEBAZ PCM may be open, and the driver is
@@ -49,13 +49,5 @@ setsid nohup $D/hdmi2.elf "$@" > /tmp/hdmi2.log 2>&1 &
 sleep 4
 setsid nohup $D/debazd -v > /tmp/debazd.log 2>&1 &
 sleep 1
-# boot mixer setup (debazarosit.sh values); without it HDMI_0 is black
-for c in 1 2 3 4 6 8; do
-	$D/dzctl /mixer/$c/mode 35; $D/dzctl /mixer/$c/k 65535
-	$D/dzctl /mixer/$c/lo 32; $D/dzctl /mixer/$c/hi 237
-done
-for c in 0 5 7; do $D/dzctl /mixer/$c/mode 4; $D/dzctl /mixer/$c/k 32768; done
-$D/dzctl /hdmi/0/gain/rgb 255
-# DE/sync delay = the effects data latency (hdmi_tx ctrl[14:12], 2026-11-01)
-$D/dzctl /hdmi/0/sync_delay 0; $D/dzctl /hdmi/1/sync_delay 5	# set by eye 2026-11-01
+sh $D/dzsetup.sh	# mixer + sync delays: without it HDMI_0 is black
 echo DONE

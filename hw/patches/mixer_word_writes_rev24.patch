@@ -1,0 +1,624 @@
+diff --git a/hw/sim/mixer_key_tb.sv b/hw/sim/mixer_key_tb.sv
+index 183830e1..2388f79e 100644
+--- a/hw/sim/mixer_key_tb.sv
++++ b/hw/sim/mixer_key_tb.sv
+@@ -26,6 +26,8 @@ module tb;
+   wire [23:0] o [0:8];
+   wire [23:0] r [0:8];
+ 
++  reg [3:0] dstrb = 4'hf;	// the DUT's write strobes (the reference always gets 4'hf)
++
+   mixer_v1_0 #(.IN_WIDTH(16), .OUT_WIDTH(24)) dut (
+     .pix_clk(pclk), .dout0(o[0]), .dout1(o[1]), .dout2(o[2]), .dout3(o[3]), .dout4(o[4]),
+     .dout5(o[5]), .dout6(o[6]), .dout7(o[7]), .dout8(o[8]),
+@@ -33,7 +35,7 @@ module tb;
+     .bg_in(bg), .vid_in(vid), .pix_out(pout),
+     .s00_axi_aclk(clk), .s00_axi_aresetn(rstn), .s00_axi_awaddr(awaddr), .s00_axi_awprot(3'd0),
+     .s00_axi_awvalid(awvalid), .s00_axi_awready(awready), .s00_axi_wdata(wdata),
+-    .s00_axi_wstrb(4'hf), .s00_axi_wvalid(wvalid), .s00_axi_wready(wready),
++    .s00_axi_wstrb(dstrb), .s00_axi_wvalid(wvalid), .s00_axi_wready(wready),
+     .s00_axi_bresp(bresp), .s00_axi_bvalid(bvalid), .s00_axi_bready(1'b1),
+     .s00_axi_araddr(araddr), .s00_axi_arprot(3'd0), .s00_axi_arvalid(arvalid),
+     .s00_axi_arready(arready), .s00_axi_rdata(rdata), .s00_axi_rresp(rresp),
+@@ -189,6 +191,14 @@ module tb;
+     @(posedge pclk); @(posedge pclk); #1;
+     if (o[0] !== 24'h001234) fail("KEY changes the channel's gain"); else $display("ok   KEY leaves the gain");
+ 
++    // whole words only (2026-10-29): a byte or halfword store changes nothing
++    // (at the end: the reference takes these writes as full words)
++    wr(ra(4, 2), 32'h1234_5678);
++    dstrb = 4'b0010; wr(ra(4, 2), 32'h0000_AB00);
++    dstrb = 4'b1100; wr(ra(4, 2), 32'hCDEF_0000);
++    dstrb = 4'hf;
++    rd(ra(4, 2), v);
++    if (v !== 32'h1234_5678) fail("byte / halfword store ignored"); else $display("ok   byte / halfword store ignored");
+     if (fails) $display("FAILED %0d", fails); else $display("ALL PASS");
+     $finish;
+   end
+diff --git a/ip_repo/mixer_1_0/hdl/mixer_v1_0_S00_AXI.v b/ip_repo/mixer_1_0/hdl/mixer_v1_0_S00_AXI.v
+index bcdb1044..f4e9f3f1 100644
+--- a/ip_repo/mixer_1_0/hdl/mixer_v1_0_S00_AXI.v
++++ b/ip_repo/mixer_1_0/hdl/mixer_v1_0_S00_AXI.v
+@@ -533,44 +533,19 @@
+ 	      local_reg8_9 <= 0;
+ 	    end 
+ 	  else begin
+-	    if (wr_q)
++	    // whole words only (2026-10-29): one write enable per register instead of
++	    // one per byte - the byte enables made ~252 control sets of 8 registers
++	    // (532 slices at 4 registers per slice, build osc). A byte or halfword
++	    // store is ignored (OKAY response, no change); the software writes the
++	    // mixer with 32-bit accesses only.
++	    if (wr_q && ws_q == {(C_S_AXI_DATA_WIDTH/8){1'b1}})
+ 	      begin
+ 	        case ( wa_q )
+-			7'h00:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 0
+-					local_reg0_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h01:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 1
+-					local_reg0_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h02:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 2
+-					local_reg0_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h03:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 3
+-					local_reg0_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h04:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 4
+-					local_reg0_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h00: local_reg0_0 <= wd_q;	// Local register 0
++			7'h01: local_reg0_1 <= wd_q;	// Local register 1
++			7'h02: local_reg0_2 <= wd_q;	// Local register 2
++			7'h03: local_reg0_3 <= wd_q;	// Local register 3
++			7'h04: local_reg0_4 <= wd_q;	// Local register 4
+ //			7'h05:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -592,55 +567,13 @@
+ //					// Local register 7
+ //					local_reg0_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h08:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 8
+-					local_reg0_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h09:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 9
+-					local_reg0_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h0A:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 10
+-					local_reg1_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h0B:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 11
+-					local_reg1_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h0C:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 12
+-					local_reg1_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h0D:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 13
+-					local_reg1_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h0E:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 14
+-					local_reg1_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h08: local_reg0_8 <= wd_q;	// Local register 8
++			7'h09: local_reg0_9 <= wd_q;	// Local register 9
++			7'h0A: local_reg1_0 <= wd_q;	// Local register 10
++			7'h0B: local_reg1_1 <= wd_q;	// Local register 11
++			7'h0C: local_reg1_2 <= wd_q;	// Local register 12
++			7'h0D: local_reg1_3 <= wd_q;	// Local register 13
++			7'h0E: local_reg1_4 <= wd_q;	// Local register 14
+ //			7'h0F:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -662,55 +595,13 @@
+ //					// Local register 17
+ //					local_reg1_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h12:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 18
+-					local_reg1_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h13:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 19
+-					local_reg1_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h14:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 20
+-					local_reg2_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h15:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 21
+-					local_reg2_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h16:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 22
+-					local_reg2_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h17:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 23
+-					local_reg2_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h18:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 24
+-					local_reg2_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h12: local_reg1_8 <= wd_q;	// Local register 18
++			7'h13: local_reg1_9 <= wd_q;	// Local register 19
++			7'h14: local_reg2_0 <= wd_q;	// Local register 20
++			7'h15: local_reg2_1 <= wd_q;	// Local register 21
++			7'h16: local_reg2_2 <= wd_q;	// Local register 22
++			7'h17: local_reg2_3 <= wd_q;	// Local register 23
++			7'h18: local_reg2_4 <= wd_q;	// Local register 24
+ //			7'h19:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -732,55 +623,13 @@
+ //				// Local register 27
+ //				local_reg2_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h1C:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 28
+-					local_reg2_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h1D:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 29
+-					local_reg2_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h1E:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 30
+-					local_reg3_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h1F:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 31
+-					local_reg3_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h20:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 32
+-					local_reg3_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h21:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 33
+-					local_reg3_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h22:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 34
+-					local_reg3_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h1C: local_reg2_8 <= wd_q;	// Local register 28
++			7'h1D: local_reg2_9 <= wd_q;	// Local register 29
++			7'h1E: local_reg3_0 <= wd_q;	// Local register 30
++			7'h1F: local_reg3_1 <= wd_q;	// Local register 31
++			7'h20: local_reg3_2 <= wd_q;	// Local register 32
++			7'h21: local_reg3_3 <= wd_q;	// Local register 33
++			7'h22: local_reg3_4 <= wd_q;	// Local register 34
+ //			7'h23:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -802,55 +651,13 @@
+ //					// Local register 37
+ //					local_reg3_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h26:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 38
+-					local_reg3_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h27:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 39
+-					local_reg3_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h28:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 40
+-					local_reg4_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h29:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 41
+-					local_reg4_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h2A:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 42
+-					local_reg4_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h2B:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 43
+-					local_reg4_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h2C:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 44
+-					local_reg4_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h26: local_reg3_8 <= wd_q;	// Local register 38
++			7'h27: local_reg3_9 <= wd_q;	// Local register 39
++			7'h28: local_reg4_0 <= wd_q;	// Local register 40
++			7'h29: local_reg4_1 <= wd_q;	// Local register 41
++			7'h2A: local_reg4_2 <= wd_q;	// Local register 42
++			7'h2B: local_reg4_3 <= wd_q;	// Local register 43
++			7'h2C: local_reg4_4 <= wd_q;	// Local register 44
+ //			7'h2D:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -872,55 +679,13 @@
+ //					// Local register 47
+ //					local_reg4_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h30:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 48
+-					local_reg4_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h31:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 49
+-					local_reg4_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h32:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 50
+-					local_reg5_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h33:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 51
+-					local_reg5_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h34:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 52
+-					local_reg5_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h35:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 53
+-					local_reg5_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h36:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 54
+-					local_reg5_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h30: local_reg4_8 <= wd_q;	// Local register 48
++			7'h31: local_reg4_9 <= wd_q;	// Local register 49
++			7'h32: local_reg5_0 <= wd_q;	// Local register 50
++			7'h33: local_reg5_1 <= wd_q;	// Local register 51
++			7'h34: local_reg5_2 <= wd_q;	// Local register 52
++			7'h35: local_reg5_3 <= wd_q;	// Local register 53
++			7'h36: local_reg5_4 <= wd_q;	// Local register 54
+ //			7'h37:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -942,55 +707,13 @@
+ //					// Local register 57
+ //					local_reg5_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h3A:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 58
+-					local_reg5_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h3B:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 59
+-					local_reg5_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h3C:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 60
+-					local_reg6_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h3D:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 61
+-					local_reg6_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h3E:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 62
+-					local_reg6_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h3F:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 63
+-					local_reg6_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h40:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 64
+-					local_reg6_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h3A: local_reg5_8 <= wd_q;	// Local register 58
++			7'h3B: local_reg5_9 <= wd_q;	// Local register 59
++			7'h3C: local_reg6_0 <= wd_q;	// Local register 60
++			7'h3D: local_reg6_1 <= wd_q;	// Local register 61
++			7'h3E: local_reg6_2 <= wd_q;	// Local register 62
++			7'h3F: local_reg6_3 <= wd_q;	// Local register 63
++			7'h40: local_reg6_4 <= wd_q;	// Local register 64
+ //			7'h41:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -1012,55 +735,13 @@
+ //					// Local register 67
+ //					local_reg6_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h44:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 68
+-					local_reg6_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h45:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 69
+-					local_reg6_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h46:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 70
+-					local_reg7_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h47:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 71
+-					local_reg7_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h48:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 72
+-					local_reg7_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h49:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 73
+-					local_reg7_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h4A:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 74
+-					local_reg7_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h44: local_reg6_8 <= wd_q;	// Local register 68
++			7'h45: local_reg6_9 <= wd_q;	// Local register 69
++			7'h46: local_reg7_0 <= wd_q;	// Local register 70
++			7'h47: local_reg7_1 <= wd_q;	// Local register 71
++			7'h48: local_reg7_2 <= wd_q;	// Local register 72
++			7'h49: local_reg7_3 <= wd_q;	// Local register 73
++			7'h4A: local_reg7_4 <= wd_q;	// Local register 74
+ //			7'h4B:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -1082,55 +763,13 @@
+ //					// Local register 77
+ //					local_reg7_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h4E:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 78
+-					local_reg7_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h4F:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 79
+-					local_reg7_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h50:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 80
+-					local_reg8_0[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h51:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 81
+-					local_reg8_1[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h52:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 82
+-					local_reg8_2[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h53:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 83
+-					local_reg8_3[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h54:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 84
+-					local_reg8_4[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h4E: local_reg7_8 <= wd_q;	// Local register 78
++			7'h4F: local_reg7_9 <= wd_q;	// Local register 79
++			7'h50: local_reg8_0 <= wd_q;	// Local register 80
++			7'h51: local_reg8_1 <= wd_q;	// Local register 81
++			7'h52: local_reg8_2 <= wd_q;	// Local register 82
++			7'h53: local_reg8_3 <= wd_q;	// Local register 83
++			7'h54: local_reg8_4 <= wd_q;	// Local register 84
+ //			7'h55:
+ //				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+ //				if ( ws_q[byte_index] == 1 ) begin
+@@ -1152,20 +791,8 @@
+ //					// Local register 87
+ //					local_reg8_7[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+ //				end  
+-			7'h58:
+-				for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 88
+-					local_reg8_8[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
+-			7'h59:
+-            	for ( byte_index = 0; byte_index <= (C_S_AXI_DATA_WIDTH/8)-1; byte_index = byte_index+1 )
+-				if ( ws_q[byte_index] == 1 ) begin
+-					// Respective byte enables are asserted as per write strobes 
+-					// Local register 89
+-					local_reg8_9[(byte_index*8) +: 8] <= wd_q[(byte_index*8) +: 8];
+-				end  
++			7'h58: local_reg8_8 <= wd_q;	// Local register 88
++			7'h59: local_reg8_9 <= wd_q;	// Local register 89
+ 
+ 	        default : begin
+ 				local_reg0_0 <= local_reg0_0;

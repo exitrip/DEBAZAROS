@@ -35,7 +35,7 @@ $(OBJ)/%.o: %.c
 	$(CC) $(HFLAGS) -MMD -MP -c -o $@ $<
 
 $(OUT)/hdmi2.elf: $(OBJS)
-	$(CC) -o $@ $^ -lm
+	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 -include $(OBJS:.o=.d)
 

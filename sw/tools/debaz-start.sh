@@ -9,7 +9,7 @@
 #   ./debaz-start.sh               boot: load $BITSTREAM through fpga_manager
 #   LOOP=0 ./debaz-start.sh        set up only, no animation loop
 set -u
-BIN=${BIN:-/home/ebaz/bin}
+BIN=${BIN:-${DZ_BIN:-/home/ebaz/bin}}; [ -x "$BIN/debazd" ] || BIN=/usr/bin
 DZ="$BIN/dzctl -t 150"
 BITSTREAM=${BITSTREAM:-debaz4205_wrapper_20250916.bit.bin}
 MOVIE=${MOVIE:-/home/ebaz/test24-1280-8MBps.mp4}

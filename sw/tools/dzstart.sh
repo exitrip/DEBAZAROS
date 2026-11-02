@@ -11,10 +11,15 @@
 #   sudo sh /home/ebaz/bin/dzstart.sh -n              no PL load: only start
 #                                                     what does not run
 #
-# Config /home/ebaz/dzstart.conf (shell, all optional):
-#   BITSTREAM=ebaz4205_2out1in_20261101_sdly.bit.bin
+# Config (shell, all optional): /home/ebaz/dzstart.conf, else the image's
+# /etc/debaz/dzstart.conf ($DZSTART_CONF = another file):
+#   BITSTREAM=ebaz4205_2out1in_20261101_sdly.bit.bin   (empty = no PL load:
+#                              the bitstream of BOOT.BIN; the image's BOOT.BIN
+#                              carries the current one)
 #   HDMI2_ARGS="-r 1280x720"
 #   WEB=1                      0 = do not start dzweb
+# At boot: debaz.service (image) runs this with DZSTART_BG=1 (no detach,
+# the output goes to the journal: journalctl -u debaz).
 #
 # Why: after a reboot the card loads only the stable bitstream of BOOT.BIN
 # and starts none of the software. The installed debazd / dz_fields follow
@@ -24,8 +29,9 @@
 # from the PL, so the ssh link can drop during the load; the log is
 # /tmp/dzstart.log (this terminal shows it while it runs).
 set -u
-D=/home/ebaz/bin
-CONF=/home/ebaz/dzstart.conf
+D=${DZ_BIN:-/home/ebaz/bin}; [ -x "$D/debazd" ] || D=/usr/bin	# dev copy, else the image (dz_path.h)
+CONF=${DZSTART_CONF:-/home/ebaz/dzstart.conf}
+[ -f "$CONF" ] || CONF=/etc/debaz/dzstart.conf
 LOG=/tmp/dzstart.log
 
 if [ -z "${DZSTART_BG:-}" ]; then
@@ -50,13 +56,13 @@ elif [ $# -ge 1 ] && [ "${1#-}" = "$1" ]; then
 	BITSTREAM=$1
 	shift
 fi
+[ -n "$BITSTREAM" ] || load=0		# no bitstream: the one of BOOT.BIN
 [ $# -ge 1 ] && HDMI2_ARGS="$*"
 fail() { echo "dzstart: FAILED: $*"; exit 1; }
-echo "dzstart: $(date '+%F %T'), PL load $load, bitstream '${BITSTREAM:-}', hdmi2 $HDMI2_ARGS"
+echo "dzstart: $(date '+%F %T'), PL load $load, bitstream '${BITSTREAM:-BOOT.BIN}', hdmi2 $HDMI2_ARGS, programs $D, config $CONF"
 
 # ---- 1. bitstream + hdmi2 + debazd + mixer setup (plreload.sh) ---------------------
 if [ $load = 1 ]; then
-	[ -n "$BITSTREAM" ] || fail "no bitstream (argument or BITSTREAM in $CONF)"
 	case $BITSTREAM in
 	*/*) src=$BITSTREAM ;;
 	*)   src=/lib/firmware/$BITSTREAM ;;
@@ -71,10 +77,12 @@ if [ $load = 1 ]; then
 	grep -v '^+' /tmp/plreload.log | sed 's/^/  plreload: /' | tail -5
 	[ $rc = 0 ] && tail -1 /tmp/plreload.log | grep -q DONE || fail "plreload (rc $rc, /tmp/plreload.log)"
 else
+	fresh=0
 	pgrep -f hdmi2.elf > /dev/null || {
 		# shellcheck disable=SC2086
 		setsid nohup $D/hdmi2.elf $HDMI2_ARGS > /tmp/hdmi2.log 2>&1 < /dev/null &
 		echo "  started hdmi2"
+		fresh=1			# the displays were off: the PL is at its reset state
 		sleep 4
 	}
 	pgrep -x debazd > /dev/null || {
@@ -82,6 +90,9 @@ else
 		echo "  started debazd"
 		sleep 1
 	}
+	# after a power-up the registers are at reset (HDMI_0 black): boot setup;
+	# never over a running setup (it would undo the user's state)
+	[ $fresh = 1 ] && { sh $D/dzsetup.sh > /tmp/dzsetup.log 2>&1; echo "  boot setup (dzsetup.sh)"; }
 fi
 
 # ---- 2. dzweb (as ebaz: it serves /home/ebaz/www and the media) -----------------------
@@ -91,7 +102,7 @@ if [ "$WEB" = 1 ] && ! pgrep -x dzweb > /dev/null; then
 	# the sticky /tmp (protected_regular).
 	rm -f /tmp/dzweb.log
 	(cd /home/ebaz && HOME=/home/ebaz setsid nohup setpriv --reuid=ebaz --regid=ebaz \
-		--init-groups ./bin/dzweb > /tmp/dzweb.log 2>&1 < /dev/null &)
+		--init-groups $D/dzweb > /tmp/dzweb.log 2>&1 < /dev/null &)
 	echo "  started dzweb"
 	sleep 1
 fi

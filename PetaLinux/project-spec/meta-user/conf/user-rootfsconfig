@@ -8,3 +8,4 @@ CONFIG_htop
 CONFIG_luajit
 CONFIG_debaz-audio
 CONFIG_debaz-firstboot
+CONFIG_debaz-sw

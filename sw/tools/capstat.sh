@@ -30,7 +30,7 @@ GPIO=0x41200000
 VDMA=0x43020000
 SLOT=                      # capture frame address: read from S2MM frame store 0
 FRAME_BYTES=               # stride x VSIZE of the S2MM setup
-DZCTL=/home/ebaz/bin/dzctl
+DZCTL=${DZ_BIN:-/home/ebaz/bin}/dzctl; [ -x "$DZCTL" ] || DZCTL=/usr/bin/dzctl
 LOCK=/tmp/debazd.lock
 
 rd() { $DEVMEM $1 32; }

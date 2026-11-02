@@ -6,7 +6,8 @@
 // layers, which add to the picture (wrap math, intentional).
 // Audio scope (2026-11-01): /dds/<n>/scope writes the newest 2048 samples of
 // debazd's audio capture (react.c) into the AWG table each frame; L, R or
-// (L+R)/2 per channel.
+// (L+R)/2 per channel. Nov 2: or the spectrum (fft / fftlin), a skew
+// (diagonal), free running mode, seam (mirror / fade), trigger, smooth.
 import * as net from "./net.js";
 import { h, card, row, store } from "./ui.js";
 
@@ -296,26 +297,57 @@ function awgCard(n) {
 
 // ---- audio scope ----
 function scopeCard(n) {
-  const sc = store.get(`dds.scope.${n}`, { gain: 4, mode: "h", chan: "sum", on: 0 });
+  const sc = Object.assign({ gain: 4, mode: "h", chan: "sum", on: 0, src: "wave", skew: 0, seam: "off", trig: 0, smooth: 0 },
+    store.get(`dds.scope.${n}`, {}));
   const p = `/dds/${n}/scope`;
-  const send = () => { net.msg(p, net.float(sc.on ? sc.gain : 0), sc.mode, sc.chan); store.set(`dds.scope.${n}`, sc); };
-  const onBtn = h("button", { title: `${p} <gain> <h|v|keep> <sum|l|r>  (gain 0 = off)`,
+  const keep = () => store.set(`dds.scope.${n}`, sc);
+  const send = () => {
+    if (sc.on) { // the settings first: the pattern of the first frame has the skew
+      net.msg(`${p}/skew`, net.float(sc.skew)); net.msg(`${p}/seam`, sc.seam);
+      net.msg(`${p}/trigger`, sc.trig); net.msg(`${p}/smooth`, net.float(sc.smooth));
+    }
+    net.msg(p, net.float(sc.on ? sc.gain : 0), sc.mode, sc.chan, sc.src); keep();
+  };
+  const onBtn = h("button", { title: `${p} <gain> <h|v|free|keep> <sum|l|r> <wave|fft|fftlin>  (gain 0 = off)`,
     onclick: () => { sc.on = sc.on ? 0 : 1; paint(); send(); } });
   const paint = () => { onBtn.textContent = sc.on ? "On" : "Off"; onBtn.classList.toggle("on", !!sc.on); };
   paint();
   onBtn.style.marginLeft = "auto";
-  const gv = h("span.hint", {}, String(sc.gain));
-  const gain = h("input", { type: "range", min: 0.5, max: 32, step: 0.5, value: sc.gain,
-    title: `${p}/gain <f>  (0x8000 + sample x gain; laptop audio: 4-8)`,
-    oninput: () => { sc.gain = Number(gain.value); gv.textContent = sc.gain; if (sc.on) net.throttled(`${p}/gain`, () => net.message(`${p}/gain`, net.float(sc.gain))); store.set(`dds.scope.${n}`, sc); } });
-  const mode = h("select", { title: `${p}/mode h|v|keep`, onchange: () => { sc.mode = mode.value; if (sc.on) net.msg(`${p}/mode`, sc.mode); store.set(`dds.scope.${n}`, sc); } },
-    [["h", "across each line (bars 1 awg)"], ["v", "down the frame (hbars 1 awg)"], ["keep", "keep the pattern"]]
-      .map(([v, t]) => h("option", { value: v, selected: v === sc.mode }, t)));
-  const chan = h("select", { title: `${p}/channel sum|l|r`, onchange: () => { sc.chan = chan.value; if (sc.on) net.msg(`${p}/channel`, sc.chan); store.set(`dds.scope.${n}`, sc); } },
-    [["sum", "L + R"], ["l", "left"], ["r", "right"]].map(([v, t]) => h("option", { value: v, selected: v === sc.chan }, t)));
-  scopeUi[n] = { sc, onBtn, paint, gain, gv, mode, chan };
+  // a slider with its value; live (throttled) while the scope runs
+  const slider = (key, addr, min, max, step, title, fmt = String) => {
+    const v = h("span.hint", {}, fmt(sc[key]));
+    const el = h("input", { type: "range", min, max, step, value: sc[key], title,
+      oninput: () => { sc[key] = Number(el.value); v.textContent = fmt(sc[key]); keep();
+        if (sc.on) net.throttled(addr, () => net.message(addr, net.float(sc[key]))); } });
+    return { el, v, set: (x) => { sc[key] = x; el.value = x; v.textContent = fmt(x); } };
+  };
+  const select = (key, addr, opts, title) => {
+    const el = h("select", { title, onchange: () => { sc[key] = el.value; keep(); if (sc.on) net.msg(addr, sc[key]); } },
+      opts.map(([v, t]) => h("option", { value: v, selected: v === sc[key] }, t)));
+    return el;
+  };
+  const gain = slider("gain", `${p}/gain`, 0.5, 32, 0.5,
+    `${p}/gain <f>\nwave: 0x8000 + sample x gain (laptop audio: 4-8)\nfft: dB of amplitude x gain (1 = a full-scale sine at the top)`);
+  const skew = slider("skew", `${p}/skew`, -4, 4, 0.05,
+    `${p}/skew <f>  the diagonal\nh: the cycle moves f cycles from the top line to the bottom line\n` +
+    "v: f cycles across the width (negative = the table backwards)\n0 = straight", (x) => Number(x).toFixed(2));
+  const smooth = slider("smooth", `${p}/smooth`, 0, 0.95, 0.05,
+    `${p}/smooth <0..0.99>  each entry = smooth x the last frame + the rest x the new value`, (x) => Number(x).toFixed(2));
+  const mode = select("mode", `${p}/mode`, [["h", "across each line (bars 1 awg)"], ["v", "down the frame (hbars 1 awg)"],
+    ["free", "free running (AWG at /dds/" + n + "/hz)"], ["keep", "keep the pattern"]],
+    `${p}/mode h|v|free|keep\nfree: no phase reset, the PINC stays: set the rate with /dds/${n}/hz (Effects) or the pattern card "free running"`);
+  const chan = select("chan", `${p}/channel`, [["sum", "L + R"], ["l", "left"], ["r", "right"]], `${p}/channel sum|l|r`);
+  const src = select("src", `${p}/source`, [["wave", "waveform"], ["fft", "spectrum (log Hz, dB)"], ["fftlin", "spectrum (linear)"]],
+    `${p}/source wave|fft|fftlin\nfft: 47 Hz .. 24 kHz at FFT 1024 (/audio/react/fft), 60 dB range`);
+  const seam = select("seam", `${p}/seam`, [["off", "off"], ["mirror", "mirror (symmetric)"], ["fade", "fade the ends"]],
+    `${p}/seam off|mirror|fade\nno jump where the cycle wraps: use it with free running, skew, or v`);
+  const trig = h("input", { type: "checkbox", checked: !!sc.trig, title: `${p}/trigger 0|1  waveform: start at a rising zero crossing`,
+    onchange: () => { sc.trig = trig.checked ? 1 : 0; keep(); if (sc.on) net.msg(`${p}/trigger`, sc.trig); } });
+  scopeUi[n] = { sc, onBtn, paint, gain, skew, smooth, mode, chan, src, seam, trig };
   return card([`DDS ${n} audio scope`, onBtn],
-    row("Gain", gain, gv), row("Mode", mode), row("Channel", chan),
+    row("Source", src), row("Gain", gain.el, gain.v), row("Mode", mode), row("Skew", skew.el, skew.v),
+    row("Channel", chan), row("Seam", seam), row("Smooth", smooth.el, smooth.v),
+    row("Trigger", h("label", {}, trig, " waveform from a rising zero crossing")),
     h("p.hint", {}, n ? "Shows on HDMI_1 through the oscillator layers: raise /hdmi/1/osc/sin/gain (Effects)." :
       "Channel 0 feeds the HDMI_0 mixer (din3: mixer mode 1 only)."));
 }
@@ -342,11 +374,16 @@ async function loadScope() {
     const m = await net.ask(net.message(`/dds/${n}/scope`), (x) => x.path === `/dds/${n}/scope` && x.args.length >= 2);
     const u = scopeUi[n];
     if (!m || !u) continue;
-    const [g, md, ch] = m.args;
+    const [g, md, ch, sr, sk, se, tr, sm] = m.args;
     u.sc.on = g > 0 ? 1 : 0;
-    if (g > 0) { u.sc.gain = g; u.gain.value = g; u.gv.textContent = g; }
+    if (g > 0) u.gain.set(g);
     u.sc.mode = md; u.mode.value = md;
     if (ch) { u.sc.chan = ch; u.chan.value = ch; }
+    if (sr) { u.sc.src = sr; u.src.value = sr; }
+    if (sk !== undefined) u.skew.set(sk);
+    if (se) { u.sc.seam = se; u.seam.value = se; }
+    if (tr !== undefined) { u.sc.trig = tr; u.trig.checked = !!tr; }
+    if (sm !== undefined) u.smooth.set(Math.round(sm * 100) / 100);
     u.paint();
   }
 }

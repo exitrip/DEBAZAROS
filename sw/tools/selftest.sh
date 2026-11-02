@@ -31,12 +31,36 @@ export DZ_REACT_CMD="python3 $LOCKDIR/tone.py"
 printf '#!/bin/sh\nsleep 2\n' > "$LOCKDIR/arecord"; chmod +x "$LOCKDIR/arecord"
 export PATH="$LOCKDIR:$PATH"
 
+# image sequences (anim.c): small JPEG / PNG frames made with ffmpeg
+export DZ_ANIM_DIR="$LOCKDIR/anim"
+HAVE_FF=0
+if command -v ffmpeg >/dev/null 2>&1; then
+	HAVE_FF=1
+	mkdir -p "$DZ_ANIM_DIR/seq" "$DZ_ANIM_DIR/sheet"
+	for i in 1 2 3 4 5 6 7 8; do
+		ffmpeg -v error -f lavfi -i "color=c=0x$((i + 1))04080:s=320x180" -frames:v 1 "$DZ_ANIM_DIR/seq/f$i.jpg"
+	done
+	cp "$DZ_ANIM_DIR/seq/f1.jpg" "$DZ_ANIM_DIR/sheet/a.jpg"
+	ffmpeg -v error -f lavfi -i "color=c=0xff0000:s=640x360" -frames:v 1 "$DZ_ANIM_DIR/sheet/b.png"
+	printf '# fps 5\na.jpg 2\nb.png\n' > "$DZ_ANIM_DIR/sheet/timing.txt"
+fi
+
 "$BIN/debazd" -n -p $PORT 2>"$LOCKDIR/log" &
 PID=$!
 trap 'kill $PID 2>/dev/null; rm -rf "$LOCKDIR"' EXIT
 sleep 0.3
 
 q() { "$BIN/dzctl" -p $PORT -t 200 "$@"; }
+
+near() {	# near "name" "r g b" command... (a /pixel reply, each channel +-4: JPEG)
+	name=$1; want=$2; shift 2
+	got=$("$@" 2>&1)
+	if echo "$got $want" | awk '{n = NF - 3; for (i = 0; i < 3; i++) { d = $(n - 2 + i) - $(NF - 2 + i); if (d > 4 || d < -4) exit 1 } }'; then
+		echo "ok   $name"
+	else
+		echo "FAIL $name: want [$want] got [$got]"; FAIL=1
+	fi
+}
 
 check() {	# check "name" "expected substring" command...
 	name=$1; want=$2; shift 2
@@ -358,6 +382,102 @@ check look-apply    "/value \"/hdmi/1/gain/rgb\" 729366"    q /hdmi/1/gain/rgb
 check look-add      "/cue/look \"s1\" 3 1"                  q /cue/look s1 3 add lk1
 check show-check    "/show/check/end 0"                     q /show/check
 q /led/red 0 >/dev/null
+
+# paint bucket: an outlined box, filled inside; outside stays black
+q /draw/5/clear 0 0 0 >/dev/null
+q /draw/5/rect 255 255 255 100 100 200 100 4 >/dev/null
+q /draw/5/fill solid >/dev/null
+q /draw/5/flood 0 255 0 200 150 >/dev/null
+check flood-inside  "/pixel 5 200 150 0 255 0"          q /surface/5/peek 200 150
+check flood-edge    "/pixel 5 101 150 255 255 255"      q /surface/5/peek 101 150
+check flood-outside "/pixel 5 50 50 0 0 0"              q /surface/5/peek 50 50
+q /draw/5/fill linear 0 0 255 0 >/dev/null
+q /draw/5/flood 255 0 0 200 150 30 >/dev/null
+check flood-grad-l  "/pixel 5 105 150 25"               q /surface/5/peek 105 150
+check flood-grad-r  "/pixel 5 294 150 2 0 25"           q /surface/5/peek 294 150
+q /draw/5/fill solid >/dev/null
+
+if [ $HAVE_FF -eq 1 ]; then
+	check anim-list    "/anim/folder \"seq\" 8"              q /anim/list
+	check anim-files   "/file \"sheet\""                     q /files anim
+	q /anim/0/play seq 30 >/dev/null; sleep 0.4
+	check anim-play    "/anim/0 \"seq\" 8"                   q /anim/0
+	check anim-playing "\"playing\""                         q /anim/0
+	check anim-source  "\"/disp/0/source\" \"anim\""         q /state
+	q /anim/0/pause 1 >/dev/null; q /anim/0/frame 0 >/dev/null; sleep 0.15
+	check anim-frame0  "\"paused\" \"f1.jpg\""               q /anim/0
+	q /surface/3/grab "$(q /anim/0 | awk '{print $NF}')" >/dev/null
+	near  anim-pixel   "32 64 128"                            q /surface/3/peek 640 360
+	check anim-border  "/pixel 3 479 360 0 0 0"               q /surface/3/peek 479 360
+	q /anim/0/step 2 >/dev/null; sleep 0.15
+	check anim-step    "\"f3.jpg\""                          q /anim/0
+	check anim-sheet   "/anim/1 \"sheet\" 2 -1 5"             q /anim/1/play sheet
+	sleep 0.6
+	check anim-resident "\"playing\""                        q /anim/1
+	check anim-slots-busy "stop the sequence first"          q /anim/1/slots 1 3
+	q /anim/1/pause 1 >/dev/null; q /anim/1/frame 1 >/dev/null; sleep 0.15
+	q /surface/3/grab "$(q /anim/1 | awk '{print $NF}')" >/dev/null
+	near  anim-png     "255 0 0"                              q /surface/3/peek 640 360
+	q /state/snap anim1 >/dev/null
+	q /disp/0/show 0 >/dev/null
+	check anim-stopped "/anim/0 \"\" 0 -1"                   q /anim/0
+	q /state/recall anim1 >/dev/null; sleep 0.2
+	check anim-recall  "/anim/0 \"seq\" 8"                   q /anim/0
+	check anim-bad     "no folder"                            q /anim/0/play nothere
+	q /anim/0/stop >/dev/null; q /anim/1/stop >/dev/null
+	# build a folder frame by frame (web Paint tab: Save frame)
+	q /draw/3/clear 0 200 0 >/dev/null
+	check anim-save1   "/anim/saved \"take\" \"f00001.jpg\" 1"  q /anim/save take 3
+	q /draw/3/clear 0 0 200 >/dev/null
+	check anim-save2   "/anim/saved \"take\" \"f00002.jpg\" 2"  q /anim/save take 3 80
+	check anim-undo    "/anim/saved \"take\" \"\" 1"           q /anim/undo take
+	check anim-save-bad "folder name"                         q /anim/save "../x" 3
+	q /anim/0/play take 10 >/dev/null; sleep 0.3
+	q /surface/3/grab "$(q /anim/0 | awk '{print $NF}')" >/dev/null
+	near  anim-saved-px "0 200 0"                             q /surface/3/peek 640 360
+	q /anim/save take 3 >/dev/null; sleep 0.3
+	check anim-reload  "/anim/0 \"take\" 2"                  q /anim/0
+	q /anim/0/stop >/dev/null
+	# timing sheet: a hold on save makes timing.txt; edit it; undo drops the line
+	check sheet-none   "/anim/sheet/end \"take\" 0 2"         q /anim/sheet take
+	q /anim/save take 3 90 4 >/dev/null
+	check sheet-hold   "f00003.jpg 4"                         q /anim/sheet take
+	check sheet-made   "/anim/sheet/end \"take\" 1 3"         q /anim/sheet take
+	check sheet-put    "/anim/sheet/saved \"take\" 3 1 \"nope.jpg\"" \
+		q /anim/sheet/put take 0 1 "# fps 6
+f00001.jpg 2
+nope.jpg
+f00002.jpg 3
+"
+	check sheet-read   "f00002.jpg 3"                         q /anim/sheet take
+	q /anim/save take 3 >/dev/null
+	check sheet-append "f00004.jpg"                           q /anim/sheet take
+	q /anim/undo take >/dev/null
+	check sheet-undo   "/anim/sheet/end \"take\" 1 3 6"       q /anim/sheet take
+	check sheet-parts  "part 0 missing"                       q /anim/sheet/put take 1 1 "x"
+	q /anim/sheet/put take 0 0 "f00001.jpg 2
+" >/dev/null
+	check sheet-parts2 "/anim/sheet/saved \"take\" 2 0"        q /anim/sheet/put take 1 1 "f00002.jpg
+"
+	check sheet-clear  "/anim/sheet/saved \"take\" 0 0"        q /anim/sheet/put take 0 1 ""
+	check sheet-gone   "/anim/sheet/end \"take\" 0"            q /anim/sheet take
+	check anim-saved-bytes "/anim/saved \"take\" \"f00004.jpg\" 4"  q /anim/save take 3 50
+	# onion skin: source slot 2 (red) under the last frame (green: slot 3 holds a grab of f00001)
+	q /draw/2/clear 200 0 0 >/dev/null
+	check onion-start  "\"onion\""                           q /anim/1/onion take 0.5 1 2
+	sleep 0.4
+	q /surface/4/grab "$(q /anim/1 | awk '{print $NF}')" >/dev/null
+	near  onion-mix    "100 100 0"                            q /surface/4/peek 640 360
+	q /anim/1/onion/opacity 1 >/dev/null; sleep 0.3
+	q /surface/4/grab "$(q /anim/1 | awk '{print $NF}')" >/dev/null
+	near  onion-opaque "0 200 0"                              q /surface/4/peek 640 360
+	check onion-state  "\"/anim/1/play\" \"\""                  q /state
+	check onion-off    "\"stopped\""                         q /anim/1/onion ""
+	check anim-delete  "/anim/deleted \"take\" 4"              q /anim/delete take
+	check anim-deleted "no folder"                            q /anim/sheet take
+else
+	echo "skip anim-* (no ffmpeg to make test frames)"
+fi
 
 kill $PID
 wait $PID 2>/dev/null

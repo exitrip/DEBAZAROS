@@ -363,6 +363,12 @@ static void do_list(const dz_msg *m)
 /* /files fonts: the TrueType / OpenType files under dir (depth levels of
  * subfolders), one /file reply each (bare names: the text ops find a font
  * by name in any subfolder) */
+static void file_cb(const char *name, void *ctx)
+{
+	(void)ctx;
+	reply("/file", "s", name);
+}
+
 static int list_fonts(const char *dir, int depth)
 {
 	DIR *d = opendir(dir);
@@ -440,6 +446,12 @@ static void handle(dz_msg *m, void *ctx)
 	}
 	if (!strcmp(m->path, "/files")) {
 		const char *which = (m->n >= 1 && m->a[0].type == 's') ? m->a[0].s : "";
+		if (!strcmp(which, "anim")) {		/* image sequence folders */
+			int count = anim_folder_names(file_cb, NULL);
+
+			reply("/file/end", "i", count);
+			return;
+		}
 		const char *dir = !strcmp(which, "movies") ? DZ_MOVIE_DIR :
 				  !strcmp(which, "img") ? DZ_IMG_DIR :
 				  !strcmp(which, "audio") ? DZ_AUDIO_DIR : NULL;
@@ -448,7 +460,7 @@ static void handle(dz_msg *m, void *ctx)
 		int count = 0;
 
 		if (!dir) {
-			reply("/error", "ss", "/files needs img, movies, audio or fonts", m->path);
+			reply("/error", "ss", "/files needs img, movies, audio, anim or fonts", m->path);
 			return;
 		}
 		while (d && (e = readdir(d)) != NULL) {
@@ -502,7 +514,7 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
-	if (react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
+	if (react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || anim_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
 	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
@@ -654,6 +666,7 @@ static void monitor(void)
 		for (int s = 0; s < DZ_SLOTS; s++)
 			dz_draw_movie_stop(s);
 		disp_crop_reset();
+		anim_geometry();	/* image sequences: fitted again */
 		audio_rx_hold();
 		event("/event/mode", "iii", dz_geom_w(), dz_geom_h(), (int)dz_geom_stride());
 	}
@@ -894,6 +907,7 @@ int main(int argc, char **argv)
 				dds_tick();
 				lfo_tick((t - last_tick) / 1000.0);
 				ascii_tick();
+				anim_tick();
 				dz_draw_movie_tick();
 				last_tick = t;
 				next_tick = t + 50;	/* fallback if vsync stops */
@@ -906,6 +920,7 @@ int main(int argc, char **argv)
 			dds_tick();
 			lfo_tick((t - last_tick) / 1000.0);
 			ascii_tick();
+			anim_tick();
 			dz_draw_movie_tick();
 			last_tick = t;
 			next_tick = t + (disp_vsync_ok() ? 50 : 16);
@@ -935,6 +950,7 @@ int main(int argc, char **argv)
 	}
 	fprintf(stderr, "debazd: stopping\n");
 	pwm_close();
+	anim_stop_all();
 	react_stop();
 	sound_close();
 	disp_close();

@@ -64,12 +64,17 @@ edit it in the GUI, and export it with `-tclargs <new>`.
 
 - IP repos: `ip_repo/if` (Digilent TMDS interface definition, MIT),
   `ip_repo/mixer_1_0`, `IP_axi_dynclk`, `IP_dvi2rgb`, `IP_rgb2dvi`.
-- RTL for BD module references: `hw/rtl/` (`DivideBy2N.v`,
-  `div16_8_recip.v`, `dds_axi_inteface.vhd`, `dds_axi_interface_logic.vhd`).
+- RTL for BD module references: `hw/rtl/`: `hdmi_tx/` (HDMI/DVI
+  transmitter with audio, both outputs; `hdmi_rx.v` for the input;
+  `hdmi_audio_regs.v` = the register block at 0x43C6_0000 with PCM FIFOs,
+  events, PWM), `dz_osc/` (DDS pattern engine dz_osc2), `dz_regs/` (the
+  register banks at 0x4120_0000), `pl_io/` (user I/O function select, I2S),
+  `fsync_gen.v` (VDMA frame sync), `DivideBy2N.v`, `div16_8_recip.v`. The two
+  `dds_axi_inter*` files are only for BD sources from before dz_osc2.
 - XDC: `hw/xdc/ebaz4205.xdc`.
 
-The files in `hw/rtl/` and `hw/xdc/` came from the legacy `Vivado/` project
-(copied unchanged on 2026-10-25). The dvi2rgb changes against Digilent's
+`DivideBy2N.v`, `div16_8_recip.v` and the XDC came from the legacy
+`Vivado/` project (2026-10-25); the rest is new. The dvi2rgb changes against Digilent's
 original are recorded in `hw/patches/`.
 
 ## Packaged IP edits
@@ -94,8 +99,21 @@ commit 4e2d1820 (equivalence on random registers and pixels), then the colour
 key. Expect "ALL PASS". Run it after every mixer RTL edit.
 
 `sh hw/sim/run_hdmi_tx_tb.sh`: `hw/rtl/hdmi_tx` (rgb2dvi replacement with
-HDMI audio) in DVI, HDMI, HDMI + audio and test-tone modes, checked by a
-receiver-side TMDS decoder. Expect 4 x "ALL PASS".
+HDMI audio) in DVI, HDMI, HDMI + audio and test-tone modes, the sync delay
+(`ctrl[14:12]`), the register block and the receiver loop, checked by a
+receiver-side TMDS decoder. Expect 10 x "ALL PASS".
+
+Also: `run_dz_osc_tb.sh` (DDS engine), `run_dz_regs_tb.sh` (register
+banks), `run_pl_io_tb.sh` (user I/O, I2S, PCM FIFOs).
+
+## Timing
+
+`build.tcl` runs placement ExtraPostPlacementOpt and routing
+AggressiveExplore plus post-route phys_opt by default (slices are at 100 %
+since dz_osc2). Always check FCLK2 in the timing report (the capture VDMA
+datamover has about 0.1 ns). The pixel clock is constrained for 108 MHz and
+fails there (the colour-matrix multiply-add path); what counts is the worst
+path against the mode in use (720p60: 13.47 ns). CLAUDE.md has the details.
 
 ## IP with changed ports
 

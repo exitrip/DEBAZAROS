@@ -49,5 +49,14 @@ int  dz_shape_star(int s, dz_color c, float cx, float cy, float rx, float ry, in
 int  dz_shape_starpoly(int s, dz_color c, float cx, float cy, float rx, float ry, int n, int k,
 		       int t, float angle);
 int  dz_shape_radial(int s, dz_color a, dz_color b, float cx, float cy, float radius);
+/*
+ * Paint bucket (2026-11-01): the connected area around x, y whose colour is
+ * within tol (largest channel difference, 0-255) of the pixel at x, y,
+ * filled with the slot's fill: solid c, linear c -> c2 across the area's
+ * box at the fill angle, radial c at x, y -> c2 at the farthest corner of
+ * the box. Alpha and blend of the slot apply.
+ *   /draw/<s>/flood r g b x y [tol]       (tol default 32)
+ */
+int  dz_shape_flood(int s, dz_color c, int x, int y, int tol);
 
 #endif

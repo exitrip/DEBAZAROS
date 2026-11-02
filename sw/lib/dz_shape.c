@@ -517,3 +517,105 @@ int dz_shape_radial(int i, dz_color a, dz_color b, float cx, float cy, float rad
 	dz_surf_finish(i);
 	return 0;
 }
+
+int dz_shape_flood(int i, dz_color c, int x, int y, int tol)
+{
+	int W, H, plain, x0, x1, y0, y1, sp = 0, cap;
+	uint32_t *buf = dz_surf(i, &W, &H), seed;
+	uint8_t *mask;
+	int *stack;
+	paint_t pt;
+
+	if (!buf || x < 0 || y < 0 || x >= W || y >= H)
+		return -1;
+	tol = tol < 0 ? 0 : tol > 255 ? 255 : tol;
+	mask = calloc((size_t)W * H, 1);
+	cap = W * 4 + H * 4 + 1024;
+	stack = malloc(sizeof(int) * 2 * (size_t)cap);
+	if (!mask || !stack) {
+		free(mask);
+		free(stack);
+		return -1;
+	}
+	seed = buf[(size_t)y * W + x];
+#define NEAR(v) (abs((int)(((v) >> 16) & 0xFF) - (int)((seed >> 16) & 0xFF)) <= tol && \
+		 abs((int)(((v) >> 8) & 0xFF) - (int)((seed >> 8) & 0xFF)) <= tol && \
+		 abs((int)((v) & 0xFF) - (int)(seed & 0xFF)) <= tol)
+	/* scanline fill: a stack of seeds, each run filled left and right */
+	x0 = x1 = x;
+	y0 = y1 = y;
+	stack[sp++] = x;
+	stack[sp++] = y;
+	while (sp > 0) {
+		int sy = stack[--sp], sx = stack[--sp], l = sx, r = sx;
+		uint32_t *row = buf + (size_t)sy * W;
+		uint8_t *mr = mask + (size_t)sy * W;
+
+		if (mr[sx] || !NEAR(row[sx]))
+			continue;
+		while (l > 0 && !mr[l - 1] && NEAR(row[l - 1]))
+			l--;
+		while (r < W - 1 && !mr[r + 1] && NEAR(row[r + 1]))
+			r++;
+		memset(mr + l, 1, (size_t)(r - l + 1));
+		x0 = l < x0 ? l : x0;
+		x1 = r > x1 ? r : x1;
+		y0 = sy < y0 ? sy : y0;
+		y1 = sy > y1 ? sy : y1;
+		for (int ny = sy - 1; ny <= sy + 1; ny += 2) {	/* runs above and below */
+			if (ny < 0 || ny >= H)
+				continue;
+			uint32_t *nr = buf + (size_t)ny * W;
+			uint8_t *nm = mask + (size_t)ny * W;
+
+			for (int k = l; k <= r; k++) {
+				if (nm[k] || !NEAR(nr[k]))
+					continue;
+				if (sp + 2 > 2 * cap) {		/* grow */
+					int *g = realloc(stack, sizeof(int) * 4 * (size_t)cap);
+
+					if (!g)
+						break;
+					stack = g;
+					cap *= 2;
+				}
+				stack[sp++] = k;
+				stack[sp++] = ny;
+				while (k < r && !nm[k + 1] && NEAR(nr[k + 1]))	/* one seed per run */
+					k++;
+			}
+		}
+	}
+#undef NEAR
+	free(stack);
+	if (fills[i].mode == DZ_FILL_RADIAL) {
+		float dx = (float)(x - x0 > x1 - x ? x - x0 : x1 - x) + 1.0f;
+		float dy = (float)(y - y0 > y1 - y ? y - y0 : y1 - y) + 1.0f;
+		float rr = sqrtf(dx * dx + dy * dy);
+
+		paint_init(&pt, i, c, (float)x + 0.5f, (float)y + 0.5f, rr, rr, 0.0f);
+	} else {
+		paint_init(&pt, i, c, (x0 + x1 + 1) / 2.0f, (y0 + y1 + 1) / 2.0f,
+			   (x1 - x0 + 1) / 2.0f, (y1 - y0 + 1) / 2.0f, 0.0f);
+	}
+	plain = dz_surf_plain(i);
+	for (int yy = y0; yy <= y1; yy++) {
+		uint32_t *row = buf + (size_t)yy * W;
+		uint8_t *mr = mask + (size_t)yy * W;
+
+		for (int xx = x0; xx <= x1; xx++) {
+			if (!mr[xx])
+				continue;
+			uint32_t v = colour(&pt, xx, yy);
+
+			if (plain)
+				row[xx] = v;
+			else
+				dz_surf_put(i, &row[xx], v, 256);
+		}
+	}
+	free(mask);
+	dz_surf_dirty(i, x0, y0, x1 + 1, y1 + 1);
+	dz_surf_finish(i);
+	return 0;
+}

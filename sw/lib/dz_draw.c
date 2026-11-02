@@ -3,6 +3,7 @@
  */
 #define _GNU_SOURCE
 #include "dz_draw.h"
+#include "dz_img.h"
 #include "dz_draw_int.h"
 #include "dz_text.h"
 #include "dz_shape.h"
@@ -863,6 +864,41 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 	if (!s || !name_ok(name) || !clip(s, &r))
 		return -1;
 	dz_draw_movie_stop(i);
+	/* JPEG / PNG in process (dz_img, 2026-11-01: ~60 ms, ffmpeg 0.8-1.7 s);
+	 * same result: the picture stretched to the rectangle */
+	if (dz_img_available(dz_img_kind(name))) {
+		char path[192], err[96];
+		int w, h;
+		uint32_t *pic, *fit;
+
+		snprintf(path, sizeof(path), "%s/%s", DZ_IMG_DIR, name);
+		pic = dz_img_load(path, r.w, r.h, &w, &h, err, sizeof(err));
+		if (pic) {
+			fit = pic;
+			if (w != r.w || h != r.h) {
+				fit = malloc((size_t)r.w * r.h * 4);
+				if (fit)
+					dz_img_resize(pic, w, h, fit, (size_t)r.w * 4, r.w, r.h);
+			}
+			if (fit) {
+				for (int y = 0; y < r.h; y++) {
+					uint32_t *row = s->shadow + (size_t)(r.y + y) * s->w + r.x;
+					const uint32_t *src = fit + (size_t)y * r.w;
+
+					for (int x = 0; x < r.w; x++)
+						put(s, &row[x], src[x] | 0xFF000000u, 256);
+				}
+				if (fit != pic)
+					free(fit);
+				free(pic);
+				dirty(s, r.x, r.y, r.x + r.w, r.y + r.h);
+				finish(s, i);
+				return 0;
+			}
+			free(pic);
+		}
+		fprintf(stderr, "dz_draw: %s: %s - trying ffmpeg\n", name, pic ? "out of memory" : err);
+	}
 	snprintf(cmd, sizeof(cmd),
 		 "ffmpeg -nostdin -hide_banner -loglevel error -i '%s/%s' -frames:v 1 "
 		 "-vf scale=%d:%d -pix_fmt bgra -f rawvideo pipe:1",
@@ -1748,6 +1784,8 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 						     n >= 8 ? argn(&a[6]) : dz_geom_w() / 2.0f,
 						     n >= 8 ? argn(&a[7]) : dz_geom_h() / 2.0f,
 						     n >= 9 ? argn(&a[8]) : 0.0f);
+			else if (!strcmp(op, "flood") && n >= 5)
+				rc = dz_shape_flood(i, col(a, 0), NI(3), NI(4), n >= 6 ? NI(5) : 32);
 			else if (!strcmp(op, "fill") && n >= 1) {
 				rc = op_fill(i, a, n);
 			} else if (!strcmp(op, "text") && n >= 6 && a[5].type == 's')

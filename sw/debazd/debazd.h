@@ -29,6 +29,20 @@ double disp_frame_hz(void);	/* measured frame rate, 0 without vsync */
 void disp_crop_reset(void);	/* crops back to 0 0 (video mode change) */
 extern int capture_auto;	/* debazd.c: capture size follows the input */
 
+void disp_anim_attach(int d, int on);	/* anim.c drives store 0 / gives it back */
+void disp_anim_frame(void);		/* no vsync: one anim frame (main loop) */
+
+/* ---- anim.c: image sequences out of a display (ROADMAP.md section 16) ---- */
+int  anim_dispatch(const dz_msg *m);	/* 0 = not an /anim address */
+void anim_tick(void);			/* once per frame (main loop) */
+uint32_t anim_vsync(int d);		/* vsync thread, disp lock held: slot address
+					 * to show now, 0 = no change */
+int  anim_on(int d);
+void anim_stop(int d);			/* main thread */
+void anim_stop_all(void);
+void anim_geometry(void);		/* video mode changed: fit again */
+int  anim_folder_names(void (*cb)(const char *name, void *ctx), void *ctx);
+
 /* ---- lfo.c: oscillators, wave shapers, step sequences ---- */
 void lfo_init(void);
 int  lfo_dispatch(const dz_msg *m);	/* 0 = not an /lfo address */
@@ -42,6 +56,8 @@ const char *react_feature_name(int i);
 float react_feature(int i);		/* 0..1 (a full-scale sine = 1) */
 int   react_samples(float *out, int n, int chan);	/* newest n capture samples (chan 0 =
 					 * (L+R)/2, 1 = L, 2 = R), 0 = none */
+int   react_spectrum(float *amp, int chan);	/* amplitudes [0..fft/2] of a channel
+					 * (as react_samples), returns the bin count, 0 = none */
 void  react_hold(int on, const char *why);	/* pause / resume the capture source */
 int   react_capturing(void);		/* react's arecord holds the capture PCM */
 void  dds_tick(void);			/* once per frame after react_tick: AWG scope */
@@ -107,6 +123,7 @@ void sound_state(state_cb cb, void *ctx);	/* sources, file players */
 void pwm_state(state_cb cb, void *ctx);	/* fan PWM (also the software one) */
 void fx_state(state_cb cb, void *ctx);	/* /fx/wrap */
 void audio_state(state_cb cb, void *ctx);	/* the automatic settings */
+void anim_state(state_cb cb, void *ctx);	/* image sequences (anim.c) */
 int  dds_dispatch(const dz_msg *m);	/* 0 = not a /dds pattern / table address */
 
 /* ---- io.c: user I/O line functions by name ---- */
