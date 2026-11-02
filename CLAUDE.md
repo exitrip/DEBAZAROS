@@ -9,11 +9,11 @@ mixers/oscillators via `devmem` for generative feedback effects.
 **What it is NOT:** the top-level `README.md`, `docs/`, and most folders describe the
 *upstream project this was forked from* — Guido's "EBAZ4205 SDR and Spectrum" software
 defined radio. All SDR/radio documentation is wildly out of date and irrelevant.
-Working branch (Nov 2 2026): **`dsp-pipe`** (worktree ../DEBAZAROS-dsp) = signed
-mixer + global pixel clock + mixer rev 26 (mode 1 and colour matrix in DSP48
-registers, ALL TIMING MET at 108 MHz, on the board as artifacts/..._dsp). Built
-on `signed-mixer` (main tree, = merge of `global-pclk`). `capture-reset` =
-paused experiments (not merged). `clanker` is the last stable
+Working branch (Nov 2 2026): **`main`** (one tree, no other worktrees) = dsp-pipe
+fast-forwarded: signed mixer + global pixel clock + mixer rev 26 (mode 1 and
+colour matrix in DSP48 registers, ALL TIMING MET at 108 MHz, on the board as
+artifacts/..._dsp). `signed-mixer`, `global-pclk`, `dsp-pipe` are all in main.
+`capture-reset` = paused experiments (not merged). `clanker` is the last stable
 point; `nuMix` and the other branches are old.
 Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
 
