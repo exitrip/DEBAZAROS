@@ -5,6 +5,15 @@
   <sub>Robert Fludd, <i>Utriusque Cosmi Maioris … Historia</i> (1617)</sub>
 </p>
 
+[!IMPORTANT]
+This repo contains a lot of LLM generated code as of about Aug. 15th 2026.  
+Generally this is bad for the world, as much as I wanna hem and haw about
+recycling all the embodied energy in this hardware,  but it's been really
+good for the maturity of this project and my own sanity.  Most of the important
+design, the core block diagram, hardware, and ring-modulator colour matrix mixer
+predate my summoning with and bargaining with the **F**ascist **A**hrimanic **D**istributed 
+machine.
+
 # DEBAZAROS
 
 DEBAZAROS is a video playback and video-feedback unit. It is made from an
