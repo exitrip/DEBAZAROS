@@ -30,7 +30,7 @@ Status words: TODO, DOING, DONE, BLOCKED.
 | 17 | Cues, scenes, shows: snapshot / recall of the state with transitions, OSC-driven (section 15) | 16 | DOING: step 1 DONE 2026-10-30 (trans.c: field ramps in the frame tick, /fx/xfade, /trans/field; host-tested); next: field flags, LFO getter, cJSON, cues |
 | 18 | Image sequences: a folder of frames out of a display, variable fps, stop-motion controls (section 16) | 6, 11 | WORKS on the board 2026-11-01: anim.c player (both displays at once), frame save from the web (Paint tab), Media tab player card, mkmedia -A, onion skin, 1000-frame test, web folder upload |
 | 19 | Signed mixer gains: mode 1 with signed operands (A - B, centre, signed DDS), mode 5 signed constant, exact hue / saturation (section 17) | 12 | WORKS on the board 2026-11-02 (branch signed-mixer, build smix4_ExtraTimingOpt): mode 5 + `/fx/signed` hue checked by eye, web UI; mode 1 untimed (17 ns) until task 20 |
-| 20 | Global pixel clock for the fabric (MMCM CLKOUT1 on a BUFG; OSERDES stay on BUFIO/BUFR behind a FIFO in hdmi_tx): ends the X1Y1 lock of ~6000 loads (section 17) | 19 | WORKS on the board 2026-11-02 (branch global-pclk, from main, build gpclkt_ExtraTimingOpt): all 9 output modes, capture, HDMI_0 audio; next: merge with signed-mixer, pipelined mode 1 + colour matrix |
+| 20 | Global pixel clock for the fabric (MMCM CLKOUT1 on a BUFG; OSERDES stay on BUFIO/BUFR behind a FIFO in hdmi_tx): ends the X1Y1 lock of ~6000 loads (section 17) | 19 | WORKS on the board 2026-11-02 (build _gpclk); merged into signed-mixer; branch dsp-pipe: mode 1 + colour matrix in DSP48 registers, ALL TIMING MET at 108 MHz (not yet on the board); branch capture-reset: capture AXI reset off the output LOCKED (not placed yet) |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -2010,6 +2010,48 @@ right 5 s after the switch.
   output mode switches the laptop sometimes sends a clock with no picture
   (RX_SIZE 0; /capture/replug fixed it once) or stops driving (pLocked 0).
 
-**Next:** merge global-pclk and signed-mixer; then the mode 1 MAC and the
-colour matrix can use DSP48 registers (systolic, timed for 108 MHz), the
-colour-matrix path is the last pixel-clock failure.
+**Merged 2026-11-02** (signed-mixer d6e7d04e = signed mixer + global pixel
+clock; conflicts in docs, XDC, mixer component.xml only).
+
+**DSP48 registers (branch `dsp-pipe`, b91905fa, mixer coreRevision 26):**
+- Mode 1: systolic, one DSP48 per tap with B and P registers and PCIN
+  cascade; tap k takes its operand k clocks later (shared delays); latency
+  8 (other modes 1). The mode-1 false path is out of the XDC: timed.
+- MATRIX_INT = 1 (default): the colour matrix inside the mixer, bit for bit
+  the BD colorGainMatrix (per lane the sum of 3 products, pixel 8 bit x
+  gain dout 24 bit, mod 2^24, lane = [23:16]), systolic, 3 DSP48 per lane;
+  key mask and fill delayed by 4 to match. pix_out is 4 clocks later than
+  before: HDMI_0's picture moves 4 px right against DE (set
+  `/hdmi/0/sync_delay` by eye). No BD edit: the BD colorGainMatrix has no
+  load and synthesis removes it (DSP count unchanged, 73).
+- Sim: equivalence, internal matrix = BD matrix model on 21,214 random pixel
+  clocks (pairing: the douts before the edge, as the old combinational
+  path), key fill aligned, mode 1 latency 8: ALL PASS.
+- Builds dsp_ExtraTimingOpt / dsp_AltSpreadLogic_high: **all timing met**
+  for the first time ("All user specified timing constraints are met"):
+  ASL_high pixel +0.399 ns at 108 MHz, FCLK2 +0.145, FCLK0 +0.368, FIFO
+  crossing +2.69, serial +0.185, hold +0.023; ETO pixel +0.494, FCLK2
+  +0.038. LUT 14115, FF 20512, DSP 73, slices 100 %. NOT yet on the board:
+  plreload refused the load (capture wedged, needs a power cycle).
+
+**Capture wedge (2026-11-02, twice) and branch `capture-reset`:** the
+capture VDMA, its interconnect and the subset converter were reset by
+HDMI_2/aRst_n = axi_dynclk LOCKED_O, so every OUTPUT mode switch (MMCM
+relock) reset the capture's AXI write side mid-burst; an AW accepted by
+HP1 without all its W beats wedges the AFI (only a PS reset clears it).
+S2MM store-and-forward is on (c_include_s2mm_sf default 1, checked in
+Vivado), so a stopping input alone does not issue half bursts.
+- fbca953e: HDMI_2/axiRst_n = PS/peripheral_aresetn1 (FCLK2 reset, as the
+  display VDMAs) for the VDMA, interconnect, converter; v_vid_in_axi4s
+  stays on aRst_n. + a 512-deep packet FIFO: 42 slices short.
+- be15b5a6: packet FIFO out again, the own reset kept: "failed to commit
+  all instances" with ExtraTimingOpt and AltSpreadLogic_high although the
+  logic equals dsp-pipe (the reset nets change the control sets).
+- A recovery for an already stuck burst would be an own AXI shim before
+  HP1 that completes outstanding W beats with WSTRB = 0 (AXI Firewall
+  guards against a hanging slave, not an aborting master).
+- Laptop as the source: GNOME blanks its displays when idle (Mutter
+  PowerSaveMode 3) and the HDMI output goes off: wake it with gdbus
+  (org.gnome.Mutter.DisplayConfig PowerSaveMode <0>), hold it with
+  `gnome-session-inhibit --inhibit idle sleep N` (xrandr cannot change
+  outputs on this Wayland session).
