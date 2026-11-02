@@ -15,7 +15,9 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/../../../../..:"
 # /lib/firmware for plreload.sh / dzstart.sh BITSTREAM (the first = the
 # current design, the others = fallbacks). sw/include/hw_map.h must match
 # the BOOT.BIN design.
-DEBAZ_BITSTREAMS ?= "ebaz4205_2out1in_20261101_sdly.bit.bin ebaz4205_2out1in_20261029_osc_epo.bit.bin"
+# 2026-11-02: _dsp (= the XSA, global pixel clock: needs the hdmi2 of sw/
+# with the CLK_O1 write), fallbacks _sdly and _osc_epo (regional clock).
+DEBAZ_BITSTREAMS ?= "ebaz4205_2out1in_20261102_dsp.bit.bin ebaz4205_2out1in_20261101_sdly.bit.bin ebaz4205_2out1in_20261029_osc_epo.bit.bin"
 
 SRC_URI = "file://sw \
            ${@' '.join('file://artifacts/' + b for b in d.getVar('DEBAZ_BITSTREAMS').split())} \
