@@ -16,7 +16,14 @@ Where the builds are used (2026-11-02):
   `dzstart.sh` loads `_sdly` (`/home/ebaz/dzstart.conf` BITSTREAM). On
   2026-11-02 `_smix` and then `_gpclk` were loaded by hand (plreload.sh): a
   reboot goes back to `_sdly`.
-- **Next image** `debazaros-20261101-sw.wic.xz` (PetaLinux recipe
+- **Next image (to test) `debazaros-20261102-dsp.wic.xz`** (sandbox build on
+  the build machine 2026-11-02, `~/dz-sandbox/`, not yet on a card):
+  BOOT.BIN = `_dsp` (md5 checked), `/lib/firmware` = `_dsp` + `_sdly` +
+  `_osc_epo`, the software of branch dsp-pipe (d4d9e9c4), no PL load at
+  boot (dzstart.conf BITSTREAM empty), ps7_init.c identical to the Oct 28
+  image. ⚠️ `_sdly` / `_osc_epo` from /lib/firmware still work with this
+  hdmi2 (older bitstreams ignore the CLK_O1 write).
+- Previous sandbox image `debazaros-20261101-sw.wic.xz` (PetaLinux recipe
   `debaz-sw`, sandbox build on the build machine 2026-11-01, not yet on a
   card): BOOT.BIN = `_sdly`, `/lib/firmware` = `_sdly` + `_osc_epo`; no PL
   load at boot. If `_sdly` shows timing trouble: BITSTREAM=`_osc_epo` in

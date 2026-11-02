@@ -84,6 +84,9 @@ External (not in repo):
   libjpeg-turbo, pixman, exFAT, mtd-utils; no package manager, no Qt/SDR load).
   Test card Oct 26 PASS; the bench board debaz-7130d5 runs the **Oct 28 image**
   (XSA `_pwm` = BOOT.BIN bitstream, debaz-firstboot, debaz-audio) + `make install`.
+- **Newest image (2026-11-02, NOT yet on a card):** `~/dz-sandbox/debazaros-20261102-dsp.wic.xz`
+  on the build machine: XSA/BOOT.BIN `_dsp`, software of branch dsp-pipe
+  (sandbox-build.sh, 6 min from sstate). The repo clone's images/ end at Oct 28.
 - **Recipe `debaz-sw` (2026-11-01, sandbox build on the build machine, NOT yet
   on a card):** builds `sw/` in Yocto (`make image-install`), `/usr/bin`,
   `/usr/share/debaz/www`, `/etc/debaz/dzstart.conf`, `debaz.service` (runs
