@@ -4,33 +4,65 @@ Goal: move the bitstream changes from the one good bench setup into a
 repeatable system, so that we can test new hardware. Do the PetaLinux
 rebuild one time only, and prepare it for later bitstream variants.
 
-Status words: TODO, DOING, DONE, BLOCKED.
+Status words: TODO, DOING, PAUSED, DONE, BLOCKED. Reordered 2026-11-02:
+open work first, finished work at the end.
+
+## Contents
+
+Open (first, in this order):
+- User I/O: buttons and the P1 GPIO header
+- Fleet: 2-12+ units on a LAN
+- 4. PetaLinux rebuild (overlay support still open)
+- 6. Hardware daemon
+- 8. Variants
+- 9. Display views: crop, pan, zoom, split
+- 10. SD card image and software deploy
+- 11. Audio, extra I/O, PL resources, 1080p
+
+Finished (at the end, under "Finished work"):
+- 1. HDMI input hot-plug
+- 2. Vivado project as Tcl
+- 5. C code without Vitis
+- 12. Mixer video functions
+- 13. Linux audio: the ALSA card
+- 14. DDS pattern engine `dz_osc` (+ section 14's resource notes, for task 22)
+- 15. Cues, scenes and shows
+- 16. Image sequences
+- 17. Signed mixer gains, global pixel clock, DSP48 registers (open items -> tasks 21, 22)
+
+Section numbers are fixed labels (CLAUDE.md, the READMEs and code comments
+refer to "section 14" etc.): open sections come first, finished sections
+last, so the numbers are not in order. Sections 3 and 7 were never written.
 
 ## Order of work and dependencies
 
 | # | Task | Depends on | Status |
 | --- | --- | --- | --- |
-| 1 | HDMI input hot-plug: find the cause | hardware | DONE (2026-10-19) |
-| 2 | Export the Vivado project to Tcl, rebuild it, compare | — | DONE (2026-10-25): Tcl build tested on hardware (outputs, capture, 117/117 register fields, GPIO, ethernet); legacy `Vivado/`, `Vitis/` and SDR folders removed (branch `legacy-vivado-project`) |
-| 3 | Capture robustness BD changes (resets, HPD, status bits) | 1, 2 | TODO |
+| 3 | Capture robustness BD changes (resets, HPD, status bits) | 1, 2 | PAUSED (user, 2026-11-02): the capture AXI side still resets with the OUTPUT dynclk LOCKED; the fix (own reset, branch capture-reset) did not place reliably. The wedge is avoided in use (CLAUDE.md "Capture wedge: how to avoid it"). HPD and status bits: done earlier (/capture/replug, RX_SIZE, footprints) |
+| 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO: the image has no PL device-tree overlay, so no UIO nodes (debazd polls for vsync, "vsync by polling") |
+| 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | DOING: debazd runs on the board (fields, routing, capture, events, drawing, LFOs, cues, audio reactivity, image sequences); frame-rate measurement fixed 2026-11-02 |
+| 8 | Variants "3out/0in" and "1out/2in" (section 8) | 2, 4, 22 | TODO: needs room in the PL (slices 100 %) |
+| 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: on the board, started by dzstart.sh (and by debaz.service in the next image); tabs for every daemon area; signed-mixer controls 2026-11-02 |
+| 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DOING: crops in software (`/disp/<d>/crop`, fixed 7680-byte pitch), frame-synced display VDMAs (build fs); video wall from a 1600x1200@30 input with 800x600 quarters WORKS 2026-10-28; open: the rest of section 9 |
+| 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | DOING: Oct 28 image on the bench card; recipe debaz-sw (software in the image, debaz.service) built 2026-11-01 in the sandbox (~/dz-sandbox on the build machine), NOT on a card and older than the Nov 2 software; open: a new image with the Nov 2 software and bitstreams, partitions, read-only root, fonts in the image |
+| 12 | Audio, PL_KEY I2C/SPI/UART, fan-port I/O, PL resources, 1080p (section 11, User I/O) | 2 | DOING: HDMI audio, ALSA, pl_io, fan I/O, PWM, events done; open: PL_KEY4/5 give no events (fitted? mapping?), the S2 button vs the PS7 pull-up, DDR read priority (HPR) for 1080p60, MIDI/DMX/RS485 on an add-on board |
+| 21 | HDMI_1: align its own video and the feedback copy of HDMI_0 (~6 px apart since mixer rev 26; one sync delay cannot align both) (section 17) | 22 | TODO: the fix (pix_delay before colorGainFeedback1/Din0 + a 4-bit sync delay, branch capture-reset 17062880) does not place yet |
+| 22 | Room in the PL: a real saving before new logic (slices 100 %) (section 14) | — | TODO: candidates in section 14 (dz_osc2 / hdmi_audio_regs control sets, ...). NOT the mixer word-only write patch (failed 4 times, user 2026-11-02) |
+| 23 | Fleet: 2-12+ units on a LAN, network control, time sync (Fleet, FLEET.md) | 6, 11 | TODO: design only |
+| | **Done** | | |
 | 0 | **URGENT: reserved memory** (`PetaLinux/dtb/README.md`): 16 MB was too small; 128 MB is rejected by the kernel; 96 MB DTB installed | reboot | DONE, verified 2026-10-24: iomem hole, /dev/fb0, 6 usable slots, capture in slot 4, movie into slot 3 without corruption |
-| 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO |
+| 1 | HDMI input hot-plug: find the cause (section 1) | hardware | DONE (2026-10-19) |
+| 2 | Export the Vivado project to Tcl, rebuild it, compare | — | DONE (2026-10-25): Tcl build tested on hardware (outputs, capture, 117/117 register fields, GPIO, ethernet); legacy `Vivado/`, `Vitis/` and SDR folders removed (branch `legacy-vivado-project`) |
 | 5 | C code: no Vitis, plain Makefiles in `sw/` | — | DONE (2026-10-19, `sw/README.md`) |
-| 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | DOING: debazd runs on the board (fields, routing, capture status, events, drawing) |
 | 7 | Test the OSC drawing layer against the daemon | 6 | DONE: painter, sprites, text, transforms, LFOs, 60 fps flipbook/strobe (2026-10-24, `sw/README.md`) |
-| 8 | Variants "3out/0in" and "1out/2in" | 2, 4 | TODO |
-| 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: runs on the board, tested with live registers 2026-10-24; media upload/download/delete tested 2026-10-24; not in the boot script yet |
-| 10 | Display views: crop, pan, zoom, split of live input or a movie (section 9) | 2 (gateware) | DOING: crops in software (`/disp/<d>/crop`, fixed 7680-byte pitch), frame-synced display VDMAs (build fs); video wall from a 1600x1200@30 input (CVT-RB EDID, build edid2) with 800x600 quarters WORKS 2026-10-28 |
-| 11 | SD card image: partitions, packages, sw deploy, read-only root (section 10) | 4 | DOING (2026-10-28): full userland beside BusyBox, passwordless sudo, journald runtime cap, ALSA card + alsa-utils, per-card MAC/hostname at first boot (debaz-firstboot, in the config, not built yet); open: partitions, sw in the image, read-only root |
-| 12 | Audio (HDMI out/in, I2S), PL_KEY I2C/SPI/UART, fan-port I/O, PL resource recovery, 1080p buffers (section 11) | 2 | ANALYSIS (2026-10-26) |
-| 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DOING: matrix tested on the board 2026-10-26; key bitstream loaded on the bench board 2026-10-26, picture check pending (`sw/tools/keytest.sh`) |
-| 14 | HDMI audio out (HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | WORKS on hardware 2026-10-26 (branch hdmi-audio, artifacts/..._20261026_audio): out, in, loop; 2026-10-27: HDMI_0 also hdmi_tx (own TX0_CTRL + audio source), simulated, built, not yet on hardware; open: software HPD; 1080p60 still needs the effects-chain pipelining (hdmi_tx itself: 10 ns) |
-| 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | WORKS (2026-10-28): in the image, binds at boot; aplay/arecord/speaker-test/amixer/alsactl tested on HDMI 0/1, HDMI 2 In, I2S; open: dmix/softvol asound.conf, HDMI-mode control |
-| 16 | DDS pattern engine `dz_osc2`: sequencer, raster sync, shapes, AWG, own sine, one AXI port for both DDS (section 14) | 2 | RTL + testbench DONE, both channels (2026-10-29, ALL PASS; OOC 1361 LUT / 1508 FF / 2.5 BRAM tiles / 0 DSP / +0.71 ns; net vs the old parts ~+1130 LUT, ~+860 FF, -12.5 BRAM tiles); step before it DONE: GPIO consolidation `dz_regs` ON THE BOARD 2026-10-29 (build regs3, tested); BD integration DONE + bench-tested 2026-10-29 (build osc: bars, checkerboard; slices 100 %, FCLK2 -0.017 ns: closure runs); next: timing, software presets |
-| 17 | Cues, scenes, shows: snapshot / recall of the state with transitions, OSC-driven (section 15) | 16 | DOING: step 1 DONE 2026-10-30 (trans.c: field ramps in the frame tick, /fx/xfade, /trans/field; host-tested); next: field flags, LFO getter, cJSON, cues |
+| 13 | Mixer video functions: colour matrix (hue, map) and RGB colour key (section 12) | 2 | DONE: matrix on the board 2026-10-26, key WORKS 2026-10-28; signed matrix -> task 19 |
+| 14 | HDMI audio out (HDMI_0, HDMI_1) + in (HDMI_2), 48 kHz 16 bit (section 11) | 2 | DONE: out, in, loop on hardware 2026-10-26; HDMI_0 audio out by ear 2026-11-02 (build _gpclk); HDMI_2 hot-plug control works (2026-10-28); 1080p60 not planned (OSERDES limit, DDR bandwidth) |
+| 15 | Linux ALSA card DEBAZ (driver debaz-audio, section 13) | 14 | DONE (WORKS 2026-10-28): in the image, binds at boot; open: dmix/softvol asound.conf, an HDMI-mode control |
+| 16 | DDS pattern engine `dz_osc2` (section 14) | 2 | DONE: on the board 2026-10-29 (build osc); GPIO consolidation dz_regs (build regs3); audio scope, FFT source, skew (2026-11-01/02) |
+| 17 | Cues, scenes, shows (section 15) | 16 | DONE: steps 1-5 on the board (2026-10-30 .. 11-01: trans.c, state.c, cue.c, show folders, web Cues tab); later (step 6): audio volume, saved surfaces, generated cues, several units |
 | 18 | Image sequences: a folder of frames out of a display, variable fps, stop-motion controls (section 16) | 6, 11 | WORKS on the board 2026-11-01: anim.c player (both displays at once), frame save from the web (Paint tab), Media tab player card, mkmedia -A, onion skin, 1000-frame test, web folder upload |
-| 19 | Signed mixer gains: mode 1 with signed operands (A - B, centre, signed DDS), mode 5 signed constant, exact hue / saturation (section 17) | 12 | WORKS on the board 2026-11-02 (branch signed-mixer, build smix4_ExtraTimingOpt): mode 5 + `/fx/signed` hue checked by eye, web UI; mode 1 untimed (17 ns) until task 20 |
-| 20 | Global pixel clock for the fabric (MMCM CLKOUT1 on a BUFG; OSERDES stay on BUFIO/BUFR behind a FIFO in hdmi_tx): ends the X1Y1 lock of ~6000 loads (section 17) | 19 | WORKS on the board 2026-11-02 (build _gpclk); merged into signed-mixer; branch dsp-pipe: mode 1 + colour matrix in DSP48 registers, ALL TIMING MET at 108 MHz (not yet on the board); branch capture-reset: capture AXI reset off the output LOCKED (not placed yet) |
+| 19 | Signed mixer gains: mode 1 with signed operands (A - B, centre, signed DDS), mode 5 signed constant, exact hue / saturation (section 17) | 12 | DONE: on the board 2026-11-02 (_smix, then _dsp): mode 5 + /fx/signed, mode 1 DIFF by eye, web UI |
+| 20 | Global pixel clock + mode 1 and colour matrix in DSP48 registers (section 17) | 19 | DONE: on the board 2026-11-02 as _dsp (branch dsp-pipe): ALL TIMING MET at 108 MHz, all 9 output modes, capture, HDMI_0 audio; open -> tasks 21, 22 |
 
 Reason for this order: a PetaLinux rebuild is expensive. All BD changes
 that change the XSA (task 3) must be complete before task 4. Task 2 comes
@@ -135,135 +167,6 @@ are enough for menu + mode on one unit, but not to manage 12 units.
   a PL load, ethernet, DDR, both outputs, capture with `capstat.sh`,
   all 6 buttons, and the P1 lines. Record the MAC and the result.
 
-## 1. HDMI input hot-plug
-
-### Symptom
-
-The first capture after JTAG flash + init works. After unplug and replug,
-the capture shows one frame and then freezes. On 2026-10-19 the capture
-recovered without any action 45-60 s after the replug.
-
-### Measurements (2026-10-19, `sw/tools/capstat.sh -w 250`)
-
-- Healthy capture: `pL=1 aL=1`, frames arrive, DMASR = `0x0001D910`
-  (IntErr EOLEarly SOFLate EOLLate ErrIrq, all latched), `Halted=0`.
-- Unplugged: `pL=0 aL=0`, no frames, SOFEarly also latched. VDMA does
-  not halt.
-- After recovery: frames arrive again with the same latched errors.
-
-Conclusions:
-
-- The capture VDMA has `c_flush_on_fsync=1`. Its latched errors are NOT
-  fatal, and the VDMA resyncs on the next SOF. The comment in
-  `CaptureInitialize` that calls IntErr fatal is wrong for this
-  configuration. Its `errMask` also labels bit 11 as SOFEarly; bit 11 is
-  SOFLate (SOFEarly is bit 7).
-- The VDMA is not the cause.
-
-Second run (2026-10-19, source = ELMO presenter, DVI, hardware switch
-720p/SXGA, set to 720p):
-
-- Unplug 01:11:37, replug 01:11:42: `pL=1 aL=1` at once.
-- Frames start again at 01:11:59: 17 s with lock but no frames.
-- 17 s = one full alignment sweep (10 bitslips x 32 taps x 50 ms).
-  CAUSE FOUND: dvi2rgb `kBlankTimeoutMs = 50` in
-  `IP_dvi2rgb/src/DVI_Constants.vhd`. Fix: 50 -> 2 (sweep 16 s -> 0.64 s).
-  No BD/address/PS change, so no PetaLinux rebuild. Rebuild with
-  `hw/repackage_ip.tcl IP_dvi2rgb`, then `hw/build.tcl <variant> build`.
-- After a W1C clear of DMASR, EOLEarly, SOFLate and EOLLate latch again
-  in each frame: the ELMO frame is not exactly 1280x720 (line lengths
-  vary, more than 720 lines). The VDMA flushes and resyncs in each frame,
-  so the picture is correct. The daemon must measure the real frame.
-- FIX VERIFIED (2026-10-19, bitstream `debaz4205_wrapper_20261019_dvi2ms.bit` + `.bit.bin`, now in `artifacts/`):
-  10 replugs with the ELMO, including fast replugs and contact bounces.
-  In all of them, frames start in the same 250 ms sample as `pL=1`.
-  The BD changes below are no longer necessary for hot-plug. They are
-  still useful for robustness (no capture reset from the output clock,
-  HPD control for EDID re-read, alignment status bits).
-- SXGA (1280x1024 at 108 MHz) is a possible capture mode: same width,
-  MMCM VCO 1080 MHz (in range with kClkRange=2), fits in one slot.
-
-### Findings in the RTL and the netlist
-
-- `v_vid_in_axi4s_0.vid_io_in_reset` is tied to `1'b0`. The video side of
-  the input FIFO never gets a reset.
-- All capture resets come from `axi_dynclk_0/LOCKED_O` (the OUTPUT pixel
-  clock lock): dvi2rgb `aRst_n` and `pRst_n`, vid_in `aresetn`, capture
-  VDMA `axi_resetn`, `axi_interconnect_1`, `axis_subset_converter_0`.
-  Thus an output mode change resets the capture VDMA, possibly during a
-  write (AFI-wedge risk, see CLAUDE.md). An input loss resets nothing in
-  this group.
-- `pLocked` is only the dvi2rgb MMCM lock. It does not show if the three
-  data channels are aligned. `pL=1` with no frames is possible.
-- dvi2rgb alignment (`TMDS_Decoder.vhd` + `PhaseAlign.vhd`): when a
-  channel cannot align, it does a bitslip and starts again. Each failed
-  blank search waits up to `kBlankTimeoutMs = 50` ms. One full sweep =
-  32 taps x 10 bitslips x 50 ms = approx. 16 s. Thus 45-60 s = approx.
-  3 failed sweeps. This occurs if the source sends unstable data, or data
-  with no blank of 128 control tokens, after the replug.
-- HPD_2 is a PL output (pin R18), driven by an `xlconstant`. Software
-  control of HPD needs only a gateware change. PCB v2 does not change.
-- hdmi2.elf has no recovery code. It calls `CaptureInitialize` one time.
-
-### Next measurements
-
-1. Run `capstat.sh -w 250` without a stop, from before the unplug to
-   after the recovery. Record when `pL`/`aL` come back and when
-   `frm`/`pix` start again.
-   - `pL`/`aL` come back late: the source starts late, or the MMCM
-     relocks late.
-   - `pL=1` early, but frames start late: dvi2rgb alignment sweeps
-     (most probable).
-2. Record which source is used, and if its output is DVI or HDMI mode.
-   HDMI mode puts data islands into the blanking, so control-token runs
-   are shorter.
-3. Optional and risky: change the output mode with hdmi2. This pulses
-   dynclk LOCKED, which resets all of dvi2rgb and the capture path. If
-   the capture comes back at once, a reset fixes the problem. Risk: this
-   also resets the capture VDMA. Do it only while the capture is idle
-   (frozen). The worst result is a reboot.
-
-### Robustness BD changes (task 3, not urgent)
-
-- Add one AXI GPIO for capture control, at a NEW address (an addition
-  only; the address contract stays). Output bits: dvi2rgb `pRst`
-  (restart alignment), capture-path reset, HPD_2.
-- Connect `vid_io_in_reset` to NOT `pLocked`.
-- Disconnect the capture-path resets from the dynclk lock. Use a
-  `proc_sys_reset` and the new GPIO bit.
-- Send the decoder status to the spare GPIO ch1 bits [31:15] at
-  0x4120_0000 (bits [5:0] are the user GPIO, see "User I/O"):
-  `pRdy[2:0]`, `pVld[2:0]`, alignment error. This needs new
-  ports in the local `IP_dvi2rgb` fork.
-- Later, in the daemon: when `pL=1` and there are no frames for more than
-  200 ms, pulse `pRst`. If that does not help, pulse HPD, so that the
-  source reads the EDID again and restarts its output.
-
-## 2. Vivado project as Tcl
-
-Status 2026-10-19: scripts done (`hw/export_bd.tcl`, `hw/build.tcl`,
-`hw/README.md`). The BD netlist from the Tcl is identical to the live one,
-except the K17/E19 GPIO lines moved from bits [7:6] to [5:4]. Full build:
-same utilization and same timing character as the live impl_2. Export
-round trip is clean. Open: hardware test of
-`build/ebaz4205_2out1in/ebaz4205_2out1in_20261019.bit`. Notes below are the original plan.
-
-- Use `write_bd_tcl` for the BD. Write `build.tcl` to create the project,
-  set the IP repo paths, add the module-ref RTL (`div16_8_recip`,
-  `dds_axi_interface`) and the XDC, source the BD Tcl, run synth/impl,
-  and write the `.bit`, `.bit.bin` and `.xsa`.
-- IP sources to include: `ip_repo/mixer_1_0`, `IP_rgb2dvi`,
-  `IP_axi_dynclk`, `IP_dvi2rgb`, and the external Digilent
-  vivado-library dependency (commit `d70ab01c`; see
-  `vivado-library-dvi2rgb.patch`).
-- Rebuild in a NEW directory. Do not touch `Vivado/`. Compare the
-  generated `ebaz4205.v`, the utilization and the timing with the current
-  build.
-- One BD Tcl per variant, with a shared XDC and per-variant XDC parts.
-- Run Vivado with `vivado -mode batch` (the GUI Tcl console can wedge).
-- In the same build, generate `hw_map.h` from `get_bd_addr_segs`. This
-  makes the address map one source of truth for C code and scripts.
-
 ## 4. PetaLinux rebuild (one time)
 
 - New BOOT.BIN from the new XSA. This removes the FCLK3 SLCR poke.
@@ -289,35 +192,6 @@ round trip is clean. Open: hardware test of
   `ebaz4205_2out1in_20261025`, hardware-tested), so ethernet always comes
   up; FPGA_MANAGER option stays OFF (it would drop the bitstream from
   BOOT.BIN). XSA imported 2026-10-25: the new FSBL sets FCLK3 = 200 MHz.
-
-## 5. C code without Vitis
-
-DONE 2026-10-19 (see `sw/README.md`): `sw/Makefile` builds debazd, dzctl,
-libdz, fbfeed and hdmi2 with the Vitis gcc (no project, no BSP). hdmi2 has
-the same symbols as the Vitis build. Host self test: `make -C sw test`.
-VS Code remote gdb: `sw/tools/vscode/`. Open: replace `xparameters.h` in
-hdmi2 with `hw_map.h`; split hdmi2 bring-up into a library for debazd.
-Original plan below.
-
-- Build all Linux applications with plain Makefiles in `sw/`, as
-  `sw/oscreg` does. Compiler:
-  `/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/arm-linux-gnueabihf-gcc`.
-- Move hdmi2 from `Vitis/hdmi2` (and jerkspace) to `sw/hdmi2`. Split the
-  setup code (dynclk MMCM tables, VTC, VDMA start order) into a library
-  that the daemon can use.
-- Replace `xparameters.h` and the hand-copied addresses with the
-  generated `hw_map.h`.
-- Live debugging without Eclipse: `gdbserver` and `gdb` are on the
-  target, and the toolchain has `arm-linux-gnueabihf-gdb`. On the target:
-  `sudo gdbserver :2345 ./hdmi2.elf`. On the laptop: a VS Code
-  `launch.json` (cppdbg, `miDebuggerPath` = the toolchain gdb,
-  `miDebuggerServerAddress` = the target link-local address + `:2345`).
-  Build with `-g -O0` for debugging.
-- Put the target-side scripts in the repo: `nudebaz.sh`, `onlySetup.sh`,
-  `dumpPhase.sh`, `updownPhase.sh`, `wigglePhase.sh`, `wompPhase.sh`,
-  `wumpPhase.sh`, `wMem.sh` (now only in `/home/ebaz`).
-- Vitis is necessary only if we want a baremetal application. PetaLinux
-  builds the FSBL.
 
 ## 6. Hardware daemon
 
@@ -917,6 +791,166 @@ i2cdetect -y 0` with a sensor; `/io/pin 2 txd; /io/pin 3 rxd` + a loop wire,
   only a few surfaces can be active at once (transforms double that).
 - Video timing at 1080p60 (148.5 MHz) is a separate gateware item: the
   effects chain needs a register after each multiplier/adder (section 8).
+
+# Finished work
+
+## 1. HDMI input hot-plug
+
+### Symptom
+
+The first capture after JTAG flash + init works. After unplug and replug,
+the capture shows one frame and then freezes. On 2026-10-19 the capture
+recovered without any action 45-60 s after the replug.
+
+### Measurements (2026-10-19, `sw/tools/capstat.sh -w 250`)
+
+- Healthy capture: `pL=1 aL=1`, frames arrive, DMASR = `0x0001D910`
+  (IntErr EOLEarly SOFLate EOLLate ErrIrq, all latched), `Halted=0`.
+- Unplugged: `pL=0 aL=0`, no frames, SOFEarly also latched. VDMA does
+  not halt.
+- After recovery: frames arrive again with the same latched errors.
+
+Conclusions:
+
+- The capture VDMA has `c_flush_on_fsync=1`. Its latched errors are NOT
+  fatal, and the VDMA resyncs on the next SOF. The comment in
+  `CaptureInitialize` that calls IntErr fatal is wrong for this
+  configuration. Its `errMask` also labels bit 11 as SOFEarly; bit 11 is
+  SOFLate (SOFEarly is bit 7).
+- The VDMA is not the cause.
+
+Second run (2026-10-19, source = ELMO presenter, DVI, hardware switch
+720p/SXGA, set to 720p):
+
+- Unplug 01:11:37, replug 01:11:42: `pL=1 aL=1` at once.
+- Frames start again at 01:11:59: 17 s with lock but no frames.
+- 17 s = one full alignment sweep (10 bitslips x 32 taps x 50 ms).
+  CAUSE FOUND: dvi2rgb `kBlankTimeoutMs = 50` in
+  `IP_dvi2rgb/src/DVI_Constants.vhd`. Fix: 50 -> 2 (sweep 16 s -> 0.64 s).
+  No BD/address/PS change, so no PetaLinux rebuild. Rebuild with
+  `hw/repackage_ip.tcl IP_dvi2rgb`, then `hw/build.tcl <variant> build`.
+- After a W1C clear of DMASR, EOLEarly, SOFLate and EOLLate latch again
+  in each frame: the ELMO frame is not exactly 1280x720 (line lengths
+  vary, more than 720 lines). The VDMA flushes and resyncs in each frame,
+  so the picture is correct. The daemon must measure the real frame.
+- FIX VERIFIED (2026-10-19, bitstream `debaz4205_wrapper_20261019_dvi2ms.bit` + `.bit.bin`, now in `artifacts/`):
+  10 replugs with the ELMO, including fast replugs and contact bounces.
+  In all of them, frames start in the same 250 ms sample as `pL=1`.
+  The BD changes below are no longer necessary for hot-plug. They are
+  still useful for robustness (no capture reset from the output clock,
+  HPD control for EDID re-read, alignment status bits).
+- SXGA (1280x1024 at 108 MHz) is a possible capture mode: same width,
+  MMCM VCO 1080 MHz (in range with kClkRange=2), fits in one slot.
+
+### Findings in the RTL and the netlist
+
+- `v_vid_in_axi4s_0.vid_io_in_reset` is tied to `1'b0`. The video side of
+  the input FIFO never gets a reset.
+- All capture resets come from `axi_dynclk_0/LOCKED_O` (the OUTPUT pixel
+  clock lock): dvi2rgb `aRst_n` and `pRst_n`, vid_in `aresetn`, capture
+  VDMA `axi_resetn`, `axi_interconnect_1`, `axis_subset_converter_0`.
+  Thus an output mode change resets the capture VDMA, possibly during a
+  write (AFI-wedge risk, see CLAUDE.md). An input loss resets nothing in
+  this group.
+- `pLocked` is only the dvi2rgb MMCM lock. It does not show if the three
+  data channels are aligned. `pL=1` with no frames is possible.
+- dvi2rgb alignment (`TMDS_Decoder.vhd` + `PhaseAlign.vhd`): when a
+  channel cannot align, it does a bitslip and starts again. Each failed
+  blank search waits up to `kBlankTimeoutMs = 50` ms. One full sweep =
+  32 taps x 10 bitslips x 50 ms = approx. 16 s. Thus 45-60 s = approx.
+  3 failed sweeps. This occurs if the source sends unstable data, or data
+  with no blank of 128 control tokens, after the replug.
+- HPD_2 is a PL output (pin R18), driven by an `xlconstant`. Software
+  control of HPD needs only a gateware change. PCB v2 does not change.
+- hdmi2.elf has no recovery code. It calls `CaptureInitialize` one time.
+
+### Next measurements
+
+1. Run `capstat.sh -w 250` without a stop, from before the unplug to
+   after the recovery. Record when `pL`/`aL` come back and when
+   `frm`/`pix` start again.
+   - `pL`/`aL` come back late: the source starts late, or the MMCM
+     relocks late.
+   - `pL=1` early, but frames start late: dvi2rgb alignment sweeps
+     (most probable).
+2. Record which source is used, and if its output is DVI or HDMI mode.
+   HDMI mode puts data islands into the blanking, so control-token runs
+   are shorter.
+3. Optional and risky: change the output mode with hdmi2. This pulses
+   dynclk LOCKED, which resets all of dvi2rgb and the capture path. If
+   the capture comes back at once, a reset fixes the problem. Risk: this
+   also resets the capture VDMA. Do it only while the capture is idle
+   (frozen). The worst result is a reboot.
+
+### Robustness BD changes (task 3, not urgent)
+
+- Add one AXI GPIO for capture control, at a NEW address (an addition
+  only; the address contract stays). Output bits: dvi2rgb `pRst`
+  (restart alignment), capture-path reset, HPD_2.
+- Connect `vid_io_in_reset` to NOT `pLocked`.
+- Disconnect the capture-path resets from the dynclk lock. Use a
+  `proc_sys_reset` and the new GPIO bit.
+- Send the decoder status to the spare GPIO ch1 bits [31:15] at
+  0x4120_0000 (bits [5:0] are the user GPIO, see "User I/O"):
+  `pRdy[2:0]`, `pVld[2:0]`, alignment error. This needs new
+  ports in the local `IP_dvi2rgb` fork.
+- Later, in the daemon: when `pL=1` and there are no frames for more than
+  200 ms, pulse `pRst`. If that does not help, pulse HPD, so that the
+  source reads the EDID again and restarts its output.
+
+## 2. Vivado project as Tcl
+
+Status 2026-10-19: scripts done (`hw/export_bd.tcl`, `hw/build.tcl`,
+`hw/README.md`). The BD netlist from the Tcl is identical to the live one,
+except the K17/E19 GPIO lines moved from bits [7:6] to [5:4]. Full build:
+same utilization and same timing character as the live impl_2. Export
+round trip is clean. Open: hardware test of
+`build/ebaz4205_2out1in/ebaz4205_2out1in_20261019.bit`. Notes below are the original plan.
+
+- Use `write_bd_tcl` for the BD. Write `build.tcl` to create the project,
+  set the IP repo paths, add the module-ref RTL (`div16_8_recip`,
+  `dds_axi_interface`) and the XDC, source the BD Tcl, run synth/impl,
+  and write the `.bit`, `.bit.bin` and `.xsa`.
+- IP sources to include: `ip_repo/mixer_1_0`, `IP_rgb2dvi`,
+  `IP_axi_dynclk`, `IP_dvi2rgb`, and the external Digilent
+  vivado-library dependency (commit `d70ab01c`; see
+  `vivado-library-dvi2rgb.patch`).
+- Rebuild in a NEW directory. Do not touch `Vivado/`. Compare the
+  generated `ebaz4205.v`, the utilization and the timing with the current
+  build.
+- One BD Tcl per variant, with a shared XDC and per-variant XDC parts.
+- Run Vivado with `vivado -mode batch` (the GUI Tcl console can wedge).
+- In the same build, generate `hw_map.h` from `get_bd_addr_segs`. This
+  makes the address map one source of truth for C code and scripts.
+
+## 5. C code without Vitis
+
+DONE 2026-10-19 (see `sw/README.md`): `sw/Makefile` builds debazd, dzctl,
+libdz, fbfeed and hdmi2 with the Vitis gcc (no project, no BSP). hdmi2 has
+the same symbols as the Vitis build. Host self test: `make -C sw test`.
+VS Code remote gdb: `sw/tools/vscode/`. Open: replace `xparameters.h` in
+hdmi2 with `hw_map.h`; split hdmi2 bring-up into a library for debazd.
+Original plan below.
+
+- Build all Linux applications with plain Makefiles in `sw/`, as
+  `sw/oscreg` does. Compiler:
+  `/home/aescape/Xilinx/Vitis/2022.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/arm-linux-gnueabihf-gcc`.
+- Move hdmi2 from `Vitis/hdmi2` (and jerkspace) to `sw/hdmi2`. Split the
+  setup code (dynclk MMCM tables, VTC, VDMA start order) into a library
+  that the daemon can use.
+- Replace `xparameters.h` and the hand-copied addresses with the
+  generated `hw_map.h`.
+- Live debugging without Eclipse: `gdbserver` and `gdb` are on the
+  target, and the toolchain has `arm-linux-gnueabihf-gdb`. On the target:
+  `sudo gdbserver :2345 ./hdmi2.elf`. On the laptop: a VS Code
+  `launch.json` (cppdbg, `miDebuggerPath` = the toolchain gdb,
+  `miDebuggerServerAddress` = the target link-local address + `:2345`).
+  Build with `-g -O0` for debugging.
+- Put the target-side scripts in the repo: `nudebaz.sh`, `onlySetup.sh`,
+  `dumpPhase.sh`, `updownPhase.sh`, `wigglePhase.sh`, `wompPhase.sh`,
+  `wumpPhase.sh`, `wMem.sh` (now only in `/home/ebaz`).
+- Vitis is necessary only if we want a baremetal application. PetaLinux
+  builds the FSBL.
 
 ## 12. Mixer video functions (2026-10-26)
 
