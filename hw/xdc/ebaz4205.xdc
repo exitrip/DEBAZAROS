@@ -192,15 +192,10 @@ set_max_delay -datapath_only -from $dynclk_div -to [get_clocks dynclk_pxl] 9.0
 ## register (GPIO gains, mixer and VTC settings), and the HDMI_0 DDS quotient
 ## (FCLK0) into the mixer is a known untimed crossing (value glitches only).
 set_clock_groups -asynchronous -group [get_clocks clk_fpga_0] -group [get_clocks -include_generated_clocks {dynclk_ser dynclk_pxl}]
-## Mixer mode 1 (coreRevision 25): shared input registers -> one
-## combinational 5-DSP48 group (mixer_mac5) -> register. Routed it is ~17 ns
-## (build smix4, 2026-11-02): it does not meet 720p60 either, and DSP48
-## internal registers are not possible on the regional (BUFR) pixel clock.
-## So, as before, mode 1 is NOT supported and untimed; no setting uses it.
-## (A set_max_delay on gen_chan[*].hc_reg[*] matched nothing: brackets in a
-## -filter pattern are a character class.) With the global pixel clock
-## (branch global-pclk) the MAC can use the DSP48 registers.
-set_false_path -through [get_pins -of_objects [get_cells -hier -filter {NAME =~ *mixerMatrix/mixer_0/* && REF_NAME =~ DSP48*}] -filter {DIRECTION == OUT}]
+## Mixer mode 1 and the colour matrix (coreRevision 26, 2026-11-02): systolic
+## DSP48 MACs with their own registers (possible with the global pixel
+## clock), timed for the 108 MHz above like everything else. (Until revision
+## 25 mode 1 was combinational, ~17 ns, and false-pathed here.)
 
 ## fsync_gen (2026-10-28): VTC vsync (pixel clock) into a 2-FF synchronizer
 ## in FCLK2 (display VDMA frame sync)

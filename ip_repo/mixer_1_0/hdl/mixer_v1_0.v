@@ -8,6 +8,10 @@
         parameter integer IN_WIDTH	= 32,
         parameter integer IN_NUM	= 8,
         parameter integer OUT_NUM   = 9,
+        // 1 = the colour matrix is computed here, pipelined (coreRevision
+        // 26, global pixel clock): bg_in is not used; 0 = bg_in (the BD's
+        // colorGainMatrix) as before
+        parameter integer MATRIX_INT = 1,
 		// User parameters ends
 		// Do not modify the parameters beyond this line
 
@@ -222,39 +226,49 @@
 
     reg [OUT_WIDTH-1 : 0] dout_r [0:OUT_NUM-1];
 
-    // Mode 1 (coreRevision 25, 2026-11-02): pipelined MAC with signed
-    // operands. dout = (sum of gain_k x x_k) mod 2^24, as before; only gain
-    // bits [23:0] count, as before, so a gain word is in effect a 24-bit
-    // two's complement number: a negative gain subtracts. The colour matrix
-    // keeps the same mod 2^24 sum, so a negative gain plane wraps there, as
-    // a row sum over 1.0 does (follow the gateware: wrap where it wraps).
-    // Pipeline (variant V2, smaller): shared input registers -> one
-    // combinational DSP48 group of 5 taps (mixer_mac5, kept as hierarchy so
-    // that no register goes INTO a DSP48) -> one register -> dout. Timed for
-    // 74.25 MHz (XDC set_max_delay), not 108. A DSP48 with an internal register is a load of the regional
-    // pixel clock (BUFR) and must sit in clock region X1Y1, which has 20
-    // DSP48 sites, all but 3 used (build smix, placer error 30-657).
-    // Latency din -> dout: 3 pixel clocks (the other modes: 1).
+    // Mode 1 (coreRevision 26, 2026-11-02, global pixel clock): signed
+    // operands, dout = (sum of gain_k x x_k) mod 2^24 as before: only gain
+    // bits [23:0] count, so a gain word is a 24-bit two's complement number
+    // and a negative gain subtracts. The colour matrix keeps the same mod
+    // 2^24 sum: negative results wrap, as a row sum over 1.0 does.
+    // Systolic MAC, one DSP48 per tap with its own registers (B = operand,
+    // P = sum; A = the gain, quasi-static from the AXI clock): tap k takes
+    // its operand k clocks later, so the shared inputs are delayed by k here.
+    // Possible only with the global pixel clock (axi_dynclk revision 3): on
+    // the regional BUFR clock a DSP48 with registers had to sit in clock
+    // region X1Y1 (20 sites). Latency din -> dout: 8 pixel clocks (the other
+    // modes: 1).
     // Operands, CTRL_1 per channel (all 0 = the old mode 1, bit for bit):
     //   taps 0-2 = R, B, G lane of stream A or B ([0]), or
     //     [3] DIFF   A - B (-255..255): with a delayed stream B = an edge /
     //                comb filter (the BRAM delay, 0x4121_0000 ch2 [29:16])
     //     [4] CENTRE the selected stream - 128 (-128..127; not with DIFF)
     //   taps 3, 4 = din3, din4 (DDS), [5] DSIGN = two's complement
-    // Mode 5 (new): dout = GAIN_chan_0 [23:0], a signed constant (Q8.16:
-    // 0x010000 = 1.0, 0xFF0000 = -1.0); mode 4 K stays unsigned 16 bit.
-    reg [7:0]        pa [0:2], pb [0:2];	// stream A / B lanes
-    reg signed [8:0] pd [0:2];		// A - B
-    reg [15:0]       p3, p4;			// din3, din4
-    integer l;
+    // Mode 5: dout = GAIN_chan_0 [23:0], a signed constant (Q8.16: 0x010000
+    // = 1.0, 0xFF0000 = -1.0); mode 4 K stays unsigned 16 bit.
+    localparam integer TAPS = 5;
+    reg [7:0]        pa [0:2][0:TAPS-1];	// stream A lane l, delayed 1 + j clocks
+    reg [7:0]        pb [0:2][0:TAPS-1];
+    reg signed [8:0] pd [0:2][0:TAPS-1];	// A - B
+    reg [15:0]       p3 [0:TAPS-1], p4 [0:TAPS-1];	// din3, din4
+    integer l, j;
     always @(posedge pix_clk) begin
       for (l = 0; l < 3; l = l + 1) begin
-        pa[l] <= pixA[l][7:0];
-        pb[l] <= pixB[l][7:0];
-        pd[l] <= $signed({1'b0, pixA[l][7:0]}) - $signed({1'b0, pixB[l][7:0]});
+        pa[l][0] <= pixA[l][7:0];
+        pb[l][0] <= pixB[l][7:0];
+        pd[l][0] <= $signed({1'b0, pixA[l][7:0]}) - $signed({1'b0, pixB[l][7:0]});
+        for (j = 1; j < TAPS; j = j + 1) begin
+          pa[l][j] <= pa[l][j-1];
+          pb[l][j] <= pb[l][j-1];
+          pd[l][j] <= pd[l][j-1];
+        end
       end
-      p3 <= din3[15:0];
-      p4 <= din4[15:0];
+      p3[0] <= din3[15:0];
+      p4[0] <= din4[15:0];
+      for (j = 1; j < TAPS; j = j + 1) begin
+        p3[j] <= p3[j-1];
+        p4[j] <= p4[j-1];
+      end
     end
 
     genvar i;
@@ -271,27 +285,25 @@
         assign key_band[i] = (klo <= khi) ? (cmp >= klo && cmp <= khi)
                                           : (cmp >= klo || cmp <= khi);
 
-        // mode 1 operands and the two partial sums (registered here, in
-        // the fabric); "- 128" of an 8-bit value = its MSB inverted, signed
+        // mode 1: operand of tap k from the inputs delayed k clocks
+        // ("- 128" of an 8-bit value = its MSB inverted, signed), then the
+        // systolic sum (DSP48 B register, P register, PCIN cascade)
         wire diff = ctrl[i][1][3], centre = ctrl[i][1][4], dsign = ctrl[i][1][5];
-        wire signed [17:0] x [0:4];
-        genvar t;
-        for (t = 0; t < 3; t = t + 1) begin : gen_x
-          wire [7:0] v = sel ? pb[t] : pa[t];
-          assign x[t] = diff   ? {{9{pd[t][8]}}, pd[t]} :
-                        centre ? {{10{~v[7]}}, ~v[7], v[6:0]} :
-                                 {10'd0, v};
+        reg signed [17:0] x [0:TAPS-1];
+        reg signed [23:0] s [0:TAPS-1];	// signed: else x would be zero-extended
+        integer t;
+        always @(posedge pix_clk) begin
+          for (t = 0; t < 3; t = t + 1)
+            x[t] <= diff   ? {{9{pd[t][t][8]}}, pd[t][t]} :
+                    centre ? {{10{~(sel ? pb[t][t][7] : pa[t][t][7])}}, ~(sel ? pb[t][t][7] : pa[t][t][7]),
+                              (sel ? pb[t][t][6:0] : pa[t][t][6:0])} :
+                             {10'd0, sel ? pb[t][t] : pa[t][t]};
+          x[3] <= dsign ? {{2{p3[3][15]}}, p3[3]} : {2'b00, p3[3]};
+          x[4] <= dsign ? {{2{p4[4][15]}}, p4[4]} : {2'b00, p4[4]};
+          s[0] <= $signed(gains[i][0][24:0]) * x[0];
+          for (t = 1; t < TAPS; t = t + 1)
+            s[t] <= s[t-1] + $signed(gains[i][t][24:0]) * x[t];
         end
-        assign x[3] = dsign ? {{2{p3[15]}}, p3} : {2'b00, p3};
-        assign x[4] = dsign ? {{2{p4[15]}}, p4} : {2'b00, p4};
-        wire [23:0] mc;
-        (* keep_hierarchy = "yes" *)
-        mixer_mac5 mac (.g0(gains[i][0][24:0]), .g1(gains[i][1][24:0]), .g2(gains[i][2][24:0]),
-                        .g3(gains[i][3][24:0]), .g4(gains[i][4][24:0]),
-                        .x0(x[0]), .x1(x[1]), .x2(x[2]), .x3(x[3]), .x4(x[4]), .p(mc));
-        reg [23:0] hc;
-        always @(posedge pix_clk)
-          hc <= mc;
 
         always @(posedge pix_clk)
         begin
@@ -299,7 +311,7 @@
             8'h0:
               dout_r[i] <= 0;
             8'h1:
-              dout_r[i] <= hc;
+              dout_r[i] <= s[TAPS-1];
             8'h5:
               dout_r[i] <= gains[i][0][23:0];
             8'h3:
@@ -351,19 +363,50 @@
                                      : {din0[7:0], din1[7:0], din2[7:0]};
     wire keyed = (|key_join) & ((&(key_band | ~key_join)) ^ ctrl[0][0][8]);
     reg [23:0] pix_r;
-    always @(posedge pix_clk)
-      pix_r <= keyed ? fill : bg_in;
+    generate
+      if (MATRIX_INT) begin : g_matrix
+        // The colour matrix (coreRevision 26): the BD's colorGainMatrix,
+        // bit for bit. Per output lane the sum of 3 products (pixel lane, 8
+        // bit unsigned, x gain dout, 24 bit) mod 2^24, the lane = [23:16]:
+        //   [23:16] = R d0 + G d2 + B d1   [15:8] = R d3 + G d4 + B d5
+        //   [7:0]   = R d6 + G d7 + B d8   (R = vid_in[23:16], G = [7:0], B = [15:8])
+        // Systolic, 3 DSP48 per lane (A = gain, B = pixel, P cascade): tap k
+        // (R, G, B) takes pixel and gain k clocks later. Latency 4: the key
+        // (mask and fill) is delayed by 4 as well, so pix_out = 5 clocks
+        // after vid_in / dout (bg_in path: 1). The BD's colorGainMatrix then
+        // has no load and is removed by synthesis.
+        reg [7:0]  r1, g1, g2, b1, b2, b3;
+        reg [23:0] ga [0:2], gb1 [0:2], gb2 [0:2], gc1 [0:2], gc2 [0:2], gc3 [0:2];
+        reg [23:0] q0 [0:2], q1 [0:2], q2 [0:2];
+        reg [3:0]  kd;
+        reg [23:0] fd [0:3];
+        wire [23:0] dA [0:2], dB [0:2], dC [0:2];	// per lane: gains of R, G, B
+        assign dA[0] = dout_r[0]; assign dB[0] = dout_r[2]; assign dC[0] = dout_r[1];
+        assign dA[1] = dout_r[3]; assign dB[1] = dout_r[4]; assign dC[1] = dout_r[5];
+        assign dA[2] = dout_r[6]; assign dB[2] = dout_r[7]; assign dC[2] = dout_r[8];
+        integer m;
+        always @(posedge pix_clk) begin
+          r1 <= vid_in[23:16];
+          g1 <= vid_in[7:0];  g2 <= g1;
+          b1 <= vid_in[15:8]; b2 <= b1; b3 <= b2;
+          for (m = 0; m < 3; m = m + 1) begin
+            ga[m]  <= dA[m];
+            gb1[m] <= dB[m]; gb2[m] <= gb1[m];
+            gc1[m] <= dC[m]; gc2[m] <= gc1[m]; gc3[m] <= gc2[m];
+            q0[m] <= ga[m] * r1;
+            q1[m] <= q0[m] + gb2[m] * g2;
+            q2[m] <= q1[m] + gc3[m] * b3;
+          end
+          kd <= {kd[2:0], keyed};
+          fd[0] <= fill; fd[1] <= fd[0]; fd[2] <= fd[1]; fd[3] <= fd[2];
+          pix_r <= kd[3] ? fd[3] : {q2[0][23:16], q2[1][23:16], q2[2][23:16]};
+        end
+      end else begin : g_bg
+        always @(posedge pix_clk)
+          pix_r <= keyed ? fill : bg_in;
+      end
+    endgenerate
     assign pix_out = pix_r;
 
   	// User logic ends
 	endmodule
-
-// Combinational signed MACs of mode 1 (mod 2^24): no registers, so the
-// DSP48s are not loads of the regional pixel clock (see mixer_v1_0).
-module mixer_mac5 (
-    input  wire signed [24:0] g0, g1, g2, g3, g4,
-    input  wire signed [17:0] x0, x1, x2, x3, x4,
-    output wire        [23:0] p);
-    wire signed [42:0] s = g0 * x0 + g1 * x1 + g2 * x2 + g3 * x3 + g4 * x4;
-    assign p = s[23:0];
-endmodule
