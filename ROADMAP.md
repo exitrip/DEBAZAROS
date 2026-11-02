@@ -2047,6 +2047,9 @@ Vivado), so a stopping input alone does not issue half bursts.
 - be15b5a6: packet FIFO out again, the own reset kept: "failed to commit
   all instances" with ExtraTimingOpt and AltSpreadLogic_high although the
   logic equals dsp-pipe (the reset nets change the control sets).
+  ExtraPostPlacementOpt placed: FCLK0 −0.010 (1), FCLK2 −0.111 (1), pixel
+  +0.004 (build capr_ExtraPostPlacementOpt, the candidate for the capture
+  test); Explore: FCLK0 −0.032, FCLK2 −0.405; EarlyBlockPlacement: no place.
 - A recovery for an already stuck burst would be an own AXI shim before
   HP1 that completes outstanding W beats with WSTRB = 0 (AXI Firewall
   guards against a hanging slave, not an aborting master).
