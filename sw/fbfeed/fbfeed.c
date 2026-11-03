@@ -92,6 +92,7 @@ static uint8_t *fx_prev;		/* the last output frame (i420) */
 static int    fx_valid;
 static int    ctl_fd = -1;
 static const char *ctl_path;
+static const char *stat_path;		/* -S: one line per second for debazd */
 
 static void fx_set(int mode, double v)
 {
@@ -192,6 +193,27 @@ static const uint8_t *fx_frame(const uint8_t *in, int w, int h)
 		py[i] = (uint8_t)(iy[i] > d ? iy[i] : d);
 	}
 	return fx_prev;
+}
+
+/* -S file (2026-11-02, debazd /movie/<s>/stats): "frames N fps F ms M" =
+ * frames written, frames per second and the mean time per frame spent
+ * here (conversion + effects + write) over the last second. Written as
+ * file.tmp + rename, so a reader never sees half a line. */
+static void stat_write(unsigned long frames, double fps, double ms)
+{
+	char tmp[256], line[96];
+	int fd, n;
+
+	if (!stat_path)
+		return;
+	snprintf(tmp, sizeof(tmp), "%s.tmp", stat_path);
+	n = snprintf(line, sizeof(line), "frames %lu fps %.2f ms %.2f\n", frames, fps, ms);
+	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return;
+	if (write(fd, line, (size_t)n) == n)
+		rename(tmp, stat_path);
+	close(fd);
 }
 
 /* Read exactly len bytes.  Returns 0 on EOF, 1 on success, -1 on error. */
@@ -389,6 +411,7 @@ static void usage(const char *me)
 "  -T, --trails D      -y: trails, luma = max(new, old * D), D 0..1\n"
 "  -G, --ghost K       -y: ghost, frame = old * K + new * (1 - K)\n"
 "  -L, --ctl FIFO      control FIFO (made here): trails D | ghost K | off\n"
+"  -S, --stats FILE    each second: frames N fps F ms M (time per frame here)\n"
 "      --selftest      check the YUV converter (NEON vs C) and exit\n"
 "      --help          this text\n",
 		me, DEF_DEV, DEF_ADDR, DEF_WIDTH, DEF_HEIGHT);
@@ -423,13 +446,14 @@ int main(int argc, char **argv)
 		{ "trails",  required_argument, NULL, 'T' },
 		{ "ghost",   required_argument, NULL, 'G' },
 		{ "ctl",     required_argument, NULL, 'L' },
+		{ "stats",   required_argument, NULL, 'S' },
 		{ "selftest", no_argument,      NULL, 2   },
 		{ "help",    no_argument,       NULL, 1   },
 		{ 0, 0, 0, 0 }
 	};
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "d:a:o:w:h:s:c:vfym:T:G:L:", lopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "d:a:o:w:h:s:c:vfym:T:G:L:S:", lopts, NULL)) != -1) {
 		switch (opt) {
 		case 'd': dev = optarg; break;
 		case 'a': addr = strtoul(optarg, NULL, 0); break;
@@ -445,6 +469,7 @@ int main(int argc, char **argv)
 		case 'T': fx_set(1, atof(optarg)); break;
 		case 'G': fx_set(2, atof(optarg)); break;
 		case 'L': ctl_path = optarg; break;
+		case 'S': stat_path = optarg; break;
 		case 2:   return yuv_selftest();
 		case 1:   usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
@@ -552,8 +577,8 @@ int main(int argc, char **argv)
 	sigaction(SIGTERM, &sa, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
-	unsigned long frames = 0;
-	double t0 = now_s();
+	unsigned long frames = 0, st_frames = 0;
+	double t0 = now_s(), st_t0 = t0, st_busy = 0;
 	int rc = 0;
 
 	while (!stop) {
@@ -571,6 +596,8 @@ int main(int argc, char **argv)
 			rc = 1;
 			break;
 		}
+
+		double tb = now_s();
 
 		/* Sequential writes: best case for write-combining. */
 		if (yuv) {
@@ -592,6 +619,21 @@ int main(int argc, char **argv)
 		 */
 		__sync_synchronize();
 
+		if (stat_path) {
+			double t = now_s();
+
+			st_busy += t - tb;
+			st_frames++;
+			if (t - st_t0 >= 1.0) {
+				static unsigned long total;
+
+				total += st_frames;
+				stat_write(total, st_frames / (t - st_t0), st_busy / st_frames * 1e3);
+				st_t0 = t;
+				st_frames = 0;
+				st_busy = 0;
+			}
+		}
 		if (verbose && ++frames % 30 == 0) {
 			/* MB/s below = bytes written to the slot */
 			double t = now_s(), dt = t - t0;
@@ -609,6 +651,8 @@ int main(int argc, char **argv)
 	free(fx_prev);
 	if (ctl_path && ctl_fd >= 0)
 		unlink(ctl_path);
+	if (stat_path)
+		unlink(stat_path);
 	munmap(map, map_len);
 	close(fd);
 	return rc;

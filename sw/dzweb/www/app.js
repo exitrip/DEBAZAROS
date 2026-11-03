@@ -42,7 +42,19 @@ net.on("/event/capture", (m) => {
   chip("st-input", locked ? (frames ? "input live" : "input locked") : "no input",
        locked && frames ? "ok" : locked ? "warn" : "");
 });
-setInterval(() => net.connected() && net.msg("/vsync"), 2000);
+// /stats: debazd CPU, frame ticks per second, the slowest tick / OSC packet of the
+// last second (a slow one blocks every reply: the web app then looks frozen)
+net.on("/stats", (m) => {
+  const [self, total, hz, tickMax, oscMax, load, mem, temp] = m.args;
+  const slow = tickMax > 25 || oscMax > 100 || (hz > 0 && hz < 50);
+  const pct = (v) => (v < 0 ? "…" : `${v.toFixed(0)} %`);
+  chip("st-load", `debazd ${pct(self)}${temp > 0 ? ` · ${temp.toFixed(0)} °C` : ""}`, slow ? "warn" : "ok");
+  $("st-load").title = `debazd CPU ${pct(self)}, all programs ${pct(total)} (200 % = both cores)\n` +
+    `frame ticks ${hz.toFixed(1)}/s, slowest tick ${tickMax.toFixed(1)} ms, slowest OSC packet ${oscMax.toFixed(1)} ms\n` +
+    `load ${load.toFixed(2)}, memory free ${(mem / 1024).toFixed(0)} MB` + (temp > 0 ? `, die ${temp.toFixed(1)} °C` : "") +
+    "\n/stats";
+});
+setInterval(() => net.connected() && net.send(net.bundle(net.message("/vsync"), net.message("/stats"))), 2000);
 
 // ---- errors -> toast ----
 net.on("/error", (m) => toast(m.args.join(": "), true));

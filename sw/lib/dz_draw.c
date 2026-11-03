@@ -12,6 +12,7 @@
 #include "dz_map.h"
 #include "dz_vdma.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -58,6 +59,12 @@ typedef struct {
 	char      mname[100];		/* the movie, for a restart with new filters */
 	float     mfps;
 	int       maudio;
+	struct {			/* /movie/<s>/stats: CPU ticks at the last call */
+		pid_t pid;
+		unsigned long ticks;
+	} cpu_prev[16];
+	int       cpu_n;
+	double    cpu_t;
 } surf_t;
 
 static surf_t surf[DZ_SLOTS];
@@ -1051,6 +1058,14 @@ int dz_draw_movie_stop(int i)
 				snprintf(fp, sizeof(fp), k ? DZ_FFA_CTL : DZ_FFV_CTL, i);
 				unlink(fp);
 			}
+		for (int k = 0; k < 2; k++) {	/* stats files of the old pipeline */
+			char fp[64];
+
+			snprintf(fp, sizeof(fp), k ? DZ_FBFEED_STAT : DZ_MOSH_STAT, i);
+			unlink(fp);
+		}
+		s->cpu_n = 0;
+		s->cpu_t = 0;
 	}
 	if (!s || s->player <= 0)
 		return 0;
@@ -1176,21 +1191,21 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 		 "if [ \"$1\" = mpeg4 ] && [ -x %s ]; then "
 		 "ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -i '%s' "
 		 "-map 0:v:0 -c:v copy -bsf:v dump_extra -f m4v pipe:1 "
-		 "| %s -r \"$r\" -c " DZ_MOSH_CTL " "
+		 "| %s -r \"$r\" -c " DZ_MOSH_CTL " -S " DZ_MOSH_STAT " "
 		 "| ffmpeg -hide_banner -loglevel fatal -use_wallclock_as_timestamps 1 "
 		 "-f m4v -i /dev/fd/3 -vsync passthrough "
 		 "-vf '%s%sscale=%d:%d:flags=fast_bilinear' -pix_fmt yuv420p -f rawvideo pipe:1 "
 		 "3<&0 0<>" DZ_FFV_CTL " 2>/dev/null "
-		 "| %s -y %s -w %d -h %d -s %u%s%s; "
+		 "| %s -y %s -w %d -h %d -s %u -S " DZ_FBFEED_STAT "%s%s; "
 		 "else "
 		 "ffmpeg -hide_banner -loglevel error -stream_loop -1 -re "
 		 "-i '%s' -map 0:v:0 -vf '%s%sscale=%d:%d:flags=fast_bilinear' -pix_fmt yuv420p "
 		 "-f rawvideo pipe:1 0<>" DZ_FFV_CTL " 2>/dev/null "
-		 "| %s -y %s -w %d -h %d -s %u%s%s; fi",
-		 path, DZ_DZMOSH, path, DZ_DZMOSH, i,
-		 cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+		 "| %s -y %s -w %d -h %d -s %u -S " DZ_FBFEED_STAT "%s%s; fi",
+		 path, DZ_DZMOSH, path, DZ_DZMOSH, i, i,
+		 cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride, i,
 		 movie_verbose ? " -v" : "", fxo,
-		 path, cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride,
+		 path, cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride, i,
 		 movie_verbose ? " -v" : "", fxo);
 	pid = dz_spawn(cmd, 0);
 	if (!pid)
@@ -1524,6 +1539,137 @@ void dz_draw_movie_memfx_get(int i, float *trails, float *ghost)
 {
 	*trails = i >= 0 && i < DZ_SLOTS ? surf[i].trails : 0;
 	*ghost = i >= 0 && i < DZ_SLOTS ? surf[i].ghost : 0;
+}
+
+/* ---- /movie/<s>/stats (2026-11-02) ---- */
+
+/* a stats file line of fbfeed / dzmosh; "" when missing or older than 2.5 s
+ * (the program waits: no input) */
+static int stat_line(const char *fmt, int i, char *buf, size_t n)
+{
+	char fp[64];
+	struct stat sb;
+	struct timespec now;
+	FILE *f;
+
+	snprintf(fp, sizeof(fp), fmt, i);
+	buf[0] = 0;
+	if (stat(fp, &sb) < 0)
+		return 0;
+	clock_gettime(CLOCK_REALTIME, &now);
+	if (now.tv_sec - sb.st_mtim.tv_sec > 2)
+		return 0;
+	if (!(f = fopen(fp, "r")))
+		return 0;
+	if (!fgets(buf, (int)n, f))
+		buf[0] = 0;
+	fclose(f);
+	return buf[0] != 0;
+}
+
+/* CPU of the movie's process groups (video pipeline + audio ffmpeg): ticks
+ * since the last call per process, summed per program name */
+static void movie_cpu(surf_t *s, dz_movie_stats *st)
+{
+	struct { char name[16]; unsigned long d; } by[8];
+	int nby = 0, n = 0;
+	unsigned long total = 0;
+	__typeof__(s->cpu_prev[0]) cur[16];
+	struct timespec ts;
+	double t, dt;
+	DIR *dp = opendir("/proc");
+	struct dirent *e;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	t = ts.tv_sec + ts.tv_nsec / 1e9;
+	dt = s->cpu_t > 0 ? t - s->cpu_t : 0;
+	st->cpu = -1;
+	st->procs[0] = 0;
+	if (!dp)
+		return;
+	while ((e = readdir(dp)) && n < 16) {
+		char fp[64], line[512], name[16], *rp;
+		long pgrp;
+		unsigned long ut, stt, d = 0;
+		FILE *f;
+		pid_t pid = (pid_t)atoi(e->d_name);
+
+		if (pid <= 0)
+			continue;
+		snprintf(fp, sizeof(fp), "/proc/%d/stat", (int)pid);
+		if (!(f = fopen(fp, "r")))
+			continue;
+		rp = fgets(line, sizeof(line), f) ? strrchr(line, ')') : NULL;
+		fclose(f);
+		/* after "pid (comm)": state ppid pgrp session tty tpgid flags
+		 * minflt cminflt majflt cmajflt utime stime */
+		if (!rp || sscanf(rp + 2, "%*c %*d %ld %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu",
+				  &pgrp, &ut, &stt) != 3)
+			continue;
+		if (pgrp != s->player && !(s->aplayer > 0 && pgrp == s->aplayer))
+			continue;
+		cur[n].pid = pid;
+		cur[n].ticks = ut + stt;
+		for (int k = 0; k < s->cpu_n; k++)
+			if (s->cpu_prev[k].pid == pid)
+				d = cur[n].ticks - s->cpu_prev[k].ticks;
+		n++;
+		if (pgrp == s->aplayer)
+			snprintf(name, sizeof(name), "audio");
+		else {
+			char *lp = strchr(line, '(');
+
+			snprintf(name, sizeof(name), "%.*s", lp ? (int)(rp - lp - 1) : 0, lp ? lp + 1 : "");
+		}
+		if (!strcmp(name, "sh"))
+			continue;	/* the pipeline's shell: waits only */
+		int k;
+		for (k = 0; k < nby && strcmp(by[k].name, name); k++)
+			;
+		if (k == nby && nby < 8) {
+			snprintf(by[nby].name, sizeof(by[0].name), "%s", name);
+			by[nby++].d = 0;
+		}
+		if (k < nby)
+			by[k].d += d;
+		total += d;
+	}
+	closedir(dp);
+	memcpy(s->cpu_prev, cur, sizeof(cur[0]) * (size_t)n);
+	s->cpu_n = n;
+	s->cpu_t = t;
+	if (dt < 0.2 || dt > 30)
+		return;		/* first call, or too long ago: no useful rate */
+	double hz = (double)sysconf(_SC_CLK_TCK);
+
+	st->cpu = (float)(total / hz / dt * 100.0);
+	for (int k = 0; k < nby; k++) {
+		size_t l = strlen(st->procs);
+
+		snprintf(st->procs + l, sizeof(st->procs) - l, "%s%s %.0f", l ? " " : "",
+			 by[k].name, by[k].d / hz / dt * 100.0);
+	}
+}
+
+int dz_draw_movie_stats(int i, dz_movie_stats *st)
+{
+	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
+	char line[200];
+
+	memset(st, 0, sizeof(*st));
+	st->cpu = -1;
+	if (!s || !(st->running = dz_draw_movie_running(i)))
+		return 0;
+	if (stat_line(DZ_FBFEED_STAT, i, line, sizeof(line)))
+		sscanf(line, "frames %lu fps %f ms %f", &st->frames, &st->fps, &st->ms);
+	if (stat_line(DZ_MOSH_STAT, i, line, sizeof(line)))
+		st->mosh = sscanf(line, "in %lu out %lu dropI %lu bloom %lu flips %lu late %lu fps %f",
+				  &st->in, &st->out, &st->drop_i, &st->bloom, &st->flips,
+				  &st->late, &st->mosh_fps) == 7;
+	movie_cpu(s, st);
+	st->queued = s->cqn[0] + s->cqn[1];
+	st->cap = s->mfps;
+	return 1;
 }
 
 /* the dzmosh state as last sent; returns 1 while a movie plays */

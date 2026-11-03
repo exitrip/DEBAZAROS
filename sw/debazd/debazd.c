@@ -14,6 +14,8 @@
  *
  * OSC interface (replies go to the sender's address and port):
  *   /ping                         -> /pong
+ *   /stats                        -> load, main-loop times, CPU, temperature
+ *                                    (stats.c)
  *   /info                         -> /info s:variant i:fields i:slots i:usable
  *                                    s:hostname s:mac  (usable = slots inside
  *                                    reserved memory; dzctl -s broadcasts it)
@@ -515,7 +517,7 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
-	if (react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || anim_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
+	if (stats_dispatch(m) || react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || anim_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
 	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
@@ -567,6 +569,17 @@ static void handle(dz_msg *m, void *ctx)
 		if (!hits && m->n == 0 && sscanf(m->path, "/movie/%d/%n", &sl, &off) == 1 &&
 		    (!strcmp(m->path + off, "vf") || !strcmp(m->path + off, "af"))) {
 			reply(m->path, "s", m->path[off] == 'v' ? dz_draw_movie_vf(sl) : dz_draw_movie_af(sl));
+			return;
+		}
+		off = 0;
+		off = 0;
+		if (!hits && sscanf(m->path, "/movie/%d/stats%n", &sl, &off) == 1 && !m->path[off]) {
+			dz_movie_stats st;
+
+			dz_draw_movie_stats(sl, &st);
+			reply(m->path, "iffifsiiiiiiifif", st.running, st.fps, st.ms, (int)st.frames,
+			      st.cpu, st.procs, st.mosh, (int)st.in, (int)st.out, (int)st.drop_i,
+			      (int)st.bloom, (int)st.flips, (int)st.late, st.mosh_fps, st.queued, st.cap);
 			return;
 		}
 		off = 0;
@@ -901,6 +914,8 @@ int main(int argc, char **argv)
 			uint64_t k;
 
 			if (read(pfd[1].fd, &k, sizeof(k)) == sizeof(k)) {
+				double t0 = stats_now();
+
 				t = now_ms();
 				trans_tick((t - last_tick) / 1000.0);	/* before the LFOs: they win */
 				cue_tick((t - last_tick) / 1000.0);
@@ -910,10 +925,13 @@ int main(int argc, char **argv)
 				ascii_tick();
 				anim_tick();
 				dz_draw_movie_tick();
+				stats_tick(stats_now() - t0);
 				last_tick = t;
 				next_tick = t + 50;	/* fallback if vsync stops */
 			}
 		} else if (now_ms() >= next_tick) {
+			double t0 = stats_now();
+
 			t = now_ms();
 			trans_tick((t - last_tick) / 1000.0);	/* before the LFOs: they win */
 			cue_tick((t - last_tick) / 1000.0);
@@ -923,6 +941,7 @@ int main(int argc, char **argv)
 			ascii_tick();
 			anim_tick();
 			dz_draw_movie_tick();
+			stats_tick(stats_now() - t0);
 			last_tick = t;
 			next_tick = t + (disp_vsync_ok() ? 50 : 16);
 		}
@@ -933,10 +952,13 @@ int main(int argc, char **argv)
 					     (struct sockaddr *)&cur_from, &fl);
 
 			if (n > 0) {
+				double t0 = stats_now();
+
 				batching = 1;	/* its replies as bundles */
 				dz_osc_walk(buf, (size_t)n, handle, NULL);
 				bun_flush();
 				batching = 0;
+				stats_osc(stats_now() - t0);
 			}
 		}
 		if (now_ms() >= next) {

@@ -17,6 +17,7 @@ const cfg = store.get("wall", { cols: 2, rows: 2, mode: "pan", speed: 4, hop: 30
 const geom = { mw: 1280, mh: 720, hz: 0, name: "", iw: 0, ih: 0, live: [false, false] }; // output, input, display d shows it
 const CAPTURE_SLOT = 4; // sw/lib/dz_hw.h DZ_SLOT_CAPTURE
 const crop = [[0, 0], [0, 0]];
+const localT = [0, 0]; // when this browser last moved display d's crop (ms)
 let run = null; // { t0, frames, sent, events, last, raf }
 let ui = {};
 
@@ -31,7 +32,10 @@ function setCrop(d, x, y, send = true) {
   x = Math.max(0, Math.min(maxX(d), Math.round(x))) & ~1;
   y = Math.max(0, Math.min(maxY(d), Math.round(y)));
   crop[d] = [x, y];
-  if (send) net.throttled(`/disp/${d}/crop`, () => net.message(`/disp/${d}/crop`, x, y));
+  if (send) {
+    localT[d] = Date.now();
+    net.throttled(`/disp/${d}/crop`, () => net.message(`/disp/${d}/crop`, x, y));
+  }
   const s = ui.sl?.[d];
   if (s) { s.x.value = x; s.y.value = y; s.out.textContent = `${x}, ${y}`; }
   drawMap();
@@ -282,6 +286,19 @@ export function init(el) {
       h("p.hint", {}, "Counts /event/video during the run (vid_out lock loss / underflow, dynclk lock): " +
         "0 = PASS. The browser sends one crop per display and animation frame (~60/s)."))));
   net.on("/event/mode", () => { if (modeWait) modeWait(); else loadGeom(); });
+  // the sliders follow the board (LFOs, cues, other browsers): poll twice a second
+  // while this tab is open; a crop this browser moved in the last second wins
+  net.on("/disp/", (m) => {
+    const r = /^\/disp\/([01])\/crop$/.exec(m.path);
+    if (!r || m.args.length < 2 || run) return;
+    const d = +r[1];
+    if (Date.now() - localT[d] < 1000) return;
+    if (m.args[0] !== crop[d][0] || m.args[1] !== crop[d][1]) setCrop(d, m.args[0], m.args[1], false);
+  });
+  setInterval(() => {
+    if (run || document.hidden || !root.classList.contains("active") || !net.connected()) return;
+    net.send(net.bundle(net.message("/disp/0/crop"), net.message("/disp/1/crop")));
+  }, 500);
   net.on("/event/video", (m) => {
     if (!run) return;
     run.events++;

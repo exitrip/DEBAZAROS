@@ -346,6 +346,10 @@ check movie-fx      "/movie/0/fx 0 0 0 0 0"                 q /movie/0/fx
 check ascii-mode    "\"braille\""                           q /ascii/1/mode braille
 check ascii-once    "/ascii/1/status 0 0"                   q /ascii/1/once 0
 check ascii-bad     "mode: ascii shade"                     q /ascii/1/mode nosuch
+check ascii-stop    "/ascii/1/status 0 0"                   q /ascii/1/stop
+check ascii-cols    "/ascii/1/status 0 0 40"                q /ascii/1/cols 40
+check stats         "/stats"                                q /stats
+check movie-stats   "/movie/5/stats 0"                      q /movie/5/stats
 check hue-set       "/fx/matrix"                            q /fx/hue 120 0.5
 q /fx/hue/deg 90 >/dev/null
 check hue-gainkeep  "/fx/hue 90 0.5"                        q /fx/hue

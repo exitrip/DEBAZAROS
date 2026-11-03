@@ -15,6 +15,7 @@ const corruptOf = (v) => ((v / 100) ** 2) * 0.01;
 const sliderOf = (p) => Math.round(Math.sqrt(p / 0.01) * 100);
 
 export function moshCard(slot) {
+  statsSlot = slot;
   const p = () => `/movie/${slot()}`;
   const st = h("span.hint", {}, "");
   const tog = (label, title, send) => {
@@ -38,6 +39,7 @@ export function moshCard(slot) {
     cval.textContent = v.toPrecision(2);
     net.throttled(`${p()}/corrupt`, () => net.message(`${p()}/corrupt`, net.float(v)));
   };
+  const stats = h("span.hint", { title: "/movie/<s>/stats, once per second while this tab is open" }, "");
   const pause = tog("Pause", "hold the picture and the movie's audio\n/movie/<s>/pause 1 | 0",
     (on) => net.msg(`${p()}/pause`, on ? 1 : 0));
   const clear = h("button", { title: "all off", onclick: () => {
@@ -113,6 +115,19 @@ export function moshCard(slot) {
       sel.value = name;
       return;
     }
+    const q = /^\/movie\/(\d+)\/stats$/.exec(m.path);
+    if (q && +q[1] === +slot()) {
+      const [run, fps, ms, , cpu, procs, mosh, , , dropI, bl, flips, late, mfps, queued, cap] = m.args;
+      if (!run) { stats.textContent = ""; return; }
+      const parts = [fps > 0 ? `${fps.toFixed(1)} fps shown${cap > 0 ? ` (cap ${cap})` : ""}, ${ms.toFixed(1)} ms per frame in fbfeed`
+        : "no new frames for 2 s (paused, or the decoder waits)"];
+      parts.push(`CPU ${cpu < 0 ? "…" : `${cpu.toFixed(0)} %`}${procs ? ` (${procs})` : ""}`);
+      if (mosh) parts.push(`dzmosh ${mfps.toFixed(1)} fps, behind ${late}×, key frames dropped ${dropI}, repeats ${bl}, bit flips ${flips}`);
+      if (queued) parts.push(`${queued} live commands waiting`);
+      stats.textContent = parts.join(" · ");
+      stats.classList.toggle("warn-text", late > 0 && mosh && mfps > 0 && fps > 0 && fps < mfps * 0.9);
+      return;
+    }
     const r = /^\/movie\/(\d+)\/fx$/.exec(m.path);
     if (!r || +r[1] !== +slot()) return;
     const [run, mosh, bl, co, pa, tr, gh] = m.args;
@@ -132,12 +147,23 @@ export function moshCard(slot) {
     row("bloom", bloomN, bloom, smear),
     row("corrupt", corrupt, cval),
     row(null, pause, clear, st),
+    row("load", stats),
     row("trails", trails.el, trails.out),
     row("ghost", ghost.el, ghost.out),
     row("video fx", vf, vf.gear, h("label", {}, "audio fx"), af, af.gear),
     h("p.hint", {}, "Works on MPEG-4 Part 2 movies (what mkmedia makes); start the movie first. " +
       "Other codecs answer with an error."));
 }
+
+// the movie's load, once per second while the Media tab is open
+let statsSlot = null, asciiRun = false;
+setInterval(() => {
+  const tab = document.getElementById("tab-media");
+  if (statsSlot === null || document.hidden || !tab?.classList.contains("active") || !net.connected()) return;
+  const sl = statsSlot();
+  net.send(asciiRun ? net.bundle(net.message(`/movie/${sl}/stats`), net.message(`/ascii/${sl}/status`))
+    : net.message(`/movie/${sl}/stats`));
+}, 1000);
 
 export function moshRefresh(slot) {
   net.send(net.bundle(net.message(`/movie/${slot}/fx`), net.message(`/movie/${slot}/vf`),
@@ -187,16 +213,21 @@ export function asciiCard(slot, slotPicker) {
   net.on("/ascii", (m) => {
     const r = /^\/ascii\/(\d+)\/status$/.exec(m.path);
     if (!r || +r[1] !== +slot()) return;
-    const [run, s, c, md, col, f, b, lv, inv, ev, ch, fn, ms, drawn, nch] = m.args;
-    src.value = s; cols.value = c; colsV.textContent = c; mode.value = md; color.value = col;
-    fg.value = hex(f); bg.value = hex(b); level.value = Math.round(lv * 100);
-    invert.checked = !!inv; every.value = ev;
+    const [run, s, c, md, col, f, b, lv, inv, ev, ch, fn, ms, drawn, nch, fps] = m.args;
+    asciiRun = !!run;
+    // the once-per-second poll must not move a control the user holds
+    const put = (el, v, prop = "value") => { if (document.activeElement !== el) el[prop] = v; };
+    put(src, s); put(cols, c); if (document.activeElement !== cols) colsV.textContent = c;
+    put(mode, md); put(color, col); put(fg, hex(f)); put(bg, hex(b)); put(level, Math.round(lv * 100));
+    put(invert, !!inv, "checked"); put(every, ev);
     if (document.activeElement !== chars) chars.value = ch;
     if (fn && ![...font.options].some((o) => o.value === fn)) font.append(h("option", { value: fn }, fn));
     if (document.activeElement !== font) font.value = fn;
     const miss = md === "chars" && nch !== undefined && drawn < nch
       ? ` · ${nch - drawn} of ${nch} characters in no font` : "";
-    st.textContent = `${run ? "running" : "stopped"} · ${ms.toFixed(1)} ms per frame${miss}`;
+    const rate = run && fps !== undefined ? ` · ${fps.toFixed(1)} fps` : "";
+    st.textContent = `${run ? "running" : "stopped"} · ${ms.toFixed(1)} ms per frame${rate}${miss}`;
+    st.classList.toggle("warn-text", run && ms > 25);
   });
 
   fontSel = font;

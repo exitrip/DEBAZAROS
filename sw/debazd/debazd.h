@@ -77,6 +77,12 @@ void cue_tick(double dt);		/* once per frame: cue message ramps, dip */
 
 /* ---- dds.c: dz_osc2 patterns, step table, AWG (fields: dz_fields.c) ---- */
 int  ascii_dispatch(const dz_msg *m);	/* /ascii/<d>/... (ascii.c) */
+
+/* ---- stats.c: /stats (debazd load, main-loop times, CPU, temperature) ---- */
+int    stats_dispatch(const dz_msg *m);
+double stats_now(void);			/* ms, monotonic */
+void   stats_tick(double ms);		/* one frame tick took ms */
+void   stats_osc(double ms);		/* one OSC packet took ms */
 void ascii_tick(void);			/* once per frame */
 
 /* ---- state model (state.c; ROADMAP.md section 15) ----

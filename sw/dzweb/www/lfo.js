@@ -20,6 +20,27 @@ const EXAMPLES = [
   "/disp/1/seq/rate $4",
   "/disp/1/show $5",
 ];
+// target presets for the tools that are not fields (2026-11-02): message templates;
+// <s> = the slot (or display) box next to the menu, $v = this LFO's value ($k int, $fk
+// float); choosing one also sets min / max. Live ffmpeg options act only while that
+// filter runs (/movie/<s>/vf ...).
+const PRESETS = [
+  ["ASCII columns", "/ascii/<s>/cols $v", 4, 320],
+  ["ASCII level (braille / half)", "/ascii/<s>/level $fv", 0, 1],
+  ["ASCII every k frames", "/ascii/<s>/every $v", 1, 10],
+  ["ASCII fg grey", "/ascii/<s>/fg $fv $fv $fv", 0, 1],
+  ["crop x (display <s>)", "/disp/<s>/crop/x $v", 0, 640],
+  ["crop y (display <s>)", "/disp/<s>/crop/y $v", 0, 360],
+  ["movie corrupt (dzmosh)", "/movie/<s>/corrupt $fv", 0, 0.002],
+  ["movie trails (fbfeed)", "/movie/<s>/trails $fv", 0, 0.98],
+  ["movie ghost (fbfeed)", "/movie/<s>/ghost $fv", 0, 0.95],
+  ["live hue (vf hue)", "/movie/<s>/vf/hue/h $fv", 0, 360],
+  ["live hue saturation (vf hue)", "/movie/<s>/vf/hue/s $fv", 0, 3],
+  ["live chromashift (vf chromashift)", "/movie/<s>/vf/chromashift/cbh $v", -40, 40],
+  ["live lagfun decay (vf lagfun)", "/movie/<s>/vf/lagfun/decay $fv", 0.9, 1],
+  ["live audio volume (af volume)", "/movie/<s>/af/volume/volume $fv", 0, 1],
+  ["slot alpha", "/draw/<s>/alpha $fv", 0, 1],
+];
 const DEF = { on: 0, shape: "sine", rate: 1, frames: 0, lo: 0, hi: 1, width: 0.5, curve: 1,
   steps: 0, every: 1, once: 0, phase: 0, target: "", audio: "level", gain: 1, attack: 0, release: 0.15 };
 
@@ -69,8 +90,11 @@ function lfoCard(i) {
       release: "release <s>" }[sendKey] || `${sendKey} <f>`;
     const el = h("input", { type: "number", step, value: c[key], title: `${title}\n/lfo/${i}/${osc}`,
       onchange: () => { c[key] = Number(el.value); apply(i, [sendKey]); } });
+    if (key === "lo") loEl = el;
+    if (key === "hi") hiEl = el;
     return h("label", {}, title, el);
   };
+  let loEl, hiEl;
   const onBtn = h("button", { title: `/lfo/${i}/on <0|1>  (/lfo/${i} -> value on)`, onclick: () => { c.on = c.on ? 0 : 1; paint(); apply(i, ["on"]); } });
   const paint = () => { onBtn.textContent = c.on ? "On" : "Off"; onBtn.classList.toggle("on", !!c.on); };
   paint();
@@ -85,6 +109,21 @@ function lfoCard(i) {
   const target = h("input", { type: "text", value: c.target, list: "lfo-targets",
     title: `/lfo/${i}/target "<field path>" or "<message with $k / $fk>"`,
     placeholder: "/field/path  or  /message a b $0 $f1" });
+  const pslot = h("input", { type: "number", min: 0, max: 11, value: c.pslot ?? 6, style: "width:4em",
+    title: "slot (or display, for the crop) the preset uses" });
+  const preset = h("select", { title: "a target for a tool that is not a field: sets the target and min / max",
+    onchange: () => {
+      const pr = PRESETS[+preset.value];
+      preset.value = "";
+      if (!pr) return;
+      c.pslot = +pslot.value;
+      c.target = pr[1].replaceAll("<s>", String(c.pslot)).replaceAll("$fv", `$f${i}`).replaceAll("$v", `$${i}`);
+      target.value = c.target;
+      [c.lo, c.hi] = [pr[2], pr[3]];
+      loEl.value = c.lo; hiEl.value = c.hi;
+      apply(i, ["range", "target"]);
+    } },
+    h("option", { value: "" }, "preset…"), PRESETS.map(([n], k) => h("option", { value: k }, n)));
   const meter = h("div.meter", {}, h("i"));
   const val = h("span.hint", {}, "–");
   meters[i] = { meter, val };
@@ -111,7 +150,8 @@ function lfoCard(i) {
       h("label.target", {}, "target",
         h("div.row", {}, target,
           h("button.primary", { title: `/lfo/${i}/target "<text>"`, onclick: () => { c.target = target.value.trim(); apply(i, ["target"]); } }, "Set"),
-          h("button", { title: `/lfo/${i}/target  (no argument = no target)`, onclick: () => { c.target = ""; target.value = ""; apply(i, ["target"]); } }, "Clear")))));
+          h("button", { title: `/lfo/${i}/target  (no argument = no target)`, onclick: () => { c.target = ""; target.value = ""; apply(i, ["target"]); } }, "Clear")),
+        h("div.row", {}, preset, h("label", {}, "slot ", pslot)))));
 }
 
 function poll() {

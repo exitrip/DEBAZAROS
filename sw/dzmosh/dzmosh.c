@@ -28,6 +28,11 @@
  *   pause 0|1   1 = send nothing (the decoder holds the last picture)
  *   stats       counters to stderr
  *
+ * -S file (2026-11-02, debazd /movie/<s>/stats): once per second the line
+ * "in N out N dropI N bloom N flips N late N fps F" (late = times the
+ * output fell 0.25 s behind its clock: the decoder is too slow; fps = VOPs
+ * out per second over the last second), as file.tmp + rename.
+ *
  * Build: in sw/ "make" (cross) or "make NATIVE=1".
  */
 
@@ -51,6 +56,7 @@
 
 static volatile sig_atomic_t stop;
 static const char *ctl_path;
+static const char *stat_path;
 
 /* the commands */
 static int    mosh_n;		/* I frames to drop; -1 = all */
@@ -62,7 +68,7 @@ static double period;		/* 1/fps, 0 = no pace */
 static double next_t;
 static int    verbose;
 static uint64_t rng = 0x9E3779B97F4A7C15ull;
-static unsigned long n_in, n_out, n_drop_i, n_bloom, n_flip;
+static unsigned long n_in, n_out, n_drop_i, n_bloom, n_flip, n_late;
 
 static void on_signal(int sig)
 {
@@ -178,6 +184,33 @@ static int ctl_open(const char *path)
 	return 0;
 }
 
+/* ---- stats file (-S) ---- */
+
+static void stat_tick(void)
+{
+	static double t0;
+	static unsigned long out0;
+	double t = now_s();
+	char tmp[256], line[160];
+	int fd, n;
+
+	if (!stat_path || t - t0 < 1.0)
+		return;
+	if (t0 > 0) {
+		snprintf(tmp, sizeof(tmp), "%s.tmp", stat_path);
+		n = snprintf(line, sizeof(line), "in %lu out %lu dropI %lu bloom %lu flips %lu late %lu fps %.2f\n",
+			     n_in, n_out, n_drop_i, n_bloom, n_flip, n_late, (n_out - out0) / (t - t0));
+		fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (fd >= 0) {
+			if (write(fd, line, (size_t)n) == n)
+				rename(tmp, stat_path);
+			close(fd);
+		}
+	}
+	t0 = t;
+	out0 = n_out;
+}
+
 /* ---- output ---- */
 
 static int write_all(const uint8_t *p, size_t n)
@@ -199,12 +232,15 @@ static int write_all(const uint8_t *p, size_t n)
 /* wait for the slot of the next VOP; commands are read while waiting */
 static void pace(void)
 {
+	stat_tick();
 	if (period <= 0) {
 		ctl_poll(0);
 		return;
 	}
 	double t = now_s();
 
+	if (next_t != 0 && t > next_t + 0.25)
+		n_late++;
 	if (next_t == 0 || t > next_t + 0.25)
 		next_t = t;	/* start, or far behind: no burst */
 	while (!stop && t < next_t) {
@@ -252,6 +288,7 @@ static int hold(void)
 {
 	while (!stop && (paused || bloom_n < 0)) {
 		if (paused) {
+			stat_tick();
 			ctl_poll(period > 0 ? (int)(period * 1000) + 1 : 20);
 			next_t = 0;	/* resume: the clock starts again */
 		} else if (lastp_len) {
@@ -312,9 +349,10 @@ static int chunk(const uint8_t *c, size_t n)
 static void usage(void)
 {
 	fprintf(stderr,
-"usage: dzmosh [-r fps] [-c fifo] [-s seed] [-v]   (m4v on stdin -> m4v on stdout)\n"
+"usage: dzmosh [-r fps] [-c fifo] [-S file] [-s seed] [-v]   (m4v on stdin -> m4v on stdout)\n"
 "  -r fps    pace: one frame each 1/fps (\"30000/1001\", \"25\"); 0 = no pace\n"
 "  -c fifo   control FIFO (made here): mosh N | bloom N | corrupt P | pause 0|1 | stats\n"
+"  -S file   counters + fps once per second (debazd /movie/<s>/stats)\n"
 "  -s seed   random seed for corrupt\n"
 "  -v        print the state after each command\n");
 }
@@ -325,7 +363,7 @@ int main(int argc, char **argv)
 	size_t len = 0, start = 0, pos = 0;
 	int o, have = 0;
 
-	while ((o = getopt(argc, argv, "r:c:s:vh")) != -1) {
+	while ((o = getopt(argc, argv, "r:c:S:s:vh")) != -1) {
 		switch (o) {
 		case 'r': {
 			double f = parse_rate(optarg);
@@ -335,6 +373,7 @@ int main(int argc, char **argv)
 			break;
 		}
 		case 'c': if (ctl_open(optarg) < 0) return 1; break;
+		case 'S': stat_path = optarg; break;
 		case 's': rng = strtoull(optarg, NULL, 0) | 1; break;
 		case 'v': verbose = 1; break;
 		default:  usage(); return o == 'h' ? 0 : 2;
@@ -395,5 +434,7 @@ out:
 			n_in, n_out, n_drop_i, n_bloom, n_flip);
 	if (ctl_path)
 		unlink(ctl_path);
+	if (stat_path)
+		unlink(stat_path);
 	return 0;
 }

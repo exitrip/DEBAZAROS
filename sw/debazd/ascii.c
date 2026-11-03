@@ -39,6 +39,8 @@
  *   /ascii/<d>/status            -> /ascii/<d>/status i:run i:src i:cols s:mode
  *                                   i:color i:fg i:bg f:level i:invert i:every
  *                                   s:chars s:font f:ms i:drawn i:chars
+ *                                   f:fps (frames drawn per second; less
+ *                                   than 60 / every when slow frames rest)
  *                                   (drawn = characters of the string that a
  *                                   font has; a cue stores the settings)
  */
@@ -78,6 +80,9 @@ typedef struct {
 	int      nchars, ndrawn;	/* chars mode: string length, glyphs found */
 	int      used;			/* a setting was sent (the state model lists it) */
 	double   next;			/* no draw before this time (ms): see ascii_tick */
+	double   wt0;			/* fps window: start (ms), frames drawn */
+	int      wn;
+	float    fps;
 } asc_t;
 
 static asc_t A[DZ_SLOTS];
@@ -486,8 +491,17 @@ void ascii_tick(void)
 			continue;
 		}
 		int rc = render(d);
+		double t = now_ms();
 
-		a->next = now_ms() + a->ms;
+		a->next = t + a->ms;
+		if (a->wt0 == 0)
+			a->wt0 = t;
+		a->wn++;
+		if (t - a->wt0 >= 1000) {
+			a->fps = (float)(a->wn * 1000.0 / (t - a->wt0));
+			a->wt0 = t;
+			a->wn = 0;
+		}
 		if (rc < 0) {
 			a->run = 0;
 			dzd_log("ascii: slot %d stopped (source %d not readable)\n", d, a->src);
@@ -525,9 +539,12 @@ static void status(int d, const asc_t *a)
 	char p[48];
 
 	snprintf(p, sizeof(p), "/ascii/%d/status", d);
-	dzd_reply(p, "iiisiiifiissfii", a->run, a->src, a->cols, MODE[a->mode], a->color,
+	/* fps: 0 once the run stopped or no frame came for 2 s */
+	float fps = a->run && now_ms() - a->wt0 < 2000 ? a->fps : 0.0f;
+
+	dzd_reply(p, "iiisiiifiissfiif", a->run, a->src, a->cols, MODE[a->mode], a->color,
 		  (int)a->fg, (int)a->bg, a->level, a->invert, a->every, a->chars, a->font, a->ms,
-		  a->ndrawn, a->nchars);
+		  a->ndrawn, a->nchars, fps);
 }
 
 /* the state model (state.c): settings of the slots ever used, then run
@@ -596,8 +613,25 @@ int ascii_dispatch(const dz_msg *m)
 		}
 		a->run = op[0] == 'r';
 		a->cnt = 0;
+		a->wt0 = 0;		/* a new fps window */
+		a->wn = 0;
+		a->fps = 0;
+		a->next = 0;
 	} else if (!strcmp(op, "stop")) {
 		a->run = 0;
+	}
+	/* the settings that change the picture: an unchanged value (an LFO
+	 * sends one each frame) keeps the cell cache, so only changed cells
+	 * are drawn (2026-11-02) */
+	int was_cols = a->cols, was_mode = a->mode, was_color = a->color, was_inv = a->invert;
+	uint32_t was_fg = a->fg, was_bg = a->bg;
+	float was_level = a->level;
+	char was_chars[sizeof(a->chars)], was_font[sizeof(a->font)];
+
+	memcpy(was_chars, a->chars, sizeof(was_chars));
+	memcpy(was_font, a->font, sizeof(was_font));
+	if (!strcmp(op, "once") || !strcmp(op, "run") || !strcmp(op, "stop")) {
+		/* handled above */
 	} else if (strcmp(op, "status") && strcmp(op, "stop") && (a->used = 1, 0)) {
 	} else if (!strcmp(op, "cols") && n >= 1) {
 		a->cols = i0 < 4 ? 4 : i0 > 320 ? 320 : i0;
@@ -635,7 +669,10 @@ int ascii_dispatch(const dz_msg *m)
 		dzd_reply("/error", "ss", "bad arguments (see sw/debazd/ascii.c)", m->path);
 		return 1;
 	}
-	a->ckvalid = 0;		/* a new setting: draw everything */
+	if (a->cols != was_cols || a->mode != was_mode || a->color != was_color ||
+	    a->invert != was_inv || a->fg != was_fg || a->bg != was_bg || a->level != was_level ||
+	    strcmp(a->chars, was_chars) || strcmp(a->font, was_font))
+		a->ckvalid = 0;		/* a new setting: draw everything */
 	status(d, a);
 	return 1;
 }

@@ -76,6 +76,17 @@
  *   /movie/<s>/vf, /af                -> the chain now (debazd)
  *   /movie/<s>/fx                     -> i:running i:mosh i:bloom f:corrupt
  *                                     i:pause f:trails f:ghost (debazd; cues)
+ *   /movie/<s>/stats                  -> i:running f:fps (frames written per
+ *                                     second, fbfeed) f:ms (fbfeed time per
+ *                                     frame) i:frames f:cpu (% of one core,
+ *                                     the whole pipeline + audio; -1 on the
+ *                                     first call) s:procs ("ffmpeg 130
+ *                                     dzmosh 5 fbfeed 30 audio 12") i:mosh
+ *                                     (1 = dzmosh counters follow) i:in
+ *                                     i:out i:dropI i:bloom i:flips i:late
+ *                                     f:mosh_fps i:queued (live filter
+ *                                     commands waiting) f:cap (fps cap, 0 =
+ *                                     the file's rate) (debazd, 2026-11-02)
  *   /surface/<s>/present
  *   /surface/<s>/auto          0|1
  *   /surface/<s>/save          "name"     (the shadow as name.png in DZ_IMG_DIR,
@@ -107,6 +118,8 @@
 #define DZ_FBFEED_CTL	"/tmp/fbfeed.%d"	/* fbfeed's (trails, ghost) */
 #define DZ_FFV_CTL	"/tmp/ffv.%d"		/* decoder ffmpeg's stdin: commands */
 #define DZ_FFA_CTL	"/tmp/ffa.%d"		/* audio ffmpeg's stdin */
+#define DZ_MOSH_STAT	"/tmp/dzmosh.%d.stat"	/* dzmosh -S: one line per second */
+#define DZ_FBFEED_STAT	"/tmp/fbfeed.%d.stat"	/* fbfeed -S */
 #ifndef DZ_FBFEED
 #define DZ_FBFEED	dz_prog("fbfeed")
 #endif
@@ -172,6 +185,19 @@ int  dz_draw_movie_running(int s);	/* reaps a finished player */
 int  dz_draw_movie_ctl(int s, const char *line);	/* to its dzmosh; -1 = none */
 int  dz_draw_movie_pause(int s, int on);
 int  dz_draw_movie_fx(int s, int *mosh, int *bloom, float *corrupt, int *paused);
+typedef struct {			/* /movie/<s>/stats */
+	int           running;
+	float         fps, ms;		/* fbfeed: frames per second, ms per frame */
+	unsigned long frames;
+	float         cpu;		/* % of one core, -1 = no earlier sample */
+	char          procs[96];	/* per program: "ffmpeg 130 dzmosh 5 ..." */
+	int           mosh;		/* the dzmosh counters below are valid */
+	unsigned long in, out, drop_i, bloom, flips, late;
+	float         mosh_fps;
+	int           queued;		/* live filter commands waiting */
+	float         cap;		/* the fps cap of the play command, 0 = none */
+} dz_movie_stats;
+int  dz_draw_movie_stats(int s, dz_movie_stats *st);
 int  dz_draw_movie_filter(int s, int audio, const char *chain);	/* /vf, /af */
 int  dz_draw_movie_memfx(int s, int ghost, float v);	/* /trails, /ghost */
 int  dz_draw_movie_live(int s, int audio, const char *filter, const char *opt, const char *val);
