@@ -945,15 +945,23 @@ int main(int argc, char **argv)
 			last_tick = t;
 			next_tick = t + (disp_vsync_ok() ? 50 : 16);
 		}
+		/* every waiting packet, not one per loop (2026-11-02): after a heavy
+		 * frame tick (ASCII 18 ms) one packet per tick let 60 brush strokes
+		 * a second queue up (OSC round trip 400-700 ms). Bounded: 64
+		 * packets or 8 ms, then the next tick may run. */
 		if (rc > 0 && (pfd[0].revents & POLLIN)) {
-			uint8_t buf[DZ_OSC_MAX_PKT];
-			socklen_t fl = sizeof(cur_from);
-			ssize_t n = recvfrom(sock, buf, sizeof(buf), 0,
-					     (struct sockaddr *)&cur_from, &fl);
+			double tb = stats_now();
 
-			if (n > 0) {
-				double t0 = stats_now();
+			for (int np = 0; np < 64 && stats_now() - tb < 8.0; np++) {
+				uint8_t buf[DZ_OSC_MAX_PKT];
+				socklen_t fl = sizeof(cur_from);
+				ssize_t n = recvfrom(sock, buf, sizeof(buf), np ? MSG_DONTWAIT : 0,
+						     (struct sockaddr *)&cur_from, &fl);
+				double t0;
 
+				if (n <= 0)
+					break;
+				t0 = stats_now();
 				batching = 1;	/* its replies as bundles */
 				dz_osc_walk(buf, (size_t)n, handle, NULL);
 				bun_flush();

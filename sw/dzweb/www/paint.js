@@ -682,6 +682,8 @@ export function init(root) {
         (() => { // rotation, also set by Shift+drag
           rotOut = h("span.hint", {}, String(s.rot));
           rotEl = h("input", { type: "range", min: -180, max: 180, step: 1, value: s.rot,
+            title: "shape rotation in degrees (also Shift+drag): the last argument of\n" +
+              "/draw/<s>/rect|ellipse|polygon|star ... <thickness> <angle>",
             oninput: () => setRot(Number(rotEl.value)) });
           return row("rotation", rotEl, rotOut);
         })(),

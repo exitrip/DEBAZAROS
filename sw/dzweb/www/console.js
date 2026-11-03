@@ -30,7 +30,7 @@ function run(text) {
 export function init(root) {
   history = store.get("history", []);
   log = h("div.log", { role: "log" });
-  input = h("input", { type: "text", placeholder: '/disp/1/show 5   /draw/6/text 255 255 255 10 10 "hi" 2',
+  input = h("input", { type: "text", title: "an OSC message: /address args (Enter sends; Up/Down: history)", placeholder: '/disp/1/show 5   /draw/6/text 255 255 255 10 10 "hi" 2',
     onkeydown: (e) => {
       if (e.key === "Enter") { run(input.value); input.value = ""; }
       else if (e.key === "ArrowUp" && history.length) { hpos = Math.min(hpos + 1, history.length - 1); input.value = history[hpos]; e.preventDefault(); }
@@ -42,7 +42,7 @@ export function init(root) {
     h("div.row", {}, ...quick.map((q) => h("button", { title: `send ${q}`, onclick: () => run(q) }, q)), pause,
       h("button", { onclick: () => log.replaceChildren() }, "Clear")),
     log,
-    h("div.cmd", {}, input, h("button.primary", { onclick: () => { run(input.value); input.value = ""; } }, "Send")),
+    h("div.cmd", {}, input, h("button.primary", { title: "send the typed line as one OSC message (Enter)", onclick: () => { run(input.value); input.value = ""; } }, "Send")),
     h("p.hint", {}, "Numbers with a point are floats, others ints; \"quoted text\" is one string. " +
       "Up/Down: history. /vsync and /lfo polls are hidden."));
   net.onAny((m) => {

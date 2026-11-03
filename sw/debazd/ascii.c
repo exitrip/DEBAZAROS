@@ -295,9 +295,38 @@ static void cell_eval(const asc_t *a, const uint8_t *sp, size_t sstride, int x0,
 	unsigned R[8], G[8], B[8], L[8], sr = 0, sg = 0, sb = 0, sl = 0;
 	/* braille and half use every point; the other modes only the mean:
 	 * 4 points (each column, each row once). The slot is uncached: one
-	 * read costs ~200 ns on the A9 (12 ms for 160 x 45 cells x 8) */
+	 * read costs ~160-200 ns on the A9 (12 ms for 160 x 45 cells x 8).
+	 * Small cells (2026-11-02): one 64-bit read gives two neighbouring
+	 * pixels for the price of one, so a sample pair at the cell's centre
+	 * column replaces the two columns: braille / half 4 reads (was 8),
+	 * the mean 2 reads (cells under 16 px high) or 1 (under 12 px; 220
+	 * columns at 1280 = 5 x 10 px cells: 15840 cells x 4 reads = 10 ms). */
 	int all = a->mode == M_BRAILLE || a->mode == M_HALF, np = all ? 8 : 4;
 
+	if (cw <= 8 && cw >= 2) {
+		int px = x0 + cw / 2 - 1;	/* the pair: px, px + 1 */
+		const uint8_t *col = sp + (size_t)px * 4;
+		int nrow = all ? 4 : ch < 12 ? 1 : 2;
+
+		for (int r = 0; r < nrow; r++) {
+			int sy = all ? y0 + ch * (2 * r + 1) / 8 : y0 + ch * (2 * r + 1) / (2 * nrow);
+			uint64_t v2 = *(const volatile uint64_t *)(col + (size_t)sy * sstride);
+
+			for (int h = 0; h < 2; h++) {
+				uint32_t v = (uint32_t)(v2 >> (32 * h));
+				/* braille / half: point k = 2 x row + column; the mean:
+				 * the points fill k = 0, 1, (2, 3) */
+				int k = 2 * r + h;
+
+				R[k] = (v >> 16) & 255; G[k] = (v >> 8) & 255; B[k] = v & 255;
+				L[k] = (2 * R[k] + 5 * G[k] + B[k]) >> 3;
+				if (a->invert)
+					L[k] = 255 - L[k];
+				sr += R[k]; sg += G[k]; sb += B[k]; sl += L[k];
+			}
+		}
+		np = 2 * nrow;
+	} else
 	for (int j = 0; j < np; j++) {	/* 2 x 4 sample points */
 		int k = all ? j : (int[]){ 0, 3, 4, 7 }[j];
 		int sx = x0 + cw * (2 * (k & 1) + 1) / 4;
@@ -479,9 +508,12 @@ void ascii_tick(void)
 
 		if (!a->run || ++a->cnt < a->every)
 			continue;
-		/* a slow frame (alpha on the target, many columns) blocks OSC
-		 * while it draws: rest as long as it took, so the main loop
-		 * keeps at least half of its time */
+		/* a long frame (over 2 frame times: alpha on the target, many
+		 * columns) blocks OSC while it draws: rest as long as it took,
+		 * so the main loop keeps at least half of its time. Shorter
+		 * frames do not rest (2026-11-02: a rest after every frame made
+		 * an 18 ms frame run at 20 fps instead of ~50); the main loop
+		 * reads all waiting OSC packets after each tick instead */
 		if (now_ms() < a->next)
 			continue;
 		a->cnt = 0;
@@ -493,7 +525,7 @@ void ascii_tick(void)
 		int rc = render(d);
 		double t = now_ms();
 
-		a->next = t + a->ms;
+		a->next = a->ms > 33 ? t + a->ms : 0;	/* only a long frame rests */
 		if (a->wt0 == 0)
 			a->wt0 = t;
 		a->wn++;

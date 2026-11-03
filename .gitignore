@@ -68,3 +68,6 @@ build-*/
 
 # mkmedia.sh output (converted media for the board)
 board-media/
+
+#now the python
+__pycache__

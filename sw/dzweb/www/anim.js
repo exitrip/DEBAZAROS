@@ -120,8 +120,8 @@ function uploadPanel() {
   const name = h("input", { type: "text", placeholder: "folder name", style: "width:150px",
     title: "folder in /media/debaz/anim (A-Z a-z 0-9 . _ -); a chosen folder fills it in" });
   const clean = (n) => n.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 90);
-  const conv = h("input", { type: "checkbox", checked: st.convert, onchange: () => { st.convert = conv.checked; keep(); } });
-  const ren = h("input", { type: "checkbox", checked: st.rename, onchange: () => { st.rename = ren.checked; keep(); } });
+  const conv = h("input", { type: "checkbox", checked: st.convert, title: "this browser converts the pictures before the upload (no OSC)", onchange: () => { st.convert = conv.checked; keep(); } });
+  const ren = h("input", { type: "checkbox", checked: st.rename, title: "this browser renames the files in order before the upload (no OSC)", onchange: () => { st.rename = ren.checked; keep(); } });
   const qOut = h("span.hint", {}, String(st.q));
   const q = h("input.big-range", { type: "range", min: 40, max: 100, value: st.q, style: "width:110px",
     title: "JPEG quality of the converted frames", oninput: () => { st.q = +q.value; qOut.textContent = st.q; keep(); } });
@@ -287,7 +287,8 @@ export async function openSheet(folder, onSaved) {
     title: "# fps: the rate when /play gives none", onchange: () => { fps = +fpsIn.value || 12; sum(); } });
   const summary = h("span.hint", {}, "");
   const list = h("div.sheet-list", {});
-  const txt = h("textarea.sheet-raw", { spellcheck: false, rows: 18, style: "display:none" });
+  const txt = h("textarea.sheet-raw", { spellcheck: false, rows: 18, style: "display:none",
+    title: "timing.txt as text; Save sends it in parts: /anim/sheet/put <folder> <k> <last 0|1> \"<text>\"" });
   const thumb = (file) => h("img", { loading: "lazy", alt: "", src: `${net.httpBase()}/media/anim/${encodeURIComponent(folder)}/${encodeURIComponent(file)}` });
   const sum = () => {
     const frames = rows.reduce((a, r) => a + r.hold, 0);

@@ -110,8 +110,9 @@ export function decode(buf) {
       else if (t === "F") args.push(false);
       else break;
     }
+    return [{ path, args, tags: tags.slice(1) }];
   }
-  return [{ path, args }];
+  return [{ path, args, tags: "" }];
 }
 
 // Parse a typed command line: /path 1 0.5 "text with spaces" word

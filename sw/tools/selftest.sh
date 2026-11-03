@@ -281,6 +281,8 @@ check vmode-set    "starting"                      q /video/mode 800x600
 sleep 0.2
 check vmode-args   "-r 800x600"                    cat "$LOCKDIR/hdmi2.args"
 # audio reactivity (react.c + lfo shape audio): fed by tone.py
+check react-auto   "/audio/react \"auto\" 0"       q /audio/react	# the default: capture on demand
+q /audio/react/source off > /dev/null	# the tests below start the tone by hand
 check react-off    "/audio/react \"off\" 0"        q /audio/react
 check react-fftbad "256, 512 or 1024"              q /audio/react/fft 300
 q /lfo/3/audio bass > /dev/null; q /lfo/3/range 0 100 > /dev/null; q /lfo/3/on 1 > /dev/null
@@ -299,6 +301,14 @@ check react-resume "\"ok\""                         q /audio/react
 check react-state  "\"/lfo/3/audio\" \"bass\""        sh -c "$BIN/dzctl -p $PORT -t 400 /state | grep -F /lfo/3/audio"
 check react-st-src "\"/audio/react/source\" \"capture\"" sh -c "$BIN/dzctl -p $PORT -t 400 /state | grep -F /audio/react/source"
 check dds-scope    "dz_osc2"                       q /dds/1/scope 4 v	# simulation: no dz_osc2 (board test)
+q /audio/react/source off > /dev/null; q /lfo/reset > /dev/null
+# auto: an audio LFO (a sink) starts the capture, 5 s without one stops it
+q /audio/react/source auto > /dev/null; q /lfo/3/audio bass > /dev/null; q /lfo/3/on 1 > /dev/null
+sleep 1
+check react-auto-on "ok" sh -c "$BIN/dzctl -p $PORT -t 200 /audio/react | awk '{ print (\$3 == 1) ? \"ok\" : \$0 }'"
+q /lfo/3/on 0 > /dev/null
+sleep 5.5
+check react-auto-off "auto: idle"                  q /audio/react
 q /audio/react/source off > /dev/null; q /lfo/reset > /dev/null
 # crop windows (disp.c): 720p window in a 1920x1080 slot, x even, clamped
 check crop-set     "/disp/0/crop 100 50"           q /disp/0/crop 100 50

@@ -207,7 +207,7 @@ function stop() {
 }
 
 function numIn(key, attrs, title) {
-  const el = h("input", { type: "number", value: cfg[key], title, ...attrs,
+  const el = h("input", { type: "number", value: cfg[key], title: `${title}\n(this browser only, no OSC)`, ...attrs,
     onchange: () => { cfg[key] = Number(el.value); save(); drawMap(); } });
   ui[key] = el;
   return el;
@@ -221,7 +221,7 @@ export function init(el) {
   ui.warn = h("p.warn-text");
   ui.mode = h("select", { title: "/video/mode <name>: both displays (one pixel clock); hdmi2 restarts, movies stop" });
   ui.apply = h("button.primary", { title: "/video/mode <name>", onclick: applyMode }, "Apply");
-  ui.map = h("canvas", { width: 480, height: 280, title: "click: display 0 to that tile (shift: display 1)",
+  ui.map = h("canvas", { width: 480, height: 280, title: "click: display 0 to that tile (shift: display 1)\n/disp/<d>/crop <x> <y>",
     style: "width:100%;max-width:480px;height:auto;border:1px solid var(--line);border-radius:8px;cursor:pointer",
     onclick: (e) => {
       const r = ui.map.getBoundingClientRect(), k = Math.min(ui.map.width / srcW(), ui.map.height / srcH());
@@ -232,7 +232,7 @@ export function init(el) {
       setCrop(d, ...tileXY(t, d));
     } });
   ui.sl = [0, 1].map((d) => {
-    const out = h("span", {}, "0, 0");
+    const out = h("span", { title: `/disp/${d}/crop  -> /disp/${d}/crop x y (the board's crop now; polled while this tab is open)` }, "0, 0");
     const x = h("input", { type: "range", min: 0, max: 640, step: 2, value: 0, title: `/disp/${d}/crop <x> <y>  (or /disp/${d}/crop/x, /crop/y alone)`,
       oninput: () => setCrop(d, Number(x.value), crop[d][1]) });
     const y = h("input", { type: "range", min: 0, max: 360, step: 1, value: 0, title: `/disp/${d}/crop <x> <y>  (or /disp/${d}/crop/x, /crop/y alone)`,
@@ -244,7 +244,8 @@ export function init(el) {
       ["random", "random (every N frames)"], ["stress", "stress (random, every frame)"]]
       .map(([v, t]) => h("option", { value: v, selected: v === cfg.mode }, t)));
   const both = h("input", { type: "checkbox", checked: !!cfg.both, title: "move /disp/0/crop and /disp/1/crop", onchange: () => { cfg.both = both.checked ? 1 : 0; save(); } });
-  ui.go = h("button.primary", { title: "run: /disp/<d>/crop x y per step, counts /event/video (/subscribe)", onclick: start }, "Start");
+  ui.go = h("button.primary", { title: "run: /disp/<d>/crop x y per step, counts /event/video (/subscribe)\n" +
+    "the browser sends the steps: no OSC address starts the exerciser", onclick: start }, "Start");
   ui.res = h("p.hint", {}, "–");
   root.replaceChildren(h("div.grid", {},
     card("Output",
@@ -265,7 +266,7 @@ export function init(el) {
         "input) gives the zoom. Crops follow the shown slot: the input's real size when it is shown.")),
     card("Tiles",
       row("Grid", numIn("cols", { min: 1, max: 8, step: 1 }, "columns"), "×", numIn("rows", { min: 1, max: 8, step: 1 }, "rows"),
-        h("button", { title: "grid = the whole output-sized windows that fit in display 0's source", onclick: fitGrid }, "Fit"),
+        h("button", { title: "grid = the whole output-sized windows that fit in display 0's source\n(this browser only, no OSC)", onclick: fitGrid }, "Fit"),
         h("button", { title: "/disp/0/crop x y, /disp/1/crop x y (next tile)", onclick: () => { setCrop(0, ...tileXY(0, 0)); setCrop(1, ...tileXY(1, 1)); } }, "Split 0 | 1"),
         h("button.ghost", { onclick: () => [0, 1].forEach((d) => { net.msg(`/disp/${d}/crop/off`); setCrop(d, 0, 0, false); }),
           title: "/disp/<d>/crop/off" }, "Crops off")),

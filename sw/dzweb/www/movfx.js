@@ -26,7 +26,7 @@ export function moshCard(slot) {
     (on) => net.msg(`${p()}/mosh`, on ? -1 : 0));
   const moshOnce = h("button", { title: "drop only the next key frame (mkmedia files: one each second)\n/movie/<s>/mosh 1",
     onclick: () => net.msg(`${p()}/mosh`, 1) }, "Mosh once");
-  const bloomN = h("input", { type: "number", min: 1, max: 600, value: 15, title: "repeats" });
+  const bloomN = h("input", { type: "number", min: 1, max: 600, value: 15, title: "repeats for Bloom\n/movie/<s>/bloom N" });
   const bloom = h("button", { title: "send the next P frame N more times (its motion again and again)\n/movie/<s>/bloom N",
     onclick: () => net.msg(`${p()}/bloom`, parseInt(bloomN.value) || 1) }, "Bloom");
   const smear = tog("Smear (hold)", "repeat the last P frame until off; the movie waits\n/movie/<s>/bloom -1 | 0",
@@ -42,7 +42,7 @@ export function moshCard(slot) {
   const stats = h("span.hint", { title: "/movie/<s>/stats, once per second while this tab is open" }, "");
   const pause = tog("Pause", "hold the picture and the movie's audio\n/movie/<s>/pause 1 | 0",
     (on) => net.msg(`${p()}/pause`, on ? 1 : 0));
-  const clear = h("button", { title: "all off", onclick: () => {
+  const clear = h("button", { title: "all off\n/movie/<s>/mosh 0, /bloom 0, /corrupt 0, /pause 0 (one bundle)", onclick: () => {
     net.send(net.bundle(net.message(`${p()}/mosh`, 0), net.message(`${p()}/bloom`, 0),
       net.message(`${p()}/corrupt`, net.float(0)), net.message(`${p()}/pause`, 0)));
     for (const b of [moshHold, smear, pause]) b.classList.remove("on");
@@ -176,7 +176,7 @@ export function asciiCard(slot, slotPicker) {
   const p = () => `/ascii/${slot()}`;
   const src = slotPicker();
   src.value = 4; // capture
-  src.title = "the picture to draw as text (a movie slot, 4 = capture, ...)";
+  src.title = "the picture to draw as text (a movie slot, 4 = capture, ...)\n/ascii/<d>/run <src>, /ascii/<d>/once <src>";
   const mode = h("select", { title: "/ascii/<d>/mode" },
     ["ascii", "shade", "braille", "half", "chars"].map((m) => h("option", { value: m }, m)));
   const cols = h("input", { type: "range", min: 4, max: 320, value: 80, title: "characters per line (cell = width / cols, 2:1)\n/ascii/<d>/cols n" });
@@ -192,9 +192,11 @@ export function asciiCard(slot, slotPicker) {
     title: "any UTF-8 characters; sorted by ink, so the order does not matter. Put a space in for black.\n/ascii/<d>/chars \"text\" [\"font\"]" });
   const font = h("select", { style: "max-width:14em",
     title: "TrueType font on the board (/usr/share/fonts). A character the font lacks comes from " +
-      "DejaVuSans, FreeSerif or DroidSansFallbackFull (sw/tools/pushfonts.sh)" },
+      "DejaVuSans, FreeSerif or DroidSansFallbackFull (sw/tools/pushfonts.sh)\n" +
+      "/ascii/<d>/chars \"text\" \"<font>\"  (list: /files fonts)" },
     h("option", { value: "" }, "default font"));
-  const st = h("span.hint", {}, "");
+  const st = h("span.hint", { title: "/ascii/<d>/status -> run src cols mode color fg bg level invert every " +
+    "chars font ms drawn chars fps" }, "");
 
   const send = (path, ...a) => net.msg(`${p()}/${path}`, ...a);
   mode.onchange = () => (mode.value === "chars" ? sendChars() : send("mode", mode.value));

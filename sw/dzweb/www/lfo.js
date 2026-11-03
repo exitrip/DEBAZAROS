@@ -47,6 +47,13 @@ const DEF = { on: 0, shape: "sine", rate: 1, frames: 0, lo: 0, hi: 1, width: 0.5
 const ALL = ["audio", "gain", "attack", "release", "shape", "rate", "frames", "range", "width", "curve", "steps", "every", "mode",
   "phase", "target", "on"];
 let cfg = [];
+// message targets from /state (not fields): address -> the OSC types of its values
+// ("i", "fff"); Set on a bare address appends this LFO's value per type
+const msgTargets = new Map(), fieldPaths = new Set();
+function expandTarget(t, i) {
+  if (!t || /\s/.test(t) || fieldPaths.has(t) || !msgTargets.has(t)) return t;
+  return t + " " + [...msgTargets.get(t)].map((ty) => (ty === "i" ? `$${i}` : `$f${i}`)).join(" ");
+}
 const meters = [];
 let timer = null;
 
@@ -149,7 +156,9 @@ function lfoCard(i) {
       h("label", {}, " ", h("button", { title: `/lfo/${i}/trigger`, onclick: () => { c.on = 1; paint(); net.msg(`/lfo/${i}/trigger`); save(); } }, "Trigger")),
       h("label.target", {}, "target",
         h("div.row", {}, target,
-          h("button.primary", { title: `/lfo/${i}/target "<text>"`, onclick: () => { c.target = target.value.trim(); apply(i, ["target"]); } }, "Set"),
+          h("button.primary", { title: `/lfo/${i}/target "<text>"\na bare message address from the list gets this LFO's value: ` +
+            `$${i} (int) or $f${i} (float) per argument`,
+            onclick: () => { c.target = expandTarget(target.value.trim(), i); target.value = c.target; apply(i, ["target"]); } }, "Set"),
           h("button", { title: `/lfo/${i}/target  (no argument = no target)`, onclick: () => { c.target = ""; target.value = ""; apply(i, ["target"]); } }, "Clear")),
         h("div.row", {}, preset, h("label", {}, "slot ", pslot)))));
 }
@@ -162,10 +171,10 @@ let reactUi = null;
 
 // the audio analysis source + a live readout of its features
 function audioRow() {
-  const src = h("select", { title: "/audio/react/source capture|peak|off\ncapture = HDMI 2 input via ALSA (all features); " +
+  const src = h("select", { title: "/audio/react/source auto|capture|peak|off\nauto = capture while a sink (an audio LFO, a scope, this meter) asks, off 5 s after; capture = HDMI 2 input via ALSA (all features); " +
       "peak = the PL peak meter (level/peak only, no ALSA)",
     onchange: () => net.msg("/audio/react/source", src.value) },
-    ["off", "capture", "peak"].map((v) => h("option", { value: v }, v)));
+    ["auto", "off", "capture", "peak"].map((v) => h("option", { value: v }, v)));
   const fft = h("select", { title: "/audio/react/fft 256|512|1024 (bins: 187 / 94 / 47 Hz)",
     onchange: () => net.msg("/audio/react/fft", Number(fft.value)) },
     [1024, 512, 256].map((v) => h("option", { value: v }, `FFT ${v}`)));
@@ -207,9 +216,19 @@ export function init(root) {
 
 export function connected() {
   // field paths as target suggestions
+  const list = document.getElementById("lfo-targets");
   net.collect(net.message("/fields"), "/field", "/field/end").then((fs) => {
-    const list = document.getElementById("lfo-targets");
-    for (const f of fs) if (!f[4]) list.append(h("option", { value: f[0] }));
+    for (const f of fs) if (!f[4]) { fieldPaths.add(f[0]); list.append(h("option", { value: f[0] }, "field")); }
+  });
+  // every other single-value target debazd tracks (/state: ASCII, crops, movie
+  // effects, anim, DDS, LFOs ...): numeric ones only
+  net.collect(net.message("/state"), "/state/target", "/state/end", 3000).then((ts) => {
+    for (const t of ts) {
+      const addr = t[1], types = (t.tags || "").slice(2);
+      if (!addr || fieldPaths.has(addr) || msgTargets.has(addr) || !types || /[^if]/.test(types)) continue;
+      msgTargets.set(addr, types);
+      list.append(h("option", { value: addr }, `now ${t.slice(2).map((v) => (typeof v === "number" ? +v.toFixed(3) : v)).join(" ")}`));
+    }
   });
 }
 

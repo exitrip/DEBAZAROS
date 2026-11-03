@@ -326,8 +326,8 @@ function scopeCard(n) {
       opts.map(([v, t]) => h("option", { value: v, selected: v === sc[key] }, t)));
     return el;
   };
-  const gain = slider("gain", `${p}/gain`, 0.5, 32, 0.5,
-    `${p}/gain <f>\nwave: 0x8000 + sample x gain (laptop audio: 4-8)\nfft: dB of amplitude x gain (1 = a full-scale sine at the top)`);
+  const gain = slider("gain", `${p}/gain`, 0.01, 32, 0.01,
+    `${p}/gain <f>  (0.01 steps; 0 = scope off)\nwave: 0x8000 + sample x gain (laptop audio: 4-8)\nfft: dB of amplitude x gain (1 = a full-scale sine at the top)`);
   const skew = slider("skew", `${p}/skew`, -4, 4, 0.05,
     `${p}/skew <f>  the diagonal\nh: the cycle moves f cycles from the top line to the bottom line\n` +
     "v: f cycles across the width (negative = the table backwards)\n0 = straight", (x) => Number(x).toFixed(2));
@@ -354,9 +354,9 @@ function scopeCard(n) {
 
 // the analysis source (shared with the LFO tab) + its status
 function sourceRow() {
-  const src = h("select", { title: "/audio/react/source capture|peak|off\nthe scope needs capture (samples); " +
+  const src = h("select", { title: "/audio/react/source auto|capture|peak|off\nauto = capture while a sink (an audio LFO, a scope, this meter) asks, off 5 s after; the scope needs capture (samples); " +
       "peak = the PL meter, level only", onchange: () => net.msg("/audio/react/source", src.value) },
-    ["off", "capture", "peak"].map((v) => h("option", { value: v }, v)));
+    ["auto", "off", "capture", "peak"].map((v) => h("option", { value: v }, v)));
   const st = h("span.hint", { title: "/audio/react -> ... s:status (ok, held: recording, busy: <pid name>)" }, "–");
   srcUi = { src, st };
   return h("p", {}, h("label", {}, "audio source ", src), " ", st);

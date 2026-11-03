@@ -27,7 +27,8 @@ function cleanName(n) {
 // still costs CPU (2026-10-28: a hidden movie in slot 6 took ~55 % of a core)
 const SLOT_NOTE = { 0: "display 0", 2: "display 1", 4: "capture", 11: "black" };
 function slotPicker() {
-  return h("select", { title: "only slots a display shows are visible: 0 = display 0, 2 = display 1 at home" },
+  return h("select", { title: "only slots a display shows are visible: 0 = display 0, 2 = display 1 at home\n" +
+      "the <s> of /movie/<s>/..., /img/<s>/load, /ascii/<s>/... (/disp/<d> shows which slot a display shows)" },
     [...Array(12).keys()].map((i) => h("option", { value: i, selected: i === 0 },
       `slot ${i}${SLOT_NOTE[i] ? ` (${SLOT_NOTE[i]})` : ""}`)));
 }
@@ -49,16 +50,16 @@ async function refresh() {
 function actions(kind, name) {
   if (kind === "img")
     return [
-      h("button", { title: "load as sprite #", onclick: () => {
+      h("button", { title: "load as the sprite number below\n/sprite/<id>/load \"<file>\"", onclick: () => {
         net.msg(`/sprite/${spriteId.value}/load`, name);
         setTimeout(() => net.msg(`/sprite/${spriteId.value}`), 1500);
       } }, "→ sprite"),
-      h("button", { title: "draw into the target slot", onclick: () => net.msg(`/img/${slotSel.value}/load`, name) }, "draw"),
+      h("button", { title: "draw into the target slot\n/img/<slot>/load \"<file>\"", onclick: () => net.msg(`/img/${slotSel.value}/load`, name) }, "draw"),
     ];
   if (kind === "audio")
-    return [h("button.primary", { title: "play on the output chosen below",
+    return [h("button.primary", { title: "play on the output chosen below\n/audio/play <out> \"<file>\" 0",
       onclick: () => net.msg("/audio/play", parseInt(audioOut.value), name, 0) }, "play")];
-  return [h("button.primary", { title: "play into the target slot",
+  return [h("button.primary", { title: "play into the target slot\n/movie/<slot>/play \"<file>\" 0 <audio>  (0 = the file's rate)",
     onclick: () => net.msg(`/movie/${slotSel.value}/play`, name, 0, parseInt(movieAudio.value)) }, "play")];
 }
 
@@ -125,6 +126,7 @@ function upload(kind, files) {
 
 function dropZone(kind) {
   const input = h("input", { type: "file", multiple: true, accept: KINDS[kind].accept,
+    title: `upload: dzweb HTTP PUT /media/${kind}/<file> (not OSC)`,
     onchange: () => { upload(kind, [...input.files]); input.value = ""; } });
   const zone = h("label.drop", {}, input, "Drop files here, or click to choose (upload to the board)");
   zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
@@ -147,7 +149,8 @@ export function init(root) {
   slotSel = slotPicker();
   slotSel.addEventListener("change", fxRefresh);
   info = h("span.hint", {}, "");
-  movieAudio = h("select", { title: "where the movie's own audio track plays" },
+  movieAudio = h("select", { title: "where the movie's own audio track plays\n" +
+      "the <audio> of /movie/<s>/play \"<file>\" <fps> <audio>: bits 1 HDMI 0, 2 HDMI 1, 4 I2S" },
     h("option", { value: 0 }, "no audio"), h("option", { value: 1 }, "HDMI 0"),
     h("option", { value: 2 }, "HDMI 1"), h("option", { value: 3 }, "HDMI 0 + 1"),
     h("option", { value: 4 }, "I2S"));

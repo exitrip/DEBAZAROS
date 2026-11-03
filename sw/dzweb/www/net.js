@@ -81,8 +81,38 @@ function rawSend(conn, pkt) {
   if (conn && conn.ws.readyState === 1) conn.ws.send(pkt);
 }
 
+// ---- OSC hover text (2026-11-02): every control shows the message it sent ----
+// While a click / input / change handler runs, its control is the "actor"; a packet
+// sent then (directly or later by throttled) is written into the control's title as
+// "sent: /addr args", under the control's own title. For scripting and tests: hover a
+// control after using it to see the exact message.
+let actor = null;
+const ACTOR_SEL = "button, input, select, textarea, canvas, a, label";
+for (const ev of ["click", "input", "change", "keydown", "pointerdown", "pointerup"])
+  document.addEventListener(ev, (e) => {
+    actor = e.target?.closest?.(ACTOR_SEL) || null;
+    setTimeout(() => { actor = null; }, 0);
+  }, true);
+
+const argText = (a, t) => (t === "s" ? JSON.stringify(a) : t === "f" ? String(+a.toFixed(4)) : String(a));
+export function describe(pkt) {
+  const out = [];
+  for (const m of osc.decode(pkt)) out.push([m.path, ...m.args.map((a, k) => argText(a, m.tags?.[k]))].join(" "));
+  return out;
+}
+function annotate(el, pkt) {
+  if (!el || !el.isConnected) return;
+  let lines;
+  try { lines = describe(pkt); } catch { return; }
+  if (!lines.length) return;
+  if (el.dataset.baseTitle === undefined) el.dataset.baseTitle = el.title || "";
+  const shown = lines.length > 6 ? [...lines.slice(0, 6), `… ${lines.length - 6} more`] : lines;
+  el.title = (el.dataset.baseTitle ? el.dataset.baseTitle + "\n" : "") + "sent: " + shown.join("\n      ");
+}
+
 // Send a packet (Uint8Array) to the primary unit and, if set, all extras.
 export function send(pkt) {
+  annotate(actor, pkt);
   rawSend(primary, pkt);
   for (const c of extras) rawSend(c, pkt);
 }
@@ -121,7 +151,10 @@ export function collect(pkt, item, end, timeout = 1500) {
   const run = () => new Promise((resolve) => {
     const items = [];
     const offItem = on(item, (m) => {
-      if (m.path === item) items.push(m.args);
+      if (m.path !== item) return;
+      const a = m.args;
+      a.tags = m.tags;	// OSC types of the args, e.g. "ssi"
+      items.push(a);
     });
     const offEnd = on(end, () => finish());
     const timer = setTimeout(finish, timeout);
@@ -165,16 +198,22 @@ export async function getField(path) {
 }
 
 // Coalesce fast changes (sliders): send at most once per animation frame per key.
-const pending = new Map();
+const pending = new Map(), pendingActor = new Map();
 let scheduled = false;
 export function throttled(key, pktFn) {
   pending.set(key, pktFn);
+  if (actor) pendingActor.set(key, actor);
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(() => {
     scheduled = false;
-    const all = [...pending.values()].map((f) => f());
+    const keys = [...pending.keys()], all = keys.map((k) => pending.get(k)());
+    keys.forEach((k, i) => annotate(pendingActor.get(k), all[i]));
     pending.clear();
+    pendingActor.clear();
+    const was = actor;
+    actor = null;	// annotated per key above
     send(all.length === 1 ? all[0] : osc.bundle(...all));
+    actor = was;
   });
 }

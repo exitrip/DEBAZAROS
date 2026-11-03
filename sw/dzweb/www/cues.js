@@ -86,7 +86,7 @@ async function loadLooks() {
         const v = prompt(`Add look "${name}" to which cue of ${sc()}?`, cues.length ? fmt(cues[0][0]) : "1");
         if (v) { send("/cue/look", sc(), net.float(Number(v)), "add", name); later(() => { loadCues(); loadLooks(); }); }
       } }, "→ cue"),
-      h("button", { onclick: () => inspect("/look/get", `look ${name}`, "/look/target", "/look/end", name) }, "View"),
+      h("button", { title: `/look/get ${name}  -> /look/target ... /look/end`, onclick: () => inspect("/look/get", `look ${name}`, "/look/target", "/look/end", name) }, "View"),
       h("button.danger", { title: `/look/delete ${name} [force]`, onclick: () => {
         if (confirm(uses ? `"${name}" is used by ${uses} cue(s). Delete anyway?` : `Delete look "${name}"?`)) {
           send("/look/delete", name, ...(uses ? ["force"] : [])); later(() => { loadLooks(); loadCues(); });
@@ -133,12 +133,12 @@ export function init(el) {
     title: "fade seconds for Go / Back / Apply (empty = the cue's own)" });
   overMode = h("select", { title: "transition for Go / Back / Apply" },
     h("option", { value: "" }, "cue's"), ...["cut", "fade", "dip"].map((m) => h("option", { value: m }, m)));
-  const newName = h("input", { type: "text", placeholder: "new show", style: "width:9em" });
-  const recNum = h("input", { type: "number", min: 0.001, step: 0.5, value: 1, style: "width:5em", title: "cue number (1, 2.5, ...)" });
-  const recKind = h("select", {}, h("option", { value: "keyframe" }, "keyframe"), h("option", { value: "delta" }, "delta"));
-  const recName = h("input", { type: "text", placeholder: "name", style: "width:9em" });
-  const sceneName = h("input", { type: "text", placeholder: "scene name", style: "width:8em" });
-  const lookName = h("input", { type: "text", placeholder: "look name", style: "width:9em" });
+  const newName = h("input", { type: "text", placeholder: "new show", style: "width:9em", title: "/show/new <name>" });
+  const recNum = h("input", { type: "number", min: 0.001, step: 0.5, value: 1, style: "width:5em", title: "cue number (1, 2.5, ...)\n/cue/record <scene> <n> keyframe|delta [name]" });
+  const recKind = h("select", { title: "/cue/record <scene> <n> keyframe|delta [name]\nkeyframe = all targets, delta = what changed" }, h("option", { value: "keyframe" }, "keyframe"), h("option", { value: "delta" }, "delta"));
+  const recName = h("input", { type: "text", placeholder: "name", style: "width:9em", title: "/cue/record <scene> <n> keyframe|delta [name]" });
+  const sceneName = h("input", { type: "text", placeholder: "scene name", style: "width:8em", title: "/scene/add <name>, /scene/rename <scene> <name>" });
+  const lookName = h("input", { type: "text", placeholder: "look name", style: "width:9em", title: "/look/save <name>" });
 
   root.append(h("div.grid", {},
     card("Show",

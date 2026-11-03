@@ -7,7 +7,10 @@
  *   peak     the PL peak meter of hdmi_rx (/audio/rx/peak/l|r, cleared each
  *            frame by a toggle of RX_CTRL[1]): level and peak only, no
  *            ALSA, almost no CPU
- *   off      default
+ *   auto     default (2026-11-02): capture while a sink asks for the data
+ *            (an LFO with shape audio, a DDS audio scope, an /audio/react
+ *            query), off 5 s after the last demand
+ *   off
  * Features, 0..1 (a full-scale sine = 1; louder material can exceed 1):
  *   level    RMS of the samples of this frame (x sqrt 2)
  *   peak     max |sample| of this frame
@@ -25,12 +28,15 @@
  * pauses the capture source and gives the device back after the recording;
  * before each arecord start the PCM status in /proc/asound is checked, and
  * another owner (pid, name) is reported instead of starting (retry every 2 s).
- * Status: off | starting | ok | held: <why> | busy: <pid name> | no samples
+ * Status: off | starting | ok | held: <why> | busy: <pid name> | no samples |
+ * auto: idle (no sink asked for 5 s)
  *
  * OSC:
- *   /audio/react/source s:capture|peak|off
+ *   /audio/react/source s:auto|capture|peak|off
  *   /audio/react/fft i:256|512|1024        (default 1024: 47 Hz per bin)
  *   /audio/react                           -> s:source i:running f:level f:peak
+ *                                             (source = the setting: auto
+ *                                             runs capture on demand)
  *                                             f:bass f:low f:mid f:high f:air
  *                                             f:flux f:beat s:status
  *   /audio/react/bands                     -> 16 x f
@@ -60,20 +66,24 @@
 #define RING		4096			/* samples kept: 2048 for the scope + a trigger search */
 #define NMAX		1024
 
-enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK };
-static const char *src_names[] = { "off", "capture", "peak" };
+enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK, SRC_AUTO };
+static const char *src_names[] = { "off", "capture", "peak", "auto" };
+#define AUTO_LINGER_MS	5000		/* auto: capture stops this long after the last demand */
 
 typedef struct { float re, im; } cpx;
 
-static int    src = SRC_OFF, fft_n = 1024;
+static int    src = SRC_OFF, fft_n = 1024;	/* src = what runs (off, capture, peak) */
+static int    want = SRC_AUTO;		/* the setting; auto = capture on demand */
+static long   need_ms;			/* auto: the last demand of a sink */
 static int    fd = -1;
 static pid_t  rec_pid;
 static long   restart_at;			/* ms: start arecord again */
 static long   last_ms;			/* ms: the last samples */
 static float  ring[RING], ringl[RING], ringr[RING];	/* (L+R)/2, L, R */
 static int    held;				/* react_hold count */
-static char   hold_why[24], status[64] = "off";
+static char   hold_why[24], status[64] = "auto: idle";
 static unsigned rpos, rfill;
+static unsigned long rtotal;		/* samples ever written (react_spectrum's cache key) */
 static uint8_t carry[4];
 static int    ncarry;
 
@@ -350,6 +360,7 @@ static void capture_read(void)
 			ringl[rpos] = l * (1.0f / 32768.0f);
 			ringr[rpos] = rr * (1.0f / 32768.0f);
 			rpos = (rpos + 1) % RING;
+			rtotal++;
 			if (rfill < RING)
 				rfill++;
 			sq += (double)v * v;
@@ -402,6 +413,7 @@ int react_samples(float *out, int n, int chan)
 {
 	const float *r = chan == 1 ? ringl : chan == 2 ? ringr : ring;
 
+	need_ms = ms_now();
 	if (src != SRC_CAPTURE || !running || n > RING || rfill < (unsigned)n)
 		return 0;
 	for (int i = 0; i < n; i++)
@@ -416,22 +428,26 @@ int react_samples(float *out, int n, int chan)
 int react_spectrum(float *amp, int chan)
 {
 	static float cache[3][NMAX / 2 + 1];
-	static unsigned at[3] = { ~0u, ~0u, ~0u };
+	/* the cache key is the sample count, not rpos: reads come in 16384-byte
+	 * blocks = 4096 samples = RING, so rpos can stand still while every
+	 * sample is new (2026-11-02: the fft scope froze, the wave scope ran) */
+	static unsigned long at[3] = { ~0ul, ~0ul, ~0ul };
 	static int at_n[3];
 	const float *r = chan == 1 ? ringl : chan == 2 ? ringr : ring;
 	float pw[NMAX / 2 + 1];
 
+	need_ms = ms_now();
 	if (chan < 0 || chan > 2 || src != SRC_CAPTURE || !running)
 		return 0;
 	if (plan_n != fft_n)
 		mkplan(fft_n);
 	if (rfill < (unsigned)plan_n)
 		return 0;
-	if (at[chan] != rpos || at_n[chan] != plan_n) {
+	if (at[chan] != rtotal || at_n[chan] != plan_n) {
 		spectrum(r, pw);
 		for (int k = 0; k <= plan_n / 2; k++)
 			cache[chan][k] = sqrtf(pw[k]) * (4.0f / plan_n);
-		at[chan] = rpos;
+		at[chan] = rtotal;
 		at_n[chan] = plan_n;
 	}
 	memcpy(amp, cache[chan], sizeof(float) * (size_t)(plan_n / 2 + 1));
@@ -461,8 +477,22 @@ int react_capturing(void)
 	return src == SRC_CAPTURE && rec_pid > 0;
 }
 
+static void set_source(int s);
+
 void react_tick(void)
 {
+	if (want == SRC_AUTO) {		/* capture while a sink asks */
+		int need = need_ms && ms_now() - need_ms < AUTO_LINGER_MS;
+
+		if (need && src != SRC_CAPTURE) {
+			dzd_log("react: auto: a sink asks, capture on\n");
+			set_source(SRC_CAPTURE);
+		} else if (!need && src != SRC_OFF) {
+			dzd_log("react: auto: no sink for %d s, capture off\n", AUTO_LINGER_MS / 1000);
+			set_source(SRC_OFF);
+			snprintf(status, sizeof(status), "auto: idle");
+		}
+	}
 	if (src == SRC_CAPTURE)
 		capture_read();
 	else if (src == SRC_PEAK)
@@ -504,6 +534,7 @@ float react_feature(int i)
 {
 	const float v[9] = { f_level, f_peak, f_bass, f_low, f_mid, f_high, f_air, f_flux, f_beat };
 
+	need_ms = ms_now();
 	if (src == SRC_OFF || !running)
 		return 0.0f;
 	if (i >= 0 && i < 9)
@@ -532,7 +563,7 @@ static void set_source(int s)
 void react_state(state_cb cb, void *ctx)
 {
 	st_emit(cb, ctx, NULL, "/audio/react/fft", "i", fft_n);
-	st_emit(cb, ctx, NULL, "/audio/react/source", "s", src_names[src]);
+	st_emit(cb, ctx, NULL, "/audio/react/source", "s", src_names[want]);
 }
 
 void react_stop(void)
@@ -545,7 +576,8 @@ int react_dispatch(const dz_msg *m)
 	if (strncmp(m->path, "/audio/react", 12))
 		return 0;
 	if (!strcmp(m->path, "/audio/react")) {
-		dzd_reply("/audio/react", "sifffffffffs", src_names[src], running, f_level, f_peak,
+		need_ms = ms_now();	/* a meter is a sink too (auto) */
+		dzd_reply("/audio/react", "sifffffffffs", src_names[want], running, f_level, f_peak,
 			  f_bass, f_low, f_mid, f_high, f_air, f_flux, f_beat, status);
 		return 1;
 	}
@@ -559,17 +591,23 @@ int react_dispatch(const dz_msg *m)
 	}
 	if (!strcmp(m->path, "/audio/react/source")) {
 		if (m->n >= 1 && m->a[0].type == 's') {
-			for (int s = 0; s < 3; s++)
+			for (int s = 0; s < 4; s++)
 				if (!strcmp(m->a[0].s, src_names[s])) {
-					set_source(s);
+					want = s;
+					if (s == SRC_AUTO) {	/* react_tick starts it on demand */
+						set_source(SRC_OFF);
+						snprintf(status, sizeof(status), "auto: idle");
+						need_ms = 0;
+					} else
+						set_source(s);
 					dzd_log("react: source %s\n", src_names[s]);
-					dzd_reply("/audio/react/source", "s", src_names[src]);
+					dzd_reply("/audio/react/source", "s", src_names[want]);
 					return 1;
 				}
-			dzd_reply("/error", "ss", "/audio/react/source", "capture, peak or off");
+			dzd_reply("/error", "ss", "/audio/react/source", "auto, capture, peak or off");
 			return 1;
 		}
-		dzd_reply("/audio/react/source", "s", src_names[src]);
+		dzd_reply("/audio/react/source", "s", src_names[want]);
 		return 1;
 	}
 	if (!strcmp(m->path, "/audio/react/fft")) {
