@@ -10,6 +10,7 @@ open work first, finished work at the end.
 ## Contents
 
 Open (first, in this order):
+- Hardware test backlog (audit 2026-11-02)
 - User I/O: buttons and the P1 GPIO header
 - Fleet: 2-12+ units on a LAN
 - 4. PetaLinux rebuild (overlay support still open)
@@ -34,12 +35,68 @@ Section numbers are fixed labels (CLAUDE.md, the READMEs and code comments
 refer to "section 14" etc.): open sections come first, finished sections
 last, so the numbers are not in order. Sections 3 and 7 were never written.
 
+## Hardware test backlog (audit 2026-11-02)
+
+What is built but not yet exercised on a board. Bench card = debaz-67b806
+(image debazaros-20261102-dsp, BOOT.BIN `_dsp`, software of commit 1e70b83e
+copied in by hand). Tick an item off with the date when it passes.
+
+New today, partly tested:
+- [ ] `/movie/<s>/stats` + the Movie effects "load" line (fbfeed / dzmosh
+  `-S` stats files, CPU per program): host tests only, the new card has no
+  movies yet. Test: upload a mkmedia movie, play it, watch the line; mosh /
+  bloom / corrupt counters; a fps cap.
+- [ ] Header chip `/stats` in the browser (warn colour when a tick > 25 ms).
+- [ ] XADC: EVERY channel reads 0 on this card (temp, vccint, vccaux in
+  /sys/bus/iio/devices/iio:device0), so `/stats` shows no temperature. The
+  XADC does not sample: check the xadc driver / PS-XADC interface setup.
+- [ ] Wall D0/D1 sliders following an LFO or cue on the crop (only a set
+  from this browser was tested).
+- [ ] `sw/tools/dzstate.py load` with a movie, anim or audio player in the
+  state (it restarts them); a full 6 -> 6 + 0 -> 6 `asciibench.py` run with
+  nobody at the controls.
+- [ ] ASCII braille / half with the pixel-pair sampling (look: dots at 160+
+  columns), `/ascii` through a cue fade.
+
+The new image on a fresh card (first boot passed 2026-11-02: MAC, hostname,
+partitions, ethernet on `_dsp`, debaz.service, both displays, input audio):
+- [ ] Second boot: firstboot does not repeat, MAC and media stay.
+- [ ] Capture PICTURE on this card (only its audio and lock were seen).
+- [ ] Media from scratch: web upload, `mkmedia` to the card. (Fonts: the
+  image has 25 TrueType files in /usr/share/fonts, checked 2026-11-02.)
+- [ ] Fallback bitstreams from /lib/firmware with plreload (`_sdly`,
+  `_osc_epo`) and `BITSTREAM=` in /etc/debaz/dzstart.conf.
+- [ ] Boot without a network: the clock starts in 2021 (no RTC); show
+  folders, logs and mtime guards then carry wrong dates.
+- [ ] HDMI_1 audio out (only HDMI_0 was heard), ALSA playback from the image.
+
+Software never exercised by the user (worked on the bench board Nov 1, not on
+this card or this image):
+- [ ] Cues / scenes / shows (section 15): Cues tab, record, go / next /
+  back, fades, dips, looks, show save / load / reload, a show at boot.
+- [ ] Image sequences (section 16): Media player card, `/anim/save` from
+  Paint, timing sheet, onion skin, folder upload.
+- [ ] Datamosh and live ffmpeg options on this image's ffmpeg.
+
+Gateware in `_dsp`, simulated only or never confirmed on hardware:
+- [ ] pl_io function select on PL_KEY0-5: I2C / SPI / UART on EMIO, the I2S
+  master (needs the PetaLinux nodes: i2c0, spidev, ttyPS1).
+- [ ] Events block `/ev/...` (0x43C6_1000) and its IRQ; PL_KEY4/5 (K17,
+  E19) gave no events on 2026-10-28: OPEN.
+- [ ] Fan ports J3/J5: inputs, opto outputs, vsync out, hardware PWM on J3
+  (`/fan/3/pwm`), servo.
+- [ ] LED_RED (W14, maybe not fitted).
+
+Known open defects (not tests): HDMI_1 wants a sync delay of ~8 (3-bit field,
+task 21); HDMI_1 drop-outs without crop activity (cause open); the capture
+wedge (avoid: CLAUDE.md).
+
 ## Order of work and dependencies
 
 | # | Task | Depends on | Status |
 | --- | --- | --- | --- |
 | 3 | Capture robustness BD changes (resets, HPD, status bits) | 1, 2 | PAUSED (user, 2026-11-02): the capture AXI side still resets with the OUTPUT dynclk LOCKED; the fix (own reset, branch capture-reset) did not place reliably. The wedge is avoided in use (CLAUDE.md "Capture wedge: how to avoid it"). HPD and status bits: done earlier (/capture/replug, RX_SIZE, footprints) |
-| 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | TODO: the image has no PL device-tree overlay, so no UIO nodes (debazd polls for vsync, "vsync by polling") |
+| 4 | XSA export + one PetaLinux rebuild with overlay support | 3 | DOING: the image HAS overlay support (OF_OVERLAY, OF_CONFIGFS, fpga-full region, fpgautil, uio_pdrv_genirq): `hw/dt/ebaz4205_2out1in.dtso` without `firmware-name`, applied via configfs on debaz-67b806 (2026-11-03) = 6 UIO nodes with their interrupts (after the fix `interrupt-parent = <&intc>`), debazd "vsync by interrupt". Open: apply it at boot / after plreload (one .dtbo per variant, in the image) |
 | 6 | Hardware daemon (mixer, DDS, video out, capture) | 5; capture part needs 3 | DOING: debazd runs on the board (fields, routing, capture, events, drawing, LFOs, cues, audio reactivity, image sequences); frame-rate measurement fixed 2026-11-02 |
 | 8 | Variants "3out/0in" and "1out/2in" (section 8) | 2, 4, 22 | TODO: needs room in the PL (slices 100 %) |
 | 9 | Web control app (`sw/dzweb`: HTTP + WebSocket to OSC bridge, browser UI) | 6 | DOING: on the board, started by dzstart.sh (and by debaz.service in the next image); tabs for every daemon area; signed-mixer controls 2026-11-02 |

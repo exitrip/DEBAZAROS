@@ -31,7 +31,15 @@
  *                                                by amount 0..1: trails)
  *   /draw/<s>/alpha            a          (0..1, for later draws)
  *   /draw/<s>/blend            normal|add|lighten|multiply (or 0..3)
- *   /img/<s>/load              "name" [x y w h]     (file in DZ_IMG_DIR)
+ *   /img/<s>/load              "name" [x y w h]     (file in DZ_IMG_DIR; no
+ *                                         rectangle = its own size at the
+ *                                         top left; with one = stretched)
+ *   /img/<s>/file              "name"|""  the state model (cues): the slot
+ *                                         black, then the image at its own
+ *                                         size, unless that image is there
+ *                                         already; "" = forget it (the
+ *                                         picture stays). Any other drawing
+ *                                         or a movie on the slot forgets it
  *   /movie/<s>/play            "name" [fps] [audio] (file in DZ_MOVIE_DIR; fps
  *                                         caps the frame rate: dropped frames
  *                                         are not scaled, piped or converted,
@@ -40,6 +48,15 @@
  *                                         1 HDMI 0, 2 HDMI 1, 3 both, 4 I2S;
  *                                         0 / none = no audio)
  *   /movie/<s>/stop
+ *   /movie/<s>/loop            0|1    1 = loop for ever (default), 0 = play
+ *                                     once and end (/cue/follow ... end);
+ *                                     a playing movie restarts; no args ->
+ *                                     the setting (debazd)
+ *   /movie/<s>/pos             x y    top left of the movie in the slot (0 0
+ *                                     default; not moved in: near the edge it
+ *                                     runs on into the next slot; a playing
+ *                                     movie restarts). The movie keeps its
+ *                                     own size; no args -> the position
  *   /movie/<s>/file            "name"|"" [fps] [audio]   play, or "" = stop;
  *                                     the same movie already playing = no
  *                                     change (the state model / cues)
@@ -98,8 +115,30 @@
  *   (transform, rotozoom, scroll, mirror, wave in place: when a movie plays on
  *    the slot, its current frame is grabbed first, so they act on the picture)
  *   /surface/<s>/peek          x y        -> /pixel s x y r g b (debazd)
+ *   /surface/<s>/canvas        full|mode  full (default, 2026-11-04) = the
+ *                                         whole 1920 x 1080 slot in every
+ *                                         video mode: a display shows a
+ *                                         window of it (/disp/<d>/crop).
+ *                                         mode = the running mode's size,
+ *                                         started again after a mode change
+ *                                         (the old behaviour: 3.7 MB RAM at
+ *                                         720p instead of 8.3 MB, full-frame
+ *                                         ops 2.25 x faster). A change starts
+ *                                         the surface again (black).
+ *                                         No argument -> /surface/<s>/canvas
+ *                                         s:full|mode i:w i:h i:kB_in_use
+ *                                         i:kB_free (debazd)
+ *   /surface/<s>/free                     give the RAM copy back (the slot
+ *                                         keeps its picture). A new surface
+ *                                         is refused when less than 24 MB of
+ *                                         RAM would stay free.
  *
  * Colours: float 0..1 or int 0..255. No rectangle = whole surface.
+ * Movies and images without a rectangle keep their own size at the top left
+ * of the slot (2026-11-04: never scaled to the video mode). /movie/<s>/pos
+ * x y moves the movie. A movie taller than 1080 or near the slot's edge runs
+ * on into the next slot; one wider than 1920 does not play (fbfeed). Odd
+ * sizes are rounded down to even. A larger image is made smaller.
  * thickness 0 or absent = filled.
  */
 #ifndef DZ_DRAW_H
@@ -118,6 +157,8 @@
 #define DZ_FBFEED_CTL	"/tmp/fbfeed.%d"	/* fbfeed's (trails, ghost) */
 #define DZ_FFV_CTL	"/tmp/ffv.%d"		/* decoder ffmpeg's stdin: commands */
 #define DZ_FFA_CTL	"/tmp/ffa.%d"		/* audio ffmpeg's stdin */
+#define DZ_MAUDIO	"/tmp/dzmaudio.%d"	/* audio ffmpeg's tap: s16le 48 kHz stereo
+						 * for debazd react.c, which must drain it */
 #define DZ_MOSH_STAT	"/tmp/dzmosh.%d.stat"	/* dzmosh -S: one line per second */
 #define DZ_FBFEED_STAT	"/tmp/fbfeed.%d.stat"	/* fbfeed -S */
 #ifndef DZ_FBFEED
@@ -209,14 +250,28 @@ const char *dz_draw_movie_af(int s);
 /* sh -c cmd in its own process group (session), SCHED_FIFO rt_prio if > 0;
  * returns after the exec (so the group exists: a stop right after the start
  * reaches it), 0 on error. dz_kill_group: signal the group (the pid if the
- * group is gone) and reap it. */
+ * group is gone) and reap it; after ~0.5 s without an exit, SIGKILL. */
 pid_t dz_spawn(const char *cmd, int rt_prio);
 void  dz_kill_group(pid_t pid, int sig);
+/* sh -c "( cmd ) &": detached (own session, not a child of the caller), stdin
+ * /dev/null, stdout + stderr = out (NULL = /dev/null), no other fds; 0 / -1 */
+int   dz_spawn_detached(const char *cmd, const char *out);
 int  dz_draw_save(int s, const char *name);
 
 /* Number of operations that failed since the last call (e.g. a slot outside
  * reserved memory), then reset to 0. */
 int  dz_draw_take_fails(void);
+const char *dz_draw_take_err(void);	/* the reason of the last refusal, or NULL */
+int  dz_draw_canvas(int s, int mode);	/* 0 = full slot, 1 = mode size */
+int  dz_draw_canvas_get(int s, int *w, int *h, size_t *bytes);	/* -> mode */
+void dz_draw_free(int s);
+int  dz_draw_movie_pos(int s, int x, int y);	/* for the next play / now */
+int  dz_draw_movie_pos_get(int s, int *x, int *y);
+const char *dz_draw_img_name(int s);	/* /img/<s>/file */
+int  dz_draw_movie_loop(int s, int loop);
+int  dz_draw_movie_loop_get(int s);
+unsigned dz_draw_movie_gen(int s);	/* movie starts in slot s, any thread */
+int  dz_draw_movie_alive(int s);	/* its player runs (any thread) */
 
 /* OSC front end: number of operations done, 0 if the address is not ours. */
 int  dz_draw_dispatch(const dz_msg *m, int verbose);

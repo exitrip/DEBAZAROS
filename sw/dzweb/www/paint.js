@@ -1,6 +1,9 @@
-// paint.js - draw into a slot with mouse, pen or touch. The canvas uses board
-// coordinates (1280x720) and shows a local preview of what you draw; effects
-// that run on the board (grab, transforms) show on the display only.
+// paint.js - draw into a slot with mouse, pen or touch. The canvas is the
+// whole slot in board coordinates (1920x1080, 2026-11-04: the surface canvas,
+// /surface/<s>/canvas) and shows a local preview of what you draw; effects
+// that run on the board (grab, transforms) show on the display only. Guides:
+// the output sizes from the top left, and the window each display shows when
+// it shows this slot (/disp/<d>/crop; the Wall tab moves them).
 // Live mode sends every stroke at once; batch mode keeps the drawing here (with
 // undo / redo) until Send. Keys: B brush, L line, R rect, E ellipse, P shape,
 // G gradient, F fill, I pick, T text, [ ] size, X swap colours, Ctrl+Z undo,
@@ -10,7 +13,8 @@ import { h, card, row, hexToRgb, store, toast } from "./ui.js";
 import * as anim from "./anim.js";
 import { colorPicker } from "./colorpick.js";
 
-const W = 1280, H = 720;
+const W = 1920, H = 1080; // a whole slot (sw/lib/dz_hw.h: 7680-byte lines)
+const SIZES = [[640, 480], [800, 600], [1024, 768], [1280, 720]]; // output modes (debazd disp.c video_modes)
 const MAXPTS = 13; // stroke: 5 fixed args + 13 points = 31 args (< 32)
 const DEF = { slot: 6, tool: "brush", color: "#ff9a3c", color2: "#2040ff", fill: true, size: 24, hard: 0.4,
   alpha: 1, blend: "normal", text: "DEBAZAROS", ttf: 64, scale: 2, sprite: 0, sscale: 1, angle: 0,
@@ -20,7 +24,7 @@ const DEF = { slot: 6, tool: "brush", color: "#ff9a3c", color2: "#2040ff", fill:
 const s = { ...DEF, ...store.get("paint", {}) };
 const SHAPES = ["rect", "ellipse", "shape"]; // rotatable, gradient-filled (dz_shape.c)
 const DRAG = ["line", "gradient", ...SHAPES]; // tools that use press-drag-release
-let cv, cx, ov, ox, drawing = false, start = null, pending = [], last = null, raf = false;
+let cv, cx, ov, ox, gv, drawing = false, start = null, pending = [], last = null, raf = false;
 let end = null, rotating = null, rotOut = null, rotEl = null; // drag state, rotation slider
 let setTool = () => {}, toolKeys = {};
 const brushSet = {}; // key -> setter of the Brush card controls
@@ -513,8 +517,9 @@ export function init(root) {
   cx.fillRect(0, 0, W, H);
   ov = h("canvas.overlay", { width: W, height: H });
   ox = ov.getContext("2d");
+  gv = h("canvas.overlay", { width: W, height: H });
 
-  const slot = h("select", { title: "target slot: /draw/<slot>/..., /surface/<slot>/...", onchange: () => { s.slot = parseInt(slot.value); save(); } },
+  const slot = h("select", { title: "target slot: /draw/<slot>/..., /surface/<slot>/...", onchange: () => { s.slot = parseInt(slot.value); save(); refreshGuides(); } },
     [...Array(12).keys()].map((i) => h("option", { value: i, selected: i === s.slot }, `slot ${i}`)));
   // [tool, label, key, hover text]
   const TOOLS = [["brush", "🖌 brush", "B", "/draw/<slot>/stroke (soft round brush)"], ["line", "╱ line", "L", "/draw/<slot>/line"],
@@ -624,13 +629,25 @@ export function init(root) {
   };
   setMode(!!s.batch);
 
+  guideBox = h("input", { type: "checkbox", checked: s.guides !== false, title: "show the output sizes and the display windows (this browser only)",
+    onchange: () => { s.guides = guideBox.checked; save(); drawGuides(); } });
+  canvasSel = h("select", { title: "/surface/<slot>/canvas full|mode\nfull = the whole slot in every mode (8.3 MB of board RAM per slot in use);\n" +
+    "mode = only the output size (old behaviour, faster full-frame ops, starts again after a mode change).\nA change starts the slot's paint buffer again (black).",
+    onchange: () => { net.msg(`/surface/${s.slot}/canvas`, canvasSel.value); setTimeout(refreshGuides, 200); } },
+    h("option", { value: "full" }, "full slot"), h("option", { value: "mode" }, "output size"));
+  canvasInfo = h("span.hint", { title: "/surface/<slot>/canvas -> full|mode w h kB-in-use kB-free\n" +
+    "/surface/<slot>/free gives the RAM back (the slot keeps its picture)" }, "");
   const left = h("div.paint-left", {},
       h("div.row", {}, h("label", {}, "draw into"), slot,
-        act("Show on display 0", () => net.msg("/disp/0/show", s.slot)),
-        act("Show on display 1", () => net.msg("/disp/1/show", s.slot))),
+        act("Show on display 0", () => { net.msg("/disp/0/show", s.slot); setTimeout(refreshGuides, 200); }),
+        act("Show on display 1", () => { net.msg("/disp/1/show", s.slot); setTimeout(refreshGuides, 200); })),
       h("div.row.modebar", {}, h("div.seg", {}, modeLive, modeBatch), bUndo, bRedo, bSend, bDrop, batchEl),
-      h("div.canvas-wrap", {}, cv, ov),
-      h("p.hint", {}, "Preview of your own drawing only. Board-side effects (grab, transforms, LFOs, Load) show on " +
+      h("div.canvas-wrap", {}, cv, gv, ov),
+      h("div.row", {}, h("label", {}, "guides"), guideBox, h("span.hint", {}, "output sizes"),
+        h("label", {}, "canvas"), canvasSel, canvasInfo),
+      h("p.hint", {}, "The canvas is the whole 1920×1080 slot. A display shows a window of the output size: " +
+        "dashed = the output sizes from the top left, orange / green = the window of display 0 / 1 when it shows this slot " +
+        "(move it in the Wall tab). Preview of your own drawing only. Board-side effects (grab, transforms, LFOs, Load) show on " +
         "the display and go to the board at once, also in batch mode."));
 
   // Brush card: big labelled controls with a value field each, a live sample, presets
@@ -714,14 +731,15 @@ export function init(root) {
             cx.globalAlpha = 1; cx.globalCompositeOperation = "source-over"; cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H); })),
         row("fade", fade, act("Fade", () => { bmsg(`${D()}/fade`, net.float(Number(fade.value)));
           cx.globalAlpha = Number(fade.value); cx.globalCompositeOperation = "source-over"; cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H); })),
-        row(null, act("Grab live input", () => net.msg(`/surface/${s.slot}/grab`, 4))),
+        row(null, act("Grab live input", () => net.msg(`/surface/${s.slot}/grab`, 4)),
+          act("Free RAM", () => { net.msg(`/surface/${s.slot}/free`); setTimeout(refreshGuides, 200); }, `/surface/<slot>/free: give the paint buffer's board RAM back (8.3 MB for a full slot); the slot keeps its picture, the next draw starts from black`)),
         h("p.hint", {}, "Grab copies the live HDMI input into this slot: then paint on the frozen frame.")),
       anim.saveCard(() => s.slot),
       card("Image",
         row("save as", saveName, act("Save", saveImage)),
         row("recall", imgSel, act("Load", loadImage), act("↻", () => listImages(imgSel.value))),
         h("p.hint", {}, "Save writes this slot's paint buffer (what you drew, also a grab) as a PNG on the board; " +
-          "Load draws a saved image back into the slot, scaled to the full frame. Images also show in Media.")),
+          "Load draws a saved image back into the slot at its own size, at the top left (a larger one is made smaller). Images also show in Media.")),
       card("Fill",
         row(null,
           act("Solid", () => { bmsg(`${D()}/solid`, ...rgb());
@@ -760,7 +778,7 @@ export function init(root) {
       card("Transforms",
         row("rotozoom", num("rz", 0.5, "angle per step (deg)", -180, 180), num("zoom", 0.01, "zoom per step", 0.1, 4),
           act("Step", () => net.msg(`${D()}/rotozoom`, net.float(s.rz), net.float(s.zoom)), "/draw/<slot>/rotozoom <deg> <zoom>")),
-        row("scroll", num("dx", 1, "dx px", -1280, 1280), num("dy", 1, "dy px", -720, 720),
+        row("scroll", num("dx", 1, "dx px", -1920, 1920), num("dy", 1, "dy px", -1080, 1080),
           act("Step", () => net.msg(`${D()}/scroll`, s.dx | 0, s.dy | 0), "/draw/<slot>/scroll <dx> <dy>")),
         row("mirror", act("H", () => net.msg(`${D()}/mirror`, "h"), "/draw/<slot>/mirror h"), act("V", () => net.msg(`${D()}/mirror`, "v"), "/draw/<slot>/mirror v"),
           act("Quad", () => net.msg(`${D()}/mirror`, "quad"))),
@@ -773,6 +791,7 @@ export function init(root) {
         h("p.hint", {}, "Each Step runs once on the board. For motion, give an LFO a target, e.g. " +
           "/draw/6/rotozoom $f0 1.02 (every 2 frames)."))));
   drawBrushPreview();
+  watchGuides();
 
   // keys (not while typing in a field)
   document.addEventListener("keydown", (e) => {
@@ -788,4 +807,81 @@ export function init(root) {
     else if (k === "escape" && drawing && DRAG.includes(s.tool)) { drawing = false; start = null; ox.clearRect(0, 0, W, H); endOp(); }
     else if (toolKeys[k]) setTool(toolKeys[k]);
   });
+}
+
+// ---- guides: output sizes and the display windows (2026-11-04) ----
+let guideBox, canvasSel, canvasInfo;
+const view = { disp: [-1, -1], crop: [[0, 0], [0, 0]], mw: 1280, mh: 720 };
+
+function drawGuides() {
+  if (!gv) return;
+  const g = gv.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  if (s.guides === false) return;
+  g.font = "22px system-ui";
+  g.lineWidth = 2;
+  g.setLineDash([12, 10]);
+  for (const [w, hh] of SIZES) {
+    const cur = w === view.mw && hh === view.mh;
+    g.strokeStyle = cur ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.35)";
+    g.strokeRect(1, 1, w - 2, hh - 2);
+    g.fillStyle = g.strokeStyle;
+    g.fillText(`${w}×${hh}${cur ? " (output)" : ""}`, w - 200, hh - 10);
+  }
+  g.setLineDash([]);
+  g.lineWidth = 4;
+  ["#ff9a3c", "#4cc38a"].forEach((col, d) => {
+    if (view.disp[d] !== s.slot) return;
+    const [x, y] = view.crop[d];
+    g.strokeStyle = col;
+    g.strokeRect(x + 2, y + 2, view.mw - 4, view.mh - 4);
+    g.fillStyle = col;
+    g.fillText(`display ${d}`, x + 12, y + 30);
+  });
+}
+
+async function refreshGuides() {
+  if (!net.connected()) return drawGuides();
+  const v = await net.ask(net.message("/video/mode"), (m) => m.path === "/video/mode" && m.args.length >= 2);
+  if (v) [view.mw, view.mh] = v.args;
+  for (const d of [0, 1]) {
+    const r = await net.ask(net.message(`/disp/${d}`), (m) => m.path === `/disp/${d}`);
+    view.disp[d] = r ? r.args[0] : -1;
+    const c = await net.ask(net.message(`/disp/${d}/crop`), (m) => m.path === `/disp/${d}/crop`);
+    if (c) view.crop[d] = [c.args[0], c.args[1]];
+  }
+  const c = await net.ask(net.message(`/surface/${s.slot}/canvas`), (m) => m.path === `/surface/${s.slot}/canvas`);
+  if (c && canvasSel) {
+    const [mode, w, hh, kb, free] = c.args;
+    canvasSel.value = mode;
+    canvasInfo.textContent = `${w}×${hh}, ${kb ? (kb / 1024).toFixed(1) + " MB in use" : "no RAM in use"}, ${(free / 1024).toFixed(0)} MB free`;
+  }
+  drawGuides();
+}
+
+export function show() {
+  refreshGuides();
+}
+
+export function connected() {
+  refreshGuides();
+}
+
+// the display windows follow the board (Wall tab, LFOs, cues): poll once a
+// second while this tab is open
+function watchGuides() {
+  net.on("/disp/", (m) => {
+    const r = /^\/disp\/([01])(\/crop)?$/.exec(m.path);
+    if (!r || !m.args.length) return;
+    const d = +r[1], old = JSON.stringify([view.disp[d], view.crop[d]]);
+    if (r[2] && m.args.length >= 2) view.crop[d] = [m.args[0], m.args[1]];
+    else if (!r[2] && typeof m.args[0] === "number") view.disp[d] = m.args[0];
+    if (JSON.stringify([view.disp[d], view.crop[d]]) !== old) drawGuides();
+  });
+  net.on("/event/mode", () => refreshGuides());
+  setInterval(() => {
+    if (document.hidden || !cv.closest(".tab")?.classList.contains("active") || !net.connected()) return;
+    net.send(net.bundle(net.message("/disp/0"), net.message("/disp/0/crop"),
+      net.message("/disp/1"), net.message("/disp/1/crop")));
+  }, 1000);
 }

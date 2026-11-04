@@ -5,7 +5,7 @@
 import * as net from "./net.js";
 import { h, card, row, toast, store } from "./ui.js";
 
-let root, showSel, sceneSel, statusEl, checkEl, cueBody, lookBody, inspTitle, inspPre, overSecs, overMode;
+let root, showSel, sceneSel, loopBox, statusEl, checkEl, cueBody, lookBody, inspTitle, inspPre, overSecs, overMode;
 let scene = store.get("cues.scene", "");
 let cues = [];
 let timer = 0;
@@ -32,9 +32,10 @@ async function loadShows() {
 
 async function loadScenes() {
   const list = await net.collect(net.message("/scene/list"), "/scene", "/scene/end");
-  sceneSel.replaceChildren(...list.map((a) => h("option", { value: a[1] }, `${a[1]} (${a[2]})`)));
+  sceneSel.replaceChildren(...list.map((a) => h("option", { value: a[1] }, `${a[1]} (${a[2]})${a[3] ? " ⟳" : ""}`)));
   if (list.some((a) => a[1] === scene)) sceneSel.value = scene;
   scene = sceneSel.value;
+  loopBox.checked = !!list.find((a) => a[1] === scene)?.[3];
   loadCues();
 }
 
@@ -44,7 +45,7 @@ async function loadCues() {
   cueBody.replaceChildren(...cues.map(cueRow));
 }
 
-function cueRow([num, name, kind, nset, fade, curve, mode, looks]) {
+function cueRow([num, name, kind, nset, fade, curve, mode, looks, follow, fend]) {
   const n = net.float(num);
   const nameIn = h("input", { type: "text", value: name, style: "width:9em",
     title: `/cue/name <scene> ${fmt(num)} "<name>"`, onchange: () => send("/cue/name", sc(), n, nameIn.value) });
@@ -55,6 +56,17 @@ function cueRow([num, name, kind, nset, fade, curve, mode, looks]) {
   const setFade = () => { send("/cue/fade", sc(), n, net.float(Number(fadeIn.value) || 0), curveSel.value, modeSel.value); later(loadCues); };
   fadeIn.onchange = curveSel.onchange = modeSel.onchange = setFade;
   [fadeIn, curveSel, modeSel].forEach((e) => (e.title += `\n/cue/fade <scene> ${fmt(num)} <secs> <curve> <cut|fade|dip>`));
+  const folIn = h("input", { type: "text", value: fend ? `end${follow ? "+" + fmt(follow) : ""}` : follow ? fmt(follow) : "",
+    placeholder: "manual", style: "width:5.5em",
+    title: "auto follow: seconds after this cue's go, the next cue goes by itself; end = when the movie / audio file of " +
+      "this cue ends (play once: /movie/<s>/loop 0), end+2 = 2 s after it; empty / 0 = wait for GO\n" +
+      `/cue/follow <scene> ${fmt(num)} <secs> | end [secs] | off`,
+    onchange: () => {
+      const v = folIn.value.trim(), em = /^end(?:\s*\+?\s*(\d+(?:\.\d+)?))?$/.exec(v);
+      if (em) send("/cue/follow", sc(), n, "end", net.float(Number(em[1] || 0)));
+      else send("/cue/follow", sc(), n, net.float(Number(v) || 0));
+      later(loadCues);
+    } });
   const lookChips = (looks ? looks.split(",") : []).map((lk) => h("span.chip", { title: `remove: /cue/look <scene> ${fmt(num)} remove ${lk}`,
     style: "cursor:pointer", onclick: () => { send("/cue/look", sc(), n, "remove", lk); later(loadCues); } }, `${lk} ✕`));
   return h("tr", {},
@@ -64,6 +76,7 @@ function cueRow([num, name, kind, nset, fade, curve, mode, looks]) {
     h("td", {}, ...lookChips),
     h("td", { title: "its own targets (the differences it stores)" }, String(nset)),
     h("td", {}, fadeIn, curveSel, modeSel),
+    h("td", {}, folIn),
     h("td", {},
       h("button.primary", { title: `/cue/go <scene> ${fmt(num)} [override]`, onclick: () => { send("/cue/go", sc(), n, ...overrides()); later(status); } }, "Go"),
       h("button", { title: `record the state now into this cue (its own targets only; looks stay)\n/cue/record <scene> ${fmt(num)} ${kind}`,
@@ -122,7 +135,9 @@ function refreshAll() {
 export function init(el) {
   root = el;
   showSel = h("select", { title: "shows on the board (/show/list)" });
-  sceneSel = h("select", { title: "scene", onchange: () => { scene = sceneSel.value; store.set("cues.scene", scene); loadCues(); } });
+  sceneSel = h("select", { title: "scene", onchange: () => { scene = sceneSel.value; store.set("cues.scene", scene); loadScenes(); } });
+  loopBox = h("input", { type: "checkbox", title: "repeat: after the last cue the first again (a follow, and GO)\n/scene/loop <scene> 1|0",
+    onchange: () => { if (sc()) { send("/scene/loop", sc(), loopBox.checked ? 1 : 0); later(loadScenes); } } });
   statusEl = h("div.cuestat", {}, "–");
   checkEl = h("div", {});
   cueBody = h("tbody");
@@ -177,6 +192,7 @@ export function init(el) {
       row("scene", sceneSel, sceneName,
         h("button", { title: "/scene/add <name>", onclick: () => { if (sceneName.value) { scene = sceneName.value; send("/scene/add", sceneName.value); later(loadScenes); } } }, "Add"),
         h("button", { title: "/scene/rename <scene> <name>", onclick: () => { if (sceneName.value && sc()) { send("/scene/rename", sc(), sceneName.value); scene = sceneName.value; later(loadScenes); } } }, "Rename"),
+        h("label", {}, loopBox, " repeat"),
         h("button.danger", { title: "/scene/delete <scene>", onclick: () => { if (sc() && confirm(`Delete scene ${sc()} and its cues?`)) { send("/scene/delete", sc()); later(loadScenes); } } }, "Delete")),
       row("record", recNum, recKind, recName,
         h("button.primary", { title: "the state now as cue <num>: its own targets = the differences from baseline + looks " +
@@ -188,15 +204,17 @@ export function init(el) {
           later(loadScenes, 300);
         } }, "Record")),
       h("div", { style: "overflow-x:auto" }, h("table.mixer", {},
-        h("thead", {}, h("tr", {}, ...["#", "name", "kind", "looks", "own", "transition", ""].map((t) => h("th", {}, t)))), cueBody)),
+        h("thead", {}, h("tr", {}, ...["#", "name", "kind", "looks", "own", "transition", "follow s", ""].map((t) => h("th", {}, t)))), cueBody)),
       h("p.hint", {}, "Cue numbers may have decimals: record 2.5 to put a cue between 2 and 3. The first cue of a " +
         "scene must be a keyframe.")),
     h("div.card", { style: "grid-column:1/-1" }, inspTitle, inspPre)));
 
   net.on("/cue/status", (m) => {
-    const [show, scn, num, name, kind, nsc, ncue] = m.args;
-    statusEl.replaceChildren(h("b", {}, show), ` · scene ${scn || "–"} · cue `,
+    const [show, scn, num, name, kind, nsc, ncue, , left, loop] = m.args;
+    statusEl.replaceChildren(h("b", {}, show), ` · scene ${scn || "–"}${loop ? " ⟳" : ""} · cue `,
       h("b", { style: "font-size:1.3em" }, num ? fmt(num) : "–"), ` ${name || ""} `, h("span.hint", {}, kind || ""),
+      left >= 0 ? h("span.chip", { title: "auto follow: the next cue goes in" }, `next in ${left.toFixed(1)} s`) :
+        left === -2 ? h("span.chip", { title: "auto follow: the next cue goes when this cue's movie / audio ends" }, "next at the end") : null,
       h("span.hint", {}, ` · ${nsc} scene(s), ${ncue} cue(s)`));
     if (scn && scn !== sceneSel.value && [...sceneSel.options].some((o) => o.value === scn)) { sceneSel.value = scn; scene = scn; loadCues(); }
     if (num) cueBody.querySelectorAll("tr").forEach((tr, i) => tr.classList.toggle("on", cues[i] && Number(cues[i][0]).toFixed(3) === Number(num).toFixed(3)));
@@ -211,5 +229,5 @@ export function connected() {
 export function show() {
   refreshAll();
   clearInterval(timer);
-  timer = setInterval(() => { if (!document.hidden && root.classList.contains("active")) status(); }, 1500);
+  timer = setInterval(() => { if (!document.hidden && root.classList.contains("active")) status(); }, 500);
 }

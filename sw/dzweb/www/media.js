@@ -4,15 +4,30 @@ import * as net from "./net.js";
 import { h, card, row, hexToRgb, toast } from "./ui.js";
 import * as movfx from "./movfx.js";
 import * as anim from "./anim.js";
+import { playlistCard } from "./playlist.js";
 
 const KINDS = {
   img: { title: "Images", dir: "/media/debaz/img", accept: "image/*,.ppm" },
   movies: { title: "Movies", dir: "/media/debaz/movies", accept: "video/*,.mkv,.ts" },
   audio: { title: "Audio", dir: "/media/debaz/audio", accept: "audio/*,.wav,.mp3,.flac,.ogg,.mkv" },
 };
-let lists = {}, uploads = {}, freeEl, spriteId, slotSel, info, movieAudio, audioOut;
+let lists = {}, uploads = {}, freeEl, spriteId, slotSel, info, movieAudio, audioOut, movX, movY;
 let state = { free: -1, keep: 0, max: 0, img: [], movies: [], audio: [] };
 let queue = Promise.resolve(); // one upload at a time: the SD card is slow
+
+// files picked for the playlist (playlist.js), in click order; shift-click = a range
+let picked = [], lastPick = null;
+const isPicked = (kind, name) => picked.some((p) => p.kind === kind && p.name === name);
+function pick(kind, files, i, on, shift) {
+  const range = shift && lastPick && lastPick.kind === kind ? [Math.min(lastPick.i, i), Math.max(lastPick.i, i)] : [i, i];
+  for (let k = range[0]; k <= range[1]; k++) {
+    const name = files[k].name;
+    picked = picked.filter((p) => !(p.kind === kind && p.name === name));
+    if (on) picked.push({ kind, name });
+  }
+  lastPick = { kind, i };
+  draw(kind);
+}
 
 const mb = (n) => (n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(2)} GB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 const url = (kind, name) => `${net.httpBase()}/media/${kind}/${encodeURIComponent(name)}`;
@@ -65,7 +80,10 @@ function actions(kind, name) {
 
 function draw(kind) {
   const files = [...(state[kind] || [])].sort((a, b) => a.name.localeCompare(b.name));
-  lists[kind].replaceChildren(...files.map((f) => h("div.item", {},
+  lists[kind].replaceChildren(...files.map((f, i) => h("div.item", {},
+    h("input", { type: "checkbox", checked: isPicked(kind, f.name), title: "pick for the playlist (Playlist → scene card; " +
+      `#${picked.findIndex((p) => p.kind === kind && p.name === f.name) + 1 || "–"} in the order; shift-click: a range)`,
+      onclick: (e) => pick(kind, files, i, e.target.checked, e.shiftKey) }),
     kind === "img" ? h("img", { src: url(kind, f.name) + `?t=${f.mtime}`, loading: "lazy", alt: "" }) : null,
     h("span", { title: f.name }, f.name),
     h("span.size", {}, mb(f.size)),
@@ -147,6 +165,13 @@ export function init(root) {
   freeEl = h("span.hint", {}, "");
   spriteId = h("input", { type: "number", min: 0, max: 63, value: 0, title: "/sprite/<id>/...: the sprite number 0..63" });
   slotSel = slotPicker();
+  movX = h("input", { type: "number", min: 0, max: 1918, step: 2, value: 0, style: "width:76px", title: "x (even) of /movie/<slot>/pos x y" });
+  movY = h("input", { type: "number", min: 0, max: 1079, step: 1, value: 0, style: "width:76px", title: "y of /movie/<slot>/pos x y" });
+  const posLoad = async () => {
+    const r = await net.ask(net.message(`/movie/${slotSel.value}/pos`), (m) => m.path === `/movie/${slotSel.value}/pos`);
+    if (r) [movX.value, movY.value] = r.args;
+  };
+  slotSel.addEventListener("change", posLoad);
   slotSel.addEventListener("change", fxRefresh);
   info = h("span.hint", {}, "");
   movieAudio = h("select", { title: "where the movie's own audio track plays\n" +
@@ -172,8 +197,14 @@ export function init(root) {
       card(`${KINDS.movies.title} (${KINDS.movies.dir})`, dropZone("movies"), uploads.movies, lists.movies,
         row("movie audio", movieAudio),
         row(null, h("button", { title: "/movie/<slot>/stop", onclick: () => net.msg(`/movie/${slotSel.value}/stop`) }, "Stop movie in slot")),
-        h("p.hint", {}, "Movies decode on the board (about 12–20 fps per 720p stream). " +
-          "File names change to A-Z a-z 0-9 . _ - on upload.")),
+        row("position", movX, movY, h("button", { title: "/movie/<slot>/pos x y: the movie's top left in the slot\n" +
+          "(not moved in: near the edge, or taller than 1080, it runs on into the next slot;\n" +
+          "wider than 1920 does not play; a playing movie restarts)",
+          onclick: () => net.msg(`/movie/${slotSel.value}/pos`, Number(movX.value) | 0, Number(movY.value) | 0) }, "Set")),
+        h("p.hint", {}, "Movies decode on the board (about 12–20 fps per 720p stream) and play at their own size " +
+          "(never scaled to the output: scaling costs more CPU than the decode; at most 1920 wide, and above 720p the decode " +
+          "is too slow) at the position in the slot; " +
+          "a display shows a window of the slot (Wall tab). File names change to A-Z a-z 0-9 . _ - on upload.")),
       anim.playerCard(),
       movfx.moshCard(() => slotSel.value),
       movfx.asciiCard(() => slotSel.value, slotPicker),
@@ -181,6 +212,8 @@ export function init(root) {
         row("play on", audioOut, h("button", { title: "/audio/stop", onclick: () => net.msg("/audio/stop") }, "Stop all")),
         h("p.hint", {}, "Recordings from the Audio tab land here. HDMI 0 + 1 for a movie = the same " +
           "audio on both outputs; the Audio tab's sources choose what each output plays.")),
+      playlistCard(() => picked, () => { picked = []; lastPick = null; for (const k of Object.keys(KINDS)) draw(k); },
+        () => parseInt(movieAudio.value), () => parseInt(audioOut.value)),
       card("Sprites",
         row("colour", color, text),
         row(null,

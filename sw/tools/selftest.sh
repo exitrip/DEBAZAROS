@@ -228,18 +228,34 @@ q /draw/9/solid 255 0 0 0 0 1 1 >/dev/null
 q /draw/9/scroll 10 5 >/dev/null
 check scroll       "/pixel 9 10 5 255 0 0"        q /surface/9/peek 10 5
 q /draw/9/scroll -20 -10 >/dev/null
-check scroll-wrap  "/pixel 9 1270 715 255 0 0"    q /surface/9/peek 1270 715
+check scroll-wrap  "/pixel 9 1910 1075 255 0 0"   q /surface/9/peek 1910 1075
 q /draw/10/clear 0 0 0 >/dev/null
 q /draw/10/solid 0 255 0 0 0 1 1 >/dev/null
 q /draw/10/mirror quad >/dev/null
-check mirror-h     "/pixel 10 1279 0 0 255 0"     q /surface/10/peek 1279 0
-check mirror-quad  "/pixel 10 1279 719 0 255 0"   q /surface/10/peek 1279 719
+check mirror-h     "/pixel 10 1919 0 0 255 0"     q /surface/10/peek 1919 0
+check mirror-quad  "/pixel 10 1919 1079 0 255 0"  q /surface/10/peek 1919 1079
 q /draw/10/clear 0 0 0 >/dev/null
 q /draw/10/solid 0 0 255 10 0 1 1 >/dev/null
 q /draw/10/transform 1 0 10 0 1 0 >/dev/null
 check transform    "/pixel 10 0 0 0 0 255"        q /surface/10/peek 0 0
 q /draw/9/rotozoom 0 1 9 >/dev/null
-check rotozoom-id  "/pixel 9 1270 715 255 0 0"    q /surface/9/peek 1270 715
+check rotozoom-id  "/pixel 9 1910 1075 255 0 0"   q /surface/9/peek 1910 1075
+# canvas (2026-11-04): the whole slot by default, mode = the mode's size
+check canvas-full  "/surface/9/canvas \"full\" 1920 1080 8100"  q /surface/9/canvas
+q /surface/8/canvas mode >/dev/null
+q /draw/8/solid 0 255 0 0 0 1 1 >/dev/null
+q /draw/8/mirror h >/dev/null
+check canvas-mode  "/pixel 8 1279 0 0 255 0"      q /surface/8/peek 1279 0
+check canvas-mode-q "/surface/8/canvas \"mode\" 1280 720 3600"  q /surface/8/canvas
+q /surface/8/free >/dev/null
+check canvas-free  "/surface/8/canvas \"mode\" 1280 720 0 "  q /surface/8/canvas
+q /surface/8/canvas full >/dev/null
+check canvas-back  "/surface/8/canvas \"full\" 1920 1080 0 "  q /surface/8/canvas
+check movie-pos-0  "/movie/2/pos 0 0"             q /movie/2/pos
+q /movie/2/pos 101 50 >/dev/null
+check movie-pos    "/movie/2/pos 100 50"          q /movie/2/pos
+check movie-pos-st "\"/movie/2/pos\" 100 50"     q /state
+q /movie/2/pos 0 0 >/dev/null
 q /draw/10/wave 0 0 100 0 >/dev/null
 check wave-zero    "/pixel 10 0 0 0 0 255"        q /surface/10/peek 0 0
 
@@ -418,6 +434,37 @@ q /cue/go s1 1 >/dev/null; q /look/apply lk1 >/dev/null
 check look-apply    "/value \"/hdmi/1/gain/rgb\" 729366"    q /hdmi/1/gain/rgb
 check look-add      "/cue/look \"s1\" 3 1"                  q /cue/look s1 3 add lk1
 check show-check    "/show/check/end 0"                     q /show/check
+# playlist scenes (2026-11-04): cues without recording, auto follow, loop
+check cue-put       "/cue/put \"pl\" 1 \"keyframe\""          q /cue/put pl 1 keyframe one
+q /cue/add pl 1 /mixer/3/k 111 >/dev/null
+q /cue/put pl 2 keyframe two >/dev/null
+check cue-add       "/cue/add \"pl\" 2 1"                     q /cue/add pl 2 /mixer/3/k 222
+check cue-follow    "/cue/follow \"pl\" 1 1.5"                q /cue/follow pl 1 1.5
+q /cue/follow pl 2 1.5 >/dev/null
+check scene-loop    "/scene/loop \"pl\" 1"                    q /scene/loop pl 1
+check cue-list-fol  "\"two\" \"keyframe\" 1 0 \"linear\" \"cut\" \"\" 1.5"  q /cue/list pl
+q /cue/go pl 1 >/dev/null
+check follow-1      "/value \"/mixer/3/k\" 111"              q /mixer/3/k
+sleep 1.5
+check follow-2      "/value \"/mixer/3/k\" 222"              q /mixer/3/k
+sleep 1.5
+check follow-loop   "/value \"/mixer/3/k\" 111"              q /mixer/3/k
+q /cue/stop >/dev/null; sleep 1.7
+check follow-stop   "/value \"/mixer/3/k\" 111"              q /mixer/3/k
+q /scene/loop pl 0 >/dev/null; q /cue/go pl 2 >/dev/null; sleep 1.7
+check follow-end    "/value \"/mixer/3/k\" 222"              q /mixer/3/k
+check cue-status-fol "\"pl\" 2 \"two\" \"keyframe\" 2 2 1.5 -1 0"  q /cue/status
+check img-file-st   "\"/img/3/file\" \"\""                   q /state
+check movie-loop    "/movie/2/loop 1"                      q /movie/2/loop
+q /movie/2/loop 0 >/dev/null
+check movie-loop0   "\"/movie/2/loop\" 0"                  q /state
+q /movie/2/loop 1 >/dev/null
+check follow-endq   "/cue/follow \"pl\" 2 0.5 1"            q /cue/follow pl 2 end 0.5
+q /cue/follow pl 1 0 >/dev/null; q /scene/loop pl 1 >/dev/null; q /cue/go pl 2 >/dev/null; sleep 0.3
+check follow-endwait "2 \"two\" \"keyframe\" 2 2 0.5"      q /cue/status
+sleep 3.6
+check follow-ended  "/value \"/mixer/3/k\" 111"              q /mixer/3/k
+q /scene/delete pl >/dev/null
 q /led/red 0 >/dev/null
 
 # paint bucket: an outlined box, filled inside; outside stays black
@@ -444,8 +491,9 @@ if [ $HAVE_FF -eq 1 ]; then
 	q /anim/0/pause 1 >/dev/null; q /anim/0/frame 0 >/dev/null; sleep 0.15
 	check anim-frame0  "\"paused\" \"f1.jpg\""               q /anim/0
 	q /surface/3/grab "$(q /anim/0 | awk '{print $NF}')" >/dev/null
-	near  anim-pixel   "32 64 128"                            q /surface/3/peek 640 360
-	check anim-border  "/pixel 3 479 360 0 0 0"               q /surface/3/peek 479 360
+	near  anim-pixel   "32 64 128"                            q /surface/3/peek 100 100
+	# frames at their own size at the top left (2026-11-04), nothing written outside them
+	near  anim-topleft  "32 64 128"                            q /surface/3/peek 319 179
 	q /anim/0/step 2 >/dev/null; sleep 0.15
 	check anim-step    "\"f3.jpg\""                          q /anim/0
 	check anim-sheet   "/anim/1 \"sheet\" 2 -1 5"             q /anim/1/play sheet
@@ -454,7 +502,7 @@ if [ $HAVE_FF -eq 1 ]; then
 	check anim-slots-busy "stop the sequence first"          q /anim/1/slots 1 3
 	q /anim/1/pause 1 >/dev/null; q /anim/1/frame 1 >/dev/null; sleep 0.15
 	q /surface/3/grab "$(q /anim/1 | awk '{print $NF}')" >/dev/null
-	near  anim-png     "255 0 0"                              q /surface/3/peek 640 360
+	near  anim-png     "255 0 0"                              q /surface/3/peek 100 100
 	q /state/snap anim1 >/dev/null
 	q /disp/0/show 0 >/dev/null
 	check anim-stopped "/anim/0 \"\" 0 -1"                   q /anim/0

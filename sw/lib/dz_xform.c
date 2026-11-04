@@ -89,6 +89,7 @@ static void xf_end(xf_t *x)
 		uint32_t *old = dz_surf_swap(x->dst, x->out);
 
 		spare = old;			/* the old buffer is the next spare */
+		spare_n = (size_t)x->w * x->h;	/* its size (surfaces differ: canvas) */
 		if (x->dev) {
 			__sync_synchronize();
 			dz_surf_clean(x->dst);

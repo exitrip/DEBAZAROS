@@ -76,6 +76,7 @@
 #include <strings.h>
 #include <sys/file.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -94,9 +95,10 @@ typedef struct {
 } sub_t;
 static sub_t subs[MAX_SUBS];
 
-/* the sender of the message being handled; internal = sent by the daemon */
-static struct sockaddr_in cur_from;
-static int cur_internal;
+/* the sender of the message being handled; internal = sent by the daemon.
+ * Per thread (2026-11-03): the pixel thread replies to its own messages. */
+static __thread struct sockaddr_in cur_from;
+static __thread int cur_internal;
 
 static void on_signal(int sig) { (void)sig; stop = 1; }
 
@@ -147,9 +149,9 @@ static void send_to(const struct sockaddr_in *to, const char *path, const char *
 /* The replies to one received packet go out as OSC bundles of up to 8 KB
  * (2026-11-01): a /state dump is ~477 replies, and as single datagrams the
  * receiver dropped ~15 % of them. dzctl and the web app read bundles. */
-static uint8_t bun[DZ_OSC_MAX_PKT];
-static size_t  bun_len;
-static int     batching;
+static __thread uint8_t bun[DZ_OSC_MAX_PKT];
+static __thread size_t  bun_len;
+static __thread int     batching;
 
 static void bun_flush(void)
 {
@@ -240,6 +242,7 @@ static void event(const char *path, const char *tags, ...)
 }
 
 static int cap_frames = -1;	/* frame flow state, updated by the monitor */
+int capture_plocked = -1;	/* HDMI_2 pLocked, updated by the monitor */
 static int sim_mode;
 #define IO_BITS		8
 #define TPL_MAX		256
@@ -400,11 +403,22 @@ static int list_fonts(const char *dir, int depth)
 	return count;
 }
 
+static void handle_pix(dz_msg *m);
+
 static void handle(dz_msg *m, void *ctx)
 {
 	int hits = 0;
 
 	(void)ctx;
+	if (pix_owns(m->path)) {	/* pixel domain: the pixel thread (pix.c) */
+		int rc = pix_here() ? -1 : pix_post(m, &cur_from, cur_internal);
+
+		if (rc == -1)
+			handle_pix(m);
+		else if (rc == -2)
+			reply("/error", "ss", "pixel thread busy (queue full), dropped", m->path);
+		return;
+	}
 	if (!strcmp(m->path, "/ping")) {
 		reply("/pong", "");
 		return;
@@ -502,22 +516,7 @@ static void handle(dz_msg *m, void *ctx)
 		return;
 	}
 
-	/* /surface/<s>/peek x y -> /pixel s x y r g b (needs a reply) */
-	{
-		int sl, n0 = 0;
-
-		if (sscanf(m->path, "/surface/%d/peek%n", &sl, &n0) == 1 &&
-		    !m->path[n0] && m->n >= 2) {
-			dz_color c;
-
-			if (dz_draw_peek(sl, m->a[0].i, m->a[1].i, &c) == 0)
-				reply("/pixel", "iiiiii", sl, m->a[0].i, m->a[1].i, c.r, c.g, c.b);
-			else
-				reply("/error", "ss", "bad surface or position", m->path);
-			return;
-		}
-	}
-	if (stats_dispatch(m) || react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || anim_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || ascii_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
+	if (stats_dispatch(m) || react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || anim_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
 	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
@@ -544,6 +543,35 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 	}
+	hits += do_fields(m);
+	if (!hits) {
+		reply("/error", "ss", "no such address", m->path);
+		dzd_log("debazd: no match %s\n", m->path);
+	}
+}
+
+/* the pixel domain (pix_owns): on the pixel thread, or inline without it */
+static void handle_pix(dz_msg *m)
+{
+	int hits = 0;
+
+	/* /surface/<s>/peek x y -> /pixel s x y r g b (needs a reply) */
+	{
+		int sl, n0 = 0;
+
+		if (sscanf(m->path, "/surface/%d/peek%n", &sl, &n0) == 1 &&
+		    !m->path[n0] && m->n >= 2) {
+			dz_color c;
+
+			if (dz_draw_peek(sl, m->a[0].i, m->a[1].i, &c) == 0)
+				reply("/pixel", "iiiiii", sl, m->a[0].i, m->a[1].i, c.r, c.g, c.b);
+			else
+				reply("/error", "ss", "bad surface or position", m->path);
+			return;
+		}
+	}
+	if (ascii_dispatch(m))
+		return;
 	{	/* /sprite/<id> query -> /sprite/<id> i:w i:h */
 		int id, n0 = 0, w = 0, h = 0;
 
@@ -560,7 +588,63 @@ static void handle(dz_msg *m, void *ctx)
 			reply("/error", "ss", "sprite operation failed", m->path);
 		return;
 	}
-	hits += do_fields(m);
+	if (!strcmp(m->path, "/media/info") && m->n >= 2 && m->a[0].type == 's' && m->a[1].type == 's') {
+		/* -> /media/info s:kind s:file f:seconds (0 = a still) i:w i:h
+		 * (ffprobe, 0.2-0.5 s on the board, on this pixel thread; kept by
+		 * name, size and mtime). The Media tab's playlist uses it. */
+		static struct { char path[300]; off_t size; time_t mt; float sec; int w, h; } c[32];
+		static int next_c;
+		const char *k = m->a[0].s, *f = m->a[1].s;
+		const char *dir = !strcmp(k, "movies") ? DZ_MOVIE_DIR : !strcmp(k, "audio") ? DZ_AUDIO_DIR :
+				  !strcmp(k, "img") ? DZ_IMG_DIR : NULL;
+		char path[300], cmd[420], line[160];
+		struct stat st;
+		int i, w = 0, h = 0;
+		float sec = 0;
+		FILE *fp;
+
+		if (!dir || !*f || strchr(f, '/') || strchr(f, '\'') || f[0] == '.') {
+			reply("/error", "ss", "/media/info movies|audio|img \"<file>\"", m->path);
+			return;
+		}
+		snprintf(path, sizeof(path), "%s/%s", dir, f);
+		if (stat(path, &st) != 0) {
+			reply("/error", "ss", "no such file", path);
+			return;
+		}
+		for (i = 0; i < 32; i++)
+			if (!strcmp(c[i].path, path) && c[i].size == st.st_size && c[i].mt == st.st_mtime)
+				break;
+		if (i == 32) {
+			snprintf(cmd, sizeof(cmd), "ffprobe -v error -show_entries format=duration:stream=width,height "
+				 "-of default=nw=1 '%s' 2>/dev/null", path);
+			if ((fp = popen(cmd, "r"))) {
+				while (fgets(line, sizeof(line), fp)) {
+					int v;
+					float d;
+
+					if (sscanf(line, "width=%d", &v) == 1 && !w)
+						w = v;
+					else if (sscanf(line, "height=%d", &v) == 1 && !h)
+						h = v;
+					else if (sscanf(line, "duration=%f", &d) == 1)
+						sec = d;
+				}
+				pclose(fp);
+			}
+			if (!strcmp(k, "img"))
+				sec = 0;
+			i = next_c++ % 32;
+			snprintf(c[i].path, sizeof(c[i].path), "%s", path);
+			c[i].size = st.st_size;
+			c[i].mt = st.st_mtime;
+			c[i].sec = sec;
+			c[i].w = w;
+			c[i].h = h;
+		}
+		reply(m->path, "ssfii", k, f, c[i].sec, c[i].w, c[i].h);
+		return;
+	}
 	{	/* /movie/<s>/fx -> /movie/<s>/fx i:running i:mosh i:bloom f:corrupt i:pause
 		 * (the hold states as last sent: what a cue stores) */
 		int sl, off = 0, mo, bl, pa, run;
@@ -583,6 +667,46 @@ static void handle(dz_msg *m, void *ctx)
 			return;
 		}
 		off = 0;
+		if (!hits && m->n == 0 && sscanf(m->path, "/movie/%d/loop%n", &sl, &off) == 1 &&
+		    !m->path[off] && sl >= 0 && sl < DZ_SLOTS) {
+			reply(m->path, "i", dz_draw_movie_loop_get(sl));
+			return;
+		}
+		off = 0;
+		if (!hits && m->n == 0 && sscanf(m->path, "/movie/%d/pos%n", &sl, &off) == 1 &&
+		    !m->path[off]) {
+			int x, y;
+
+			if (dz_draw_movie_pos_get(sl, &x, &y) == 0)
+				reply(m->path, "ii", x, y);
+			else
+				reply("/error", "ss", "bad slot", m->path);
+			return;
+		}
+		off = 0;
+		if (!hits && m->n == 0 && sscanf(m->path, "/surface/%d/canvas%n", &sl, &off) == 1 &&
+		    !m->path[off]) {
+			/* -> s:full|mode i:w i:h i:kB in use (0 = no RAM copy yet)
+			 *    i:kB of RAM free (MemAvailable) */
+			int w, h, mode;
+			size_t b;
+			long kb = -1;
+			char line[128];
+			FILE *f = fopen("/proc/meminfo", "r");
+
+			while (f && fgets(line, sizeof(line), f))
+				if (sscanf(line, "MemAvailable: %ld kB", &kb) == 1)
+					break;
+			if (f)
+				fclose(f);
+			mode = dz_draw_canvas_get(sl, &w, &h, &b);
+			if (mode < 0)
+				reply("/error", "ss", "bad slot", m->path);
+			else
+				reply(m->path, "siiii", mode ? "mode" : "full", w, h, (int)(b / 1024), (int)kb);
+			return;
+		}
+		off = 0;
 		if (!hits && sscanf(m->path, "/movie/%d/fx%n", &sl, &off) == 1 && !m->path[off]) {
 			run = dz_draw_movie_fx(sl, &mo, &bl, &co, &pa);
 			dz_draw_movie_memfx_get(sl, &tr, &gh);
@@ -593,9 +717,11 @@ static void handle(dz_msg *m, void *ctx)
 	if (!hits) {
 		hits += dz_draw_dispatch(m, verbose);
 		if (hits && dz_draw_take_fails()) {
-			const char *op = strrchr(m->path, '/');
+			const char *op = strrchr(m->path, '/'), *why = dz_draw_take_err();
 
-			if (!strncmp(m->path, "/movie/", 7) &&
+			if (why)
+				reply("/error", "ss", why, m->path);
+			else if (!strncmp(m->path, "/movie/", 7) &&
 			    (strstr(m->path, "/vf/") || strstr(m->path, "/af/")))
 				reply("/error", "ss", "live filter refused: /movie/<s>/vf|af/<filter>/<option> "
 				      "<number or word>, names a-z 0-9 _", m->path);
@@ -617,6 +743,22 @@ static void handle(dz_msg *m, void *ctx)
 		reply("/error", "ss", "no such address", m->path);
 		dzd_log("debazd: no match %s\n", m->path);
 	}
+}
+
+static void pix_cb(dz_msg *m, void *ctx)
+{
+	(void)ctx;
+	handle_pix(m);
+}
+
+void dzd_pix_run(const uint8_t *msg, size_t len, const struct sockaddr_in *from, int internal)
+{
+	cur_from = *from;
+	cur_internal = internal;
+	batching = 1;
+	dz_osc_walk(msg, len, pix_cb, NULL);
+	bun_flush();
+	batching = 0;
 }
 
 void dzd_handle_internal(dz_msg *m)
@@ -663,6 +805,7 @@ static void monitor(void)
 	idle_polls = seen ? 0 : idle_polls + 1;
 	cap_frames = idle_polls < 5;
 	lock = (int)((io >> 10) & 1);
+	capture_plocked = lock;
 	if (lock != last_lock || cap_frames != last_frames) {
 		event("/event/capture", "ii", lock, cap_frames);
 		dzd_log("debazd: capture plocked=%d frames=%d\n", lock, cap_frames);
@@ -677,8 +820,10 @@ static void monitor(void)
 	if (dz_geom_refresh()) {
 		dzd_log("debazd: video mode now %dx%d, stride %u: movies stopped\n",
 			dz_geom_w(), dz_geom_h(), (unsigned)dz_geom_stride());
+		pix_lock();
 		for (int s = 0; s < DZ_SLOTS; s++)
 			dz_draw_movie_stop(s);
+		pix_unlock();
 		disp_crop_reset();
 		anim_geometry();	/* image sequences: fitted again */
 		audio_rx_hold();
@@ -843,7 +988,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	lockfd = open(DEBAZD_LOCK, O_RDWR | O_CREAT, 0644);
+	lockfd = open(DEBAZD_LOCK, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
 	if (lockfd < 0 || flock(lockfd, LOCK_EX | LOCK_NB) < 0) {
 		fprintf(stderr, "debazd: another debazd is running (%s)\n", DEBAZD_LOCK);
 		return 1;
@@ -895,6 +1040,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "debazd: no vsync thread\n");
 	lfo_init();
 	pwm_init();
+	if (pix_init() < 0)
+		fprintf(stderr, "debazd: no pixel thread: pixel work runs in the main loop\n");
 
 	next = now_ms();
 	{
@@ -922,9 +1069,8 @@ int main(int argc, char **argv)
 				react_tick();
 				dds_tick();
 				lfo_tick((t - last_tick) / 1000.0);
-				ascii_tick();
 				anim_tick();
-				dz_draw_movie_tick();
+				pix_frame();	/* ASCII, movie ticks: the pixel thread */
 				stats_tick(stats_now() - t0);
 				last_tick = t;
 				next_tick = t + 50;	/* fallback if vsync stops */
@@ -938,9 +1084,8 @@ int main(int argc, char **argv)
 			react_tick();
 			dds_tick();
 			lfo_tick((t - last_tick) / 1000.0);
-			ascii_tick();
 			anim_tick();
-			dz_draw_movie_tick();
+			pix_frame();
 			stats_tick(stats_now() - t0);
 			last_tick = t;
 			next_tick = t + (disp_vsync_ok() ? 50 : 16);
@@ -973,13 +1118,13 @@ int main(int argc, char **argv)
 			monitor();
 			audio_tick(now_ms());
 			sound_tick();
-			for (int s = 0; s < DZ_SLOTS; s++)
-				dz_draw_movie_running(s);
+			pix_monitor();	/* movie ends: the pixel thread polls them */
 			next = now_ms() + interval;
 		}
 	}
 	}
 	fprintf(stderr, "debazd: stopping\n");
+	pix_close();
 	pwm_close();
 	anim_stop_all();
 	react_stop();

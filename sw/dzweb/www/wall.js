@@ -66,6 +66,7 @@ async function loadGeom() {
   for (const d of [0, 1]) {
     const r = await net.ask(net.message(`/disp/${d}`), (m) => m.path === `/disp/${d}`);
     geom.live[d] = !!r && r.args[0] === CAPTURE_SLOT;
+    if (r && ui.show?.[d] && typeof r.args[0] === "number") ui.show[d].value = String(r.args[0]);
   }
   for (const d of [0, 1]) {
     const c = await net.ask(net.message(`/disp/${d}/crop`), (r) => r.path === `/disp/${d}/crop`);
@@ -218,6 +219,11 @@ export function init(el) {
   ui.out = h("b", {}, "–");
   ui.in = h("b", {}, "–");
   ui.src = [h("span.hint"), h("span.hint")];
+  // which slot each display shows (2026-11-04): movies, animations and paint
+  // keep their own size in the slot, the window pans over all of it
+  ui.show = [0, 1].map((d) => h("select", { title: `/disp/${d}/show <slot>  (slot 4 = the live input)`,
+    onchange: (e) => { net.msg(`/disp/${d}/show`, Number(e.target.value)); setTimeout(loadGeom, 300); } },
+    [...Array(12).keys()].map((i) => h("option", { value: i }, i === CAPTURE_SLOT ? `slot ${i} (input)` : `slot ${i}`))));
   ui.warn = h("p.warn-text");
   ui.mode = h("select", { title: "/video/mode <name>: both displays (one pixel clock); hdmi2 restarts, movies stop" });
   ui.apply = h("button.primary", { title: "/video/mode <name>", onclick: applyMode }, "Apply");
@@ -260,10 +266,12 @@ export function init(el) {
         h("button", { onclick: () => { [0, 1].forEach((d) => net.msg(`/disp/${d}/home`)); setTimeout(loadGeom, 300); },
           title: "/disp/<d>/home" }, "Home"),
         h("button.ghost", { title: "/video/mode, /disp/<d>, /disp/<d>/crop, /capture/in/width|lines", onclick: loadGeom }, "Refresh")),
-      ...[0, 1].map((d) => row(`D${d}`, ui.src[d])),
+      ...[0, 1].map((d) => row(`D${d}`, ui.show[d], ui.src[d])),
       ui.warn,
       h("p.hint", {}, "The window is the output mode; a smaller mode (hdmi2 -r, e.g. 640x480 over a 1280x960 " +
-        "input) gives the zoom. Crops follow the shown slot: the input's real size when it is shown.")),
+        "input) gives the zoom. Crops follow the shown slot: the input's real size when it is shown, else the whole " +
+        "1920×1080 slot. Movies, animations and images keep their own size at the top left of their slot (a 720p movie " +
+        "fills 1280×720 of it); the rest of the slot is whatever memory holds there.")),
     card("Tiles",
       row("Grid", numIn("cols", { min: 1, max: 8, step: 1 }, "columns"), "×", numIn("rows", { min: 1, max: 8, step: 1 }, "rows"),
         h("button", { title: "grid = the whole output-sized windows that fit in display 0's source\n(this browser only, no OSC)", onclick: fitGrid }, "Fit"),

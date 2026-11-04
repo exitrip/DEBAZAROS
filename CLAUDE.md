@@ -84,9 +84,13 @@ External (not in repo):
   libjpeg-turbo, pixman, exFAT, mtd-utils; no package manager, no Qt/SDR load).
   Test card Oct 26 PASS; the bench board debaz-7130d5 runs the **Oct 28 image**
   (XSA `_pwm` = BOOT.BIN bitstream, debaz-firstboot, debaz-audio) + `make install`.
-- **Newest image (2026-11-02, NOT yet on a card):** `~/dz-sandbox/debazaros-20261102-dsp.wic.xz`
-  on the build machine: XSA/BOOT.BIN `_dsp`, software of branch dsp-pipe
-  (sandbox-build.sh, 6 min from sstate). The repo clone's images/ end at Oct 28.
+- **Images (2026-11-02, build machine ~/dz-sandbox/):** `debazaros-20261102-dsp.wic.xz`
+  = ON THE CARD of the new bench board **debaz-67b806 (10.42.0.210)**: first boot
+  passed (MAC, hostname, partitions, ethernet on `_dsp`, debaz.service); its
+  software was then updated by hand to commit 1e70b83e. Newest:
+  `debazaros-20261102-1e70b83e.wic.xz` (= main 1e70b83e, BOOT.BIN `_dsp`, NOT
+  yet on a card). sandbox-build.sh takes ~1 h when the XSA import cleans the
+  sstate (6 min otherwise). Hardware test backlog: ROADMAP.md, first section.
 - **Recipe `debaz-sw` (2026-11-01, sandbox build on the build machine, NOT yet
   on a card):** builds `sw/` in Yocto (`make image-install`), `/usr/bin`,
   `/usr/share/debaz/www`, `/etc/debaz/dzstart.conf`, `debaz.service` (runs
@@ -809,8 +813,18 @@ movie scaling fast_bilinear; vsync thread wakes 0.4 ms early (was 1.5).
 Frame rate (Nov 2): the median of the last 16 vsync intervals, and the poll
 never sleeps longer than the period from the clock registers (dynclk FB/DIV/
 CLK_O1 + VTC totals): the old filter read 60 Hz for ever after 60 -> 30 Hz
-(and 30 after 30 -> 60: the poll slept a measured 33 ms). debazd polls on
-this image (no VTC UIO node: "vsync by polling").
+(and 30 after 30 -> 60: the poll slept a measured 33 ms). The images have no
+UIO nodes at boot ("vsync by polling"), but the overlay works on the Nov 2
+image (2026-11-03): `hw/dt/ebaz4205_2out1in.dtso` minus firmware-name ->
+`dtc -@` -> `mkdir /sys/kernel/config/device-tree/overlays/x; cat x.dtbo >
+.../x/dtbo` (no PL reload) -> restart debazd -> "vsync by interrupt". It
+needed `interrupt-parent = <&intc>` (the root of this tree has none).
+**debazd threads (branch spawn-worker, 2026-11-03):** a pixel thread
+(`sw/debazd/pix.c`) owns /draw /img /movie /surface /sprite /ascii, ASCII
+frames and movie ticks; the main thread keeps OSC, fields and the frame
+tick (ping p99 24 -> 1.5 ms). posix_spawn instead of fork (a fork of debazd
+= 9-19 ms), dz_kill_group SIGKILLs after 0.5 s (arecord without input
+blocked a recall / a stop for 10 s), react auto waits for the HDMI_2 lock.
 **Picture N px right of DE (found Nov 1 2026):** the effects stages register
 the pixel data after v_axi4s_vid_out, but HSYNC/VSYNC/DE go straight to
 hdmi_tx: HDMI_1 data 3 clocks late (colorGainFeedback1 mult PipeStages 1 +
@@ -837,6 +851,29 @@ switch relocks the output dynclk, and the capture resets hang off its
 LOCKED: after 640x480 -> 720p the HDMI_2 audio rate read 46235/s for 3 s,
 audio.c replugged, and the laptop then sent a clock with no picture. Now no
 audio-rate replug for 10 s after a mode change (audio_rx_hold).
+**Auto follow + playlists (Nov 4 2026, branch spawn-worker, HOST-TESTED
+only, not on the board yet):** cue.c `/cue/follow <scene> <n> secs` (from
+the go, frame tick, stays in its scene), `/scene/loop` (follow and next
+wrap), `/cue/put` + `/cue/add` (cues from targets), show.json "follow" /
+"loop"; `/img/<s>/file` state target (black + own size); `/media/info`
+(ffprobe, pixel thread). Hold times first; then (user, Nov 4: slow
+decode cut movies short) `/cue/follow ... end [secs]` = the real end of the
+cue's movies (`/movie/<s>/loop 0` = play once; dz_draw play_alive/play_gen
+atomics, read by cue.c on the main thread) and audio files; desynced sound
+is accepted (one movie with sound at a time).
+Web: Media tab "Playlist → scene" (playlist.js), Cues tab follow column +
+repeat box. /show/check ignores /disp/<d>/source absence and arg types.
+**Slots, not modes (Nov 4 2026, branch spawn-worker, ON THE BOARD):** a
+slot is 1920 x 1080 in every mode and sources keep their own size in it:
+movies are never scaled to the mode (shell ffprobe size, odd -> even, the
+only scale; `/movie/<s>/pos x y`, NOT clamped: running on into the next
+slot is wanted by the user), images / anim frames at the top left
+(DZ_IMG_TOPLEFT, no borders), draw surfaces = whole slot
+(`/surface/<s>/canvas full|mode`, `/surface/<s>/free`, refused below 24 MB
+free; 11 x 8.3 MB fit). Limits are a USAGE RULE, not code (user): max 1920
+wide (fbfeed refuses), above 720p decode is too slow. Paint tab = whole slot
++ output-size guides + display windows; Wall tab = slot per display.
+Details: sw/README.md "Video mode and video wall".
 **Crops / video wall (Oct 28 2026, software only):** ONE fixed line pitch of
 7680 bytes (1920 px) for every slot, VDMA and mode (hdmi2 DISPLAY_STRIDE,
 libdz DZ_STRIDE); `/disp/<d>/crop x y` shows the mode-sized window at x, y of
@@ -1132,8 +1169,14 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   (retry 2 s). `/audio/react` ends with s:status. Web: DDS tab audio-scope
   cards + source/status; Oscillators tab audio row. Host tests:
   DZ_REACT_CMD = tone generator, a fake arecord in PATH (hand-over).
-  Movie-audio source: not yet (plan: s16 tap of the audio ffmpeg into a
-  FIFO that debazd always drains).
+  Movie-audio source (Nov 4, branch spawn-worker, ON THE BOARD): the audio
+  ffmpeg has a 3rd output `-f s16le pipe:3` into FIFO /tmp/dzmaudio.<slot>
+  (after /af); react.c drains all slots every frame (else the sound stops);
+  `/audio/react/source movie`, auto = movie first, then HDMI_2. Verified:
+  -6 dBFS tones -> level 0.353, peak 0.498; HDMI out 48 kHz with the tap.
+  Movie audio 4 (I2S) blocks ALL outputs of the audio ffmpeg while the I2S
+  master does not run. Since Nov 4 dz_spawn closes fds 3+ in every child
+  (a movie that outlived debazd held debazd.lock: the next start failed).
   Nov 2: scope source `fft` (log Hz, 60 dB) / `fftlin` of L, R or sum
   (react_spectrum, one FFT per channel and frame), mode `free` (awg, no
   reset, PINC stays), `/dds/<n>/scope/skew` (h: LINESTEP; v: PINC +

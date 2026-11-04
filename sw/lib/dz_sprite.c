@@ -123,8 +123,8 @@ int dz_sprite_grab(int id, int slot, int x, int y, int w, int h)
 	uint32_t *px;
 	const size_t st = dz_geom_stride();	/* the running mode's line pitch */
 
-	if (!sp(id) || w <= 0 || h <= 0 || x < 0 || y < 0 ||
-	    x + w > dz_geom_w() || y + h > dz_geom_h())
+	if (!sp(id) || w <= 0 || h <= 0 || x < 0 || y < 0 ||	/* inside the slot */
+	    (size_t)(x + w) * DZ_BPP > st || (size_t)(y + h) * st > DZ_SLOT_PITCH)
 		return -1;
 	dev = dz_slot(slot, DZ_SLOT_PITCH, NULL);
 	px = dev ? malloc((size_t)w * h * 4) : NULL;

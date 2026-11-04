@@ -14,9 +14,11 @@
 //         a bitstream from build `ev` (2026-10-27) or newer for the events node.
 //
 // Interrupts: IRQ_F2P[7:0] = GIC 61-68, IRQ_F2P[15:8] = GIC 84-91; the DT
-// number is GIC - 32. All are level high (4). interrupt-parent comes from the
-// root node (zynq-7000.dtsi: &intc); dtc warns "Missing interrupt-parent"
-// because it cannot see the base tree - expected.
+// number is GIC - 32. All are level high (4). interrupt-parent = &intc on
+// /fpga-full (the children inherit it): in this base tree the ROOT has no
+// interrupt-parent (only /axi has one), and without it the UIO nodes came up
+// with no interrupt at all (tested 2026-11-03: no line in /proc/interrupts).
+// &intc resolves through the base tree's __symbols__ (dtc -@ on both).
 //
 //   IRQ_F2P  GIC  DT  source
 //   [1]      62   30  HDMI_1 VDMA MM2S (frame)
@@ -41,6 +43,7 @@
 		__overlay__ {
 			#address-cells = <1>;
 			#size-cells = <1>;
+			interrupt-parent = <&intc>;
 			firmware-name = "ebaz4205_2out1in.bit.bin";
 
 			vtc@43c20000 {

@@ -244,6 +244,25 @@ Measured on the board (one bundle per frame, auto present):
 is limited by DDR bandwidth, which the displays and the capture share. Small
 operations cost only their own area.
 
+## debazd threads (2026-11-03)
+
+| Thread | Does | Priority |
+| --- | --- | --- |
+| main | OSC, register fields, frame tick (ramps, cues, audio analysis, DDS, LFOs, image sequences), monitor every 20 ms | normal |
+| vsync | display changes right after each vsync (VTC interrupt with the UIO overlay, else polling) | SCHED_FIFO 60 |
+| pwm | software PWM on J5 | SCHED_FIFO 55 |
+| debazd-pix | the pixel domain: `/draw/ /img/ /movie/ /surface/ /sprite/ /ascii/`, ASCII frames, movie ticks | normal |
+
+The pixel thread runs the messages of its addresses in their order of
+arrival (`sw/debazd/pix.c`); an internal message (LFO template, cue ramp)
+replaces a waiting internal one with the same address. Its replies go to the
+sender as before, but a `/ping` sent after a `/draw` can come back first.
+`/stats` ends with `f:pix_max_ms i:pix_queue`. Measured on the board (an
+ASCII 6→6 scene + 60 brush strokes per second): OSC round trip p99 1.5 ms
+(was 24 ms), slowest main tick 0.1 ms (was 38 ms). Child programs start
+with `posix_spawn` (a `fork` of debazd took 9-19 ms), and a stopped child
+gets SIGKILL after 0.5 s (an arecord without input blocked for 10 s).
+
 ## Display buffers, blank and strobe
 
 There are **12 slots** (0x0800_0000 + n × 0x7E9000, inside the 96 MB
@@ -251,7 +270,9 @@ reservation): 0–5 as before (4 = capture), 6–10 free, 11 = always black.
 Each display keeps the shown slot in VDMA frame store 0 and the black slot in
 frame store 2. A real-time thread in debazd waits for vsync (VTC status bit
 13, 60.03 Hz, jitter < 0.1 ms) and applies every display change right after
-it, so each change lands on a whole frame.
+it, so each change lands on a whole frame. With the UIO overlay
+(`hw/dt/ebaz4205_2out1in.dtso`) it sleeps on the VTC interrupt (0.3 % CPU,
+jitter max ~90 us); without it, it polls (2.5 % CPU, ~30 us).
 
 | Address | Effect |
 | --- | --- |
@@ -291,9 +312,11 @@ dzctl /lfo/reset
 targets (a full-frame fade takes 25–60 ms).
 
 Shape `audio` (2026-11-01): the value follows a feature of the audio
-analysis (`debazd/react.c`, source `/audio/react/source capture|peak|off`):
+analysis (`debazd/react.c`, source `/audio/react/source auto|movie|capture|peak|off`):
 
 ```sh
+dzctl /audio/react/source auto             # default: a movie's audio, else HDMI 2
+dzctl /audio/react/source movie            # the audio of a playing movie (all features)
 dzctl /audio/react/source capture          # HDMI 2 input via ALSA (all features)
 dzctl /lfo/0/audio bass                    # also selects shape audio
 dzctl /lfo/0/gain 0                        # 0 = auto (feature / its recent peak)
@@ -307,6 +330,16 @@ full-scale sine = 1; typical program material is 0.1-0.4, so use gain 0
 (auto) or 3-8. The capture device has one owner: `/audio/rec` pauses the
 analysis ("held: recording"), another program that holds it is reported
 as "busy: <pid> <name>" (`/audio/react` ends with the status).
+
+Movie audio (2026-11-04): a movie that plays audio (`/movie/<s>/play name
+fps audio`, audio > 0) also writes it, after its `/af` chain, as s16le 48
+kHz stereo into the FIFO `/tmp/dzmaudio.<slot>`. debazd drains these FIFOs
+every frame, also when no sink asks: a full pipe (256 KB = 1.3 s) would stop
+the audio ffmpeg and the sound with it. `movie` uses the movie in use while
+it delivers, else the lowest slot that delivers; status "ok: movie <slot>".
+`auto` takes a movie first, then HDMI 2 (when it has lock). A movie with
+audio 0 has no tap. ⚠️ Audio 4 (I2S) blocks the whole audio ffmpeg (all its
+outputs, the tap too) while the I2S master does not run (hw_ptr stays 0).
 
 ## DDS patterns, AWG, audio scope
 
@@ -346,6 +379,40 @@ one pixel clock); movies stop and the crops go back to 0, 0 (`/event/mode`).
 slot is 1920 x 1080; the capture: its real size), applied at vsync, so it
 can move every frame. A small output mode over a large input gives the
 zoom (640x480 quarters of a 1280x960 input). The Wall tab has all of it.
+
+Slots, not modes (2026-11-04): every slot is a 1920 x 1080 picture in every
+output mode, and each source keeps its own size in it, so a display (any
+mode) shows a window of whatever is there: a 720p movie fills 1280 x 720 of
+its slot, the rest is what memory holds. Two displays on the same slot with
+different crops cut one movie, animation or painting into parts.
+
+- **Movies** are never scaled to the output mode (measured on the board, 720p
+  movie, decode alone 46 fps; scaled to 640x480 34 fps, 1024x768 27, 1080p
+  16). `/movie/<s>/pos x y` = the movie's top left in the slot (a playing
+  movie restarts; in `/state`). Not clamped: a movie taller than 1080 or
+  placed near the edge runs on into the next slot (on purpose); rows run on
+  into the next line. Odd sizes are rounded down to even (fbfeed and
+  ffmpeg's yuv420p disagree on odd chroma sizes; the only case that
+  scales). **Usage rules:** at most 1920 wide (fbfeed refuses longer rows:
+  no picture, the sound plays); nothing past slot 11's end (fbfeed refuses
+  Linux RAM); above 720p the A9 decodes too slowly (2560x1440: 2.9 fps,
+  1280x1440: 14 fps, 720p: 23-24 fps).
+- **Images** (`/img/<s>/load name` without a rectangle) and **animation
+  frames** sit at their own size at the top left; a larger one is made
+  smaller. Animation frames write only their own pixels (no black borders).
+  The web upload fits frames into the slot (default) or the output size
+  (smaller files: decode time follows the file size; 1080p JPEG frames ~190
+  ms each while a movie decodes, so ~10 fps).
+- **Draw surfaces** are the whole slot (`/surface/<s>/canvas full`, the
+  default) and stay through a mode change. Each costs 8.3 MB of RAM (11 fit,
+  the 12th was refused); full-frame operations are 2.25 x slower than at
+  720p. `/surface/<s>/canvas mode` = the old behaviour (the mode's size,
+  started again after a mode change); `/surface/<s>/canvas` -> setting,
+  w, h, kB in use, kB free. `/surface/<s>/free` gives the RAM back. A new
+  surface is refused when less than 24 MB would stay free.
+- Web: the Paint tab shows the whole slot with the output sizes (dashed)
+  and the window of each display that shows the slot; the Wall tab selects
+  the slot per display; the Media tab sets the movie position.
 
 ## Movies: datamosh, effects, ASCII
 
@@ -397,6 +464,33 @@ a folder `/data/shows/<show>/` (`show.json`, `baseline.json`,
 [cut|fade|dip]`, `/cue/next`, `/look/save|apply`, `/show/save|load`. The
 Cues tab has all of it. LFOs are free running: cues set them up or switch
 them; an LFO left on may fight a fade.
+
+Auto follow and playlists (2026-11-04): `/cue/follow <scene> <n> <secs>` =
+the next cue of the scene goes by itself that many seconds after this
+cue's go (0 = wait for GO; timed from the go, by the frame tick; a follow
+never leaves its scene). `/cue/follow <scene> <n> end [secs]` = secs after
+the media this cue names in its own set ended (the movies of
+`/movie/<s>/file`, the files of `/audio/out/<n>/file`): the real end, also
+when the decode is slower than real time (two movies at once: ~11 fps of
+25). `/movie/<s>/loop 0` = the movie plays once (default 1 = loops for ever;
+a state target; a change restarts a playing movie). A movie's sound plays
+in real time, so it ends before a slow picture: play one movie with sound
+at a time. `/scene/loop <scene> 1` = after the last cue the
+first again, for a follow and for `/cue/next` (repeat forever).
+`/cue/put <scene> <n> keyframe|delta [name]` + `/cue/add <scene> <n>
+<address> args...` build a cue from targets, without recording.
+`/img/<s>/file name` is a state target (slot black, then the image at its
+own size; "" = forget). `/media/info movies|audio|img <file>` -> seconds
+(0 = a still), w, h (ffprobe on the pixel thread, cached). The Media tab's
+**Playlist → scene** card: pick files (boxes, in click order; shift = a
+range) -> Generate = an editable sheet (`movie|image|audio|black <hold>
+[file]`, hold = seconds, `end` or `end+2`; movies and audio `end` by default,
+else their durations; a black cue of `pause` s between items) ->
+Save as scene (put/add/follow/loop, then `/show/save`). Each cue sets all
+media of its slot, output and displays, so delta cues ("keep the look")
+work. Then edit it in the Cues tab (follow column, repeat box): a card over
+a black cue, looks, fades. A movie that decodes slower than real time
+(above 720p) is cut at its file duration.
 
 ## Colour FX: hue, colour map, colour key
 

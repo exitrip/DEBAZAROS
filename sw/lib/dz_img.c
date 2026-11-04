@@ -231,14 +231,18 @@ static void borders(uint8_t *dst, size_t stride, int dw, int dh, int ox, int oy,
 	black_rows(dst, stride, ox + iw, oy, dw - ox - iw, ih);
 }
 
-/* copy the centre of a w x h picture (opaque) into the window */
+/* copy the centre of a w x h picture (opaque) into the window (centred
+ * with black borders, or at the top left without them) */
 static void put_centre(const uint32_t *pic, int w, int h, uint8_t *dst, size_t stride,
-		       int dw, int dh)
+		       int dw, int dh, int flags)
 {
 	int cw = w < dw ? w : dw, ch = h < dh ? h : dh;
 	int sx = (w - cw) / 2, sy = (h - ch) / 2, ox = (dw - cw) / 2, oy = (dh - ch) / 2;
 
-	borders(dst, stride, dw, dh, ox, oy, cw, ch);
+	if (flags & DZ_IMG_TOPLEFT)
+		ox = oy = 0;
+	else
+		borders(dst, stride, dw, dh, ox, oy, cw, ch);
 	for (int r = 0; r < ch; r++)
 		memcpy(dst + (size_t)(oy + r) * stride + (size_t)ox * 4,
 		       pic + (size_t)(sy + r) * w + sx, (size_t)cw * 4);
@@ -319,7 +323,10 @@ int dz_img_fit(const char *path, uint8_t *dst, size_t stride, int dw, int dh,
 		if (sw <= dw && sh <= dh) {	/* straight into the window */
 			int ox = (dw - sw) / 2, oy = (dh - sh) / 2;
 
-			borders(dst, stride, dw, dh, ox, oy, sw, sh);
+			if (flags & DZ_IMG_TOPLEFT)
+				ox = oy = 0;
+			else
+				borders(dst, stride, dw, dh, ox, oy, sw, sh);
 			if (tj_decode(th_tj, buf, len, dst + (size_t)oy * stride + (size_t)ox * 4,
 				      sw, (int)stride, sh, TJPF_BGRX, tf))
 				return fail(err, errlen, "JPEG: %s", tj_errstr(th_tj));
@@ -332,7 +339,7 @@ int dz_img_fit(const char *path, uint8_t *dst, size_t stride, int dw, int dh,
 			return fail(err, errlen, "out of memory");
 		if (tj_decode(th_tj, buf, len, (unsigned char *)pic, sw, sw * 4, sh, TJPF_BGRX, tf))
 			return fail(err, errlen, "JPEG: %s", tj_errstr(th_tj));
-		put_centre(pic, sw, sh, dst, stride, dw, dh);
+		put_centre(pic, sw, sh, dst, stride, dw, dh, flags);
 		return 0;
 	}
 	if (kind == DZ_IMG_PNG) {
@@ -340,7 +347,7 @@ int dz_img_fit(const char *path, uint8_t *dst, size_t stride, int dw, int dh,
 
 		if (!pic)
 			return -1;
-		put_centre(pic, w, h, dst, stride, dw, dh);
+		put_centre(pic, w, h, dst, stride, dw, dh, flags);
 		return 0;
 	}
 	return fail(err, errlen, "not .jpg / .jpeg / .png");

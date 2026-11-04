@@ -18,13 +18,29 @@
  *                stay); a new scene name makes the scene
  *   /cue/go <scene> <num> [secs] [cut|fade|dip] [smooth|linear]
  *   /cue/next, /cue/back [same]   in number order; then the next scene
- *   /cue/stop, /cue/status -> s:show s:scene f:num s:name s:kind i:scenes i:cues
+ *   /cue/stop (also the follow), /cue/status -> s:show s:scene f:num s:name
+ *                s:kind i:scenes i:cues f:follow f:left (-1 = none, -2 =
+ *                waiting for the end of its media) i:loop
  *   /cue/list <scene> -> /cue f:num s:name s:kind i:set f:fade s:curve
- *                s:transition s:looks ..., /cue/end i:count
+ *                s:transition s:looks f:follow i:end, /cue/end i:count
  *   /cue/get <scene> <num> (its set), /cue/resolve <scene> <num> ->
  *                /cue/target s:key s:address args..., /cue/end i:count
  *   /cue/delete | name | move <scene> <num> [s:name | f:newnum]
  *   /cue/fade <scene> <num> secs [smooth|linear] [cut|fade|dip]
+ *   /cue/follow <scene> <num> secs | end [secs] | off   auto follow
+ *                (2026-11-04): secs after its go, the next cue of the scene
+ *                goes by itself (0 / off = manual); "end" = secs after the
+ *                media this cue names in its own set ended: the movies of
+ *                /movie/<s>/file (play once: /movie/<s>/loop 0) and the
+ *                files of /audio/out/<n>/file (loop 0). After the last cue:
+ *                the first again if the scene loops, else nothing (a follow
+ *                never leaves its scene)
+ *   /scene/loop <scene> [0|1]  repeat: after the last cue the first again
+ *                (/cue/next too); no arg = query -> /scene/loop s i
+ *   /cue/put <scene> <num> keyframe|delta [name]   make (or empty) a cue
+ *                without recording; /cue/add <scene> <num> <address> args...
+ *                puts one target into its set (same address = replaced).
+ *                A playlist from the web (Media tab) is built with these
  *   /cue/look <scene> <num> add|remove <look>,  /cue/look <scene> <num> clear
  *   /look/save <name>     the targets that differ from the current cue (or
  *                from the baseline before any cue) -> a new look
@@ -79,6 +95,8 @@ typedef struct {
 	char    mode[8];		/* cut | fade | dip ("" = fade if fade > 0) */
 	char    looks[MAXLOOKS][48];
 	int     nlooks;
+	float   follow;			/* auto follow after secs, 0 = manual */
+	int     follow_end;		/* the secs count from the end of its media */
 	st_list set;			/* its own targets */
 } cue_t;
 
@@ -86,6 +104,7 @@ typedef struct {
 	char   name[48];
 	cue_t *c;			/* sorted by num */
 	int    n, cap;
+	int    loop;			/* after the last cue: the first again */
 } scene_t;
 
 typedef struct {
@@ -100,6 +119,14 @@ static look_t  *L;
 static int      nl, lcap;
 static st_list  baseline;
 static int      cur_s = -1, cur_c = -1;	/* position: scene, cue index */
+static struct {				/* the armed auto follow */
+	int      on, s;
+	double   num, t, at;
+	int      end, ended, a_seen;	/* follow_end: waiting, done, audio seen */
+	double   t_end;
+	unsigned mov, aud;		/* the media of the cue: slots, outputs */
+	unsigned gen0[DZ_SLOTS];	/* movie starts at the go */
+} fol;
 
 /* files read or written here: their mtime then (a hand edit changes it) */
 #define NFILES	256
@@ -460,8 +487,45 @@ static void apply_trans(const st_list *d, const st_list *now, int mode, double s
 	}
 }
 
+static void follow_fire(void);
+
+/* the media of the cue we follow ended: every movie is not running and
+ * started after the go (or 3 s passed: it did not start, or played on from
+ * the cue before), every audio file played and stopped (or 3 s passed) */
+static int media_done(void)
+{
+	for (int s = 0; s < DZ_SLOTS; s++)
+		if ((fol.mov >> s) & 1) {
+			if (dz_draw_movie_alive(s))
+				return 0;
+			if (dz_draw_movie_gen(s) == fol.gen0[s] && fol.t < 3.0)
+				return 0;
+		}
+	for (int o = 0; o < 3; o++)
+		if ((fol.aud >> o) & 1) {
+			if (sound_playing(o)) {
+				fol.a_seen = 1;
+				return 0;
+			}
+			if (!fol.a_seen && fol.t < 3.0)
+				return 0;
+		}
+	return 1;
+}
+
 void cue_tick(double dt)
 {
+	if (fol.on) {
+		fol.t += dt;
+		if (fol.end && !fol.ended && media_done()) {
+			fol.ended = 1;
+			fol.t_end = fol.t;
+		}
+		if (fol.end ? fol.ended && fol.t - fol.t_end >= fol.at : fol.t >= fol.at) {
+			fol.on = 0;
+			follow_fire();
+		}
+	}
 	for (int i = 0; i < MRAMPS; i++) {
 		mramp_t *r = &mr[i];
 
@@ -567,9 +631,11 @@ static void status(void)
 {
 	const cue_t *c = cur_s >= 0 && cur_c >= 0 && cur_c < S[cur_s].n ? &S[cur_s].c[cur_c] : NULL;
 
-	dzd_reply("/cue/status", "ssfssii", show_name, cur_s >= 0 ? S[cur_s].name : "",
+	dzd_reply("/cue/status", "ssfssiiffi", show_name, cur_s >= 0 ? S[cur_s].name : "",
 		  c ? (float)c->num : 0.0f, c ? c->name : "", c ? kind_names[c->kind] : "", ns,
-		  cur_s >= 0 ? S[cur_s].n : 0);
+		  cur_s >= 0 ? S[cur_s].n : 0, c ? c->follow : 0.0f,
+		  !fol.on ? -1.0f : fol.end && !fol.ended ? -2.0f :	/* -2: waiting for the end */
+		  (float)(fol.at - (fol.t - (fol.end ? fol.t_end : 0))), cur_s >= 0 ? S[cur_s].loop : 0);
 }
 
 static double ms_since(const struct timespec *t0)
@@ -578,6 +644,37 @@ static double ms_since(const struct timespec *t0)
 
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 	return (t1.tv_sec - t0->tv_sec) * 1e3 + (t1.tv_nsec - t0->tv_nsec) / 1e6;
+}
+
+/* the follow of the cue we are on now (a new go replaces the old one) */
+static void arm(void)
+{
+	const cue_t *c = cur_s >= 0 && cur_c >= 0 && cur_c < S[cur_s].n ? &S[cur_s].c[cur_c] : NULL;
+
+	fol.on = c && (c->follow > 0.0f || c->follow_end);
+	if (!fol.on)
+		return;
+	fol.s = cur_s;
+	fol.num = c->num;
+	fol.t = 0;
+	fol.at = c->follow;
+	fol.end = c->follow_end;
+	fol.ended = fol.a_seen = 0;
+	fol.mov = fol.aud = 0;
+	for (int k = 0; fol.end && k < c->set.n; k++) {
+		dz_msg m;
+		int x, off = 0;
+
+		if (dz_osc_parse(c->set.t[k].msg, c->set.t[k].len, &m) < 0 || m.n < 1 ||
+		    m.a[0].type != 's' || !m.a[0].s[0])
+			continue;
+		if (sscanf(m.path, "/movie/%d/file%n", &x, &off) == 1 && !m.path[off] && x >= 0 && x < DZ_SLOTS)
+			fol.mov |= 1u << x;
+		else if (sscanf(m.path, "/audio/out/%d/file%n", &x, &off) == 1 && !m.path[off] && x >= 0 && x < 3)
+			fol.aud |= 1u << x;
+	}
+	for (int s = 0; s < DZ_SLOTS; s++)
+		fol.gen0[s] = dz_draw_movie_gen(s);
 }
 
 static void go(int s, int i, const dz_msg *m, int k)
@@ -593,6 +690,7 @@ static void go(int s, int i, const dz_msg *m, int k)
 	st_list_free(&want);
 	cur_s = s;
 	cur_c = i;
+	arm();
 	dzd_log("cue: go %s %g \"%s\" (%d targets, %s %.1f s, %.1f ms)\n", S[s].name, S[s].c[i].num,
 		S[s].c[i].name, n, tnames[tp.mode], tp.secs, ms_since(&t0));
 	status();
@@ -605,6 +703,10 @@ static void next(const dz_msg *msg)
 	if (s < 0) {
 		s = 0;
 		i = 0;
+	}
+	if (s == cur_s && i >= S[s].n && S[s].loop && S[s].n > 0) {
+		go(s, 0, msg, 0);			/* a loop: the first cue again */
+		return;
 	}
 	while (s < ns && i >= S[s].n) {
 		s++;
@@ -629,9 +731,25 @@ static void next(const dz_msg *msg)
 	st_list_free(&d);
 	cur_s = s;
 	cur_c = i;
+	arm();
 	dzd_log("cue: next %s %g \"%s\" (%d targets, %.1f ms)\n", S[s].name, S[s].c[i].num, S[s].c[i].name,
 		n, ms_since(&t0));
 	status();
+}
+
+/* the follow time of the current cue is over: its next cue, inside the
+ * scene (the first again in a loop) */
+static void follow_fire(void)
+{
+	if (cur_s < 0 || cur_s != fol.s || cur_c < 0 || cur_c >= S[cur_s].n ||
+	    !num_eq(S[cur_s].c[cur_c].num, fol.num))
+		return;				/* moved, deleted or loaded since */
+	if (cur_c + 1 < S[cur_s].n)
+		next(NULL);
+	else if (S[cur_s].loop)
+		go(cur_s, 0, NULL, 0);
+	else
+		dzd_log("cue: follow at the end of scene %s (no loop): stays\n", S[cur_s].name);
 }
 
 /* record cue num of scene s: its set = the differences from baseline +
@@ -923,7 +1041,7 @@ static int show_write(const char *name, int force, char *err, size_t errcap)
 	for (int s = 0; s < ns; s++) {
 		fprintf(f, "%s\n {\"name\": ", s ? "," : "");
 		jstr(f, S[s].name);
-		fprintf(f, ", \"cues\": [");
+		fprintf(f, ", \"loop\": %s, \"cues\": [", S[s].loop ? "true" : "false");
 		for (int i = 0; i < S[s].n; i++) {
 			const cue_t *c = &S[s].c[i];
 
@@ -943,6 +1061,9 @@ static int show_write(const char *name, int force, char *err, size_t errcap)
 			jstr(f, c->curve);
 			fprintf(f, ", \"transition\": ");
 			jstr(f, c->mode[0] ? c->mode : tnames[mode_of(c->mode, c->fade)]);
+			fprintf(f, ", \"follow\": ");
+			jfloat(f, c->follow);
+			fprintf(f, ", \"follow_end\": %s", c->follow_end ? "true" : "false");
 			fprintf(f, ",\n   \"set\": ");
 			jtargets(f, &c->set, "    ");
 			fprintf(f, "}");
@@ -1254,6 +1375,10 @@ static int show_read(const char *name, char *err, size_t errcap)
 	for (int s = 0; scenes && scenes->type == J_ARR && s < scenes->n; s++) {
 		const jv *sc = &scenes->kid[s], *nm = jget(sc, "name"), *cues = jget(sc, "cues");
 		int si = scene_new(nm && nm->type == J_STR ? nm->str : "scene");
+		const jv *lp = jget(sc, "loop");
+
+		if (si >= 0)
+			S[si].loop = lp && (lp->type == J_BOOL || lp->type == J_NUM) && lp->num != 0;
 
 		for (int i = 0; si >= 0 && cues && cues->type == J_ARR && i < cues->n; i++) {
 			const jv *cj = &cues->kid[i], *v;
@@ -1271,6 +1396,10 @@ static int show_read(const char *name, char *err, size_t errcap)
 				snprintf(c->curve, sizeof(c->curve), "%s", v->str);
 			if ((v = jget(cj, "transition")) && v->type == J_STR)
 				snprintf(c->mode, sizeof(c->mode), "%s", v->str);
+			if ((v = jget(cj, "follow")) && v->type == J_NUM && v->num > 0)
+				c->follow = (float)v->num;
+			if ((v = jget(cj, "follow_end")) && (v->type == J_BOOL || v->type == J_NUM))
+				c->follow_end = v->num != 0;
 			if ((v = jget(cj, "looks")) && v->type == J_ARR)
 				for (int k = 0; k < v->n && c->nlooks < MAXLOOKS; k++)
 					if (v->kid[k].type == J_STR)
@@ -1317,6 +1446,8 @@ static int known_sometimes(const char *a)
 		return 1;
 	if (!strncmp(a, "/audio/out/", 11))
 		return 1;
+	if (sscanf(a, "/disp/%d/%39s", &x, op) == 2 && !strcmp(op, "source"))
+		return 1;			/* absent while a display shows no slot */
 	return 0;
 }
 
@@ -1340,6 +1471,8 @@ static void check_list(const char *where, const st_list *l, const st_list *now)
 			for (int k = 0; k < m.n && k < 39; k++)
 				got[k] = m.a[k].type;
 			same = same && !strcmp(want, got);
+			if (!same && known_sometimes(m.path) && strstr(m.path, "/source"))
+				same = 1;		/* show <slot> | capture | anim | seq ...: any */
 			if (!same)
 				issue(where, "%s: arguments %s, expected %s (1 = int, 1.0 = float)", m.path,
 				      got[0] ? got : "none", want[0] ? want : "none");
@@ -1347,7 +1480,8 @@ static void check_list(const char *where, const st_list *l, const st_list *now)
 		/* the files it names */
 		size_t pl = strlen(m.path);
 		const char *dir = pl > 5 && !strcmp(m.path + pl - 5, "/file") ?
-				  (!strncmp(m.path, "/movie/", 7) ? DZ_MOVIE_DIR : DZ_AUDIO_DIR) : NULL;
+				  (!strncmp(m.path, "/movie/", 7) ? DZ_MOVIE_DIR :
+				   !strncmp(m.path, "/img/", 5) ? DZ_IMG_DIR : DZ_AUDIO_DIR) : NULL;
 		if (dir && m.n >= 1 && m.a[0].type == 's' && m.a[0].s[0]) {
 			char p[300];
 
@@ -1428,7 +1562,8 @@ int cue_dispatch(const dz_msg *m)
 		record(s, num_arg(&a[1]), kind, n >= 4 && a[3].type == 's' ? a[3].s : NULL, p);
 	} else if (!strcmp(p, "/cue/go") || !strcmp(p, "/cue/get") || !strcmp(p, "/cue/resolve") ||
 		   !strcmp(p, "/cue/delete") || !strcmp(p, "/cue/name") || !strcmp(p, "/cue/fade") ||
-		   !strcmp(p, "/cue/look") || !strcmp(p, "/cue/move")) {
+		   !strcmp(p, "/cue/look") || !strcmp(p, "/cue/move") || !strcmp(p, "/cue/follow") ||
+		   !strcmp(p, "/cue/add")) {
 		int s = n >= 1 ? scene_of(&a[0]) : -1, i = s >= 0 && n >= 2 ? cue_of(s, &a[1]) : -1;
 
 		if (i < 0) {
@@ -1439,6 +1574,25 @@ int cue_dispatch(const dz_msg *m)
 
 		if (!strcmp(p, "/cue/go")) {
 			go(s, i, m, 2);
+		} else if (!strcmp(p, "/cue/follow") && n >= 3) {
+			int end = a[2].type == 's' && !strcmp(a[2].s, "end");
+			double v = end ? (n >= 4 && a[3].type != 's' ? num_of(&a[3]) : 0) :
+				   a[2].type == 's' ? 0 : num_of(&a[2]);	/* "off" = 0 */
+
+			c->follow = v > 0 ? (float)v : 0.0f;
+			c->follow_end = end;
+			if (s == cur_s && i == cur_c && !c->follow && !end)
+				fol.on = 0;
+			dzd_reply("/cue/follow", "sffi", S[s].name, (float)c->num, c->follow, c->follow_end);
+		} else if (!strcmp(p, "/cue/add") && n >= 3 && a[2].type == 's' && a[2].s[0] == '/') {
+			dz_msg t = { .path = a[2].s, .n = n - 3 };
+
+			memcpy(t.a, &a[3], sizeof(dz_arg) * (size_t)t.n);
+			if (st_list_put_msg(&c->set, a[2].s, &t) < 0) {
+				dzd_reply("/error", "ss", "no memory", p);
+				return 1;
+			}
+			dzd_reply("/cue/add", "sfi", S[s].name, (float)c->num, c->set.n);
 		} else if (!strcmp(p, "/cue/get")) {
 			reply_list("/cue/target", "/cue/end", &c->set);
 		} else if (!strcmp(p, "/cue/resolve")) {
@@ -1541,6 +1695,7 @@ int cue_dispatch(const dz_msg *m)
 		next(m);
 	} else if (!strcmp(p, "/cue/stop")) {
 		stop_all();
+		fol.on = 0;
 		dzd_reply("/cue/stop", "i", 1);
 	} else if (!strcmp(p, "/cue/back")) {
 		if (cur_s < 0)
@@ -1564,8 +1719,8 @@ int cue_dispatch(const dz_msg *m)
 
 			for (int k = 0; k < c->nlooks; k++)
 				snprintf(lk + strlen(lk), sizeof(lk) - strlen(lk), "%s%s", k ? "," : "", c->looks[k]);
-			dzd_reply("/cue", "fssifsss", (float)c->num, c->name, kind_names[c->kind], c->set.n, c->fade,
-				  c->curve, tnames[mode_of(c->mode, c->fade)], lk);
+			dzd_reply("/cue", "fssifsssfi", (float)c->num, c->name, kind_names[c->kind], c->set.n, c->fade,
+				  c->curve, tnames[mode_of(c->mode, c->fade)], lk, c->follow, c->follow_end);
 		}
 		dzd_reply("/cue/end", "i", S[s].n);
 	} else if (!strcmp(p, "/look/save") && n >= 1 && a[0].type == 's') {
@@ -1638,6 +1793,54 @@ int cue_dispatch(const dz_msg *m)
 			return 1;
 		}
 		reply_list("/look/target", "/look/end", &lk->t);
+	} else if (!strcmp(p, "/cue/put")) {
+		int s = n >= 1 ? scene_of(&a[0]) : -1, kind, i = -1;
+		double num = n >= 2 && a[1].type != 's' ? num_arg(&a[1]) : 0;
+		cue_t *c;
+
+		if (n < 3 || a[2].type != 's' || (strcmp(a[2].s, "keyframe") && strcmp(a[2].s, "delta")) || num <= 0) {
+			dzd_reply("/error", "ss", "/cue/put <scene> <num > 0> keyframe|delta [name]", p);
+			return 1;
+		}
+		kind = a[2].s[0] == 'd' ? K_DELTA : K_KEY;
+		if (s < 0 && a[0].type == 's' && kind == K_KEY)
+			s = scene_new(a[0].s);
+		for (int k = 0; s >= 0 && k < S[s].n; k++)
+			if (num_eq(S[s].c[k].num, num))
+				i = k;
+		if (s < 0 || (kind == K_DELTA && (i == 0 || (i < 0 && (S[s].n == 0 || num < S[s].c[0].num))))) {
+			dzd_reply("/error", "ss", s < 0 ? "no such scene" : "the first cue of a scene must be a keyframe", p);
+			return 1;
+		}
+		if (i >= 0) {				/* the same number: empty it */
+			c = &S[s].c[i];
+			st_list_free(&c->set);
+			c->nlooks = 0;
+		} else if (!(c = cue_insert(s, num))) {
+			dzd_reply("/error", "ss", "no memory", p);
+			return 1;
+		}
+		c->kind = kind;
+		c->fade = 0;
+		c->follow = 0;
+		c->follow_end = 0;
+		c->mode[0] = 0;
+		snprintf(c->curve, sizeof(c->curve), "linear");
+		if (n >= 4 && a[3].type == 's' && a[3].s[0])
+			snprintf(c->name, sizeof(c->name), "%s", a[3].s);
+		else
+			snprintf(c->name, sizeof(c->name), "cue %g", num);
+		dzd_reply("/cue/put", "sfs", S[s].name, (float)num, kind_names[kind]);
+	} else if (!strcmp(p, "/scene/loop") && n >= 1) {
+		int s = scene_of(&a[0]);
+
+		if (s < 0) {
+			dzd_reply("/error", "ss", "no such scene", p);
+			return 1;
+		}
+		if (n >= 2 && a[1].type != 's')
+			S[s].loop = num_of(&a[1]) != 0;
+		dzd_reply("/scene/loop", "si", S[s].name, S[s].loop);
 	} else if (!strcmp(p, "/scene/add") && n >= 1 && a[0].type == 's') {
 		if (scene_of(&a[0]) < 0)
 			scene_new(a[0].s);
@@ -1666,7 +1869,7 @@ int cue_dispatch(const dz_msg *m)
 			snprintf(S[s].name, sizeof(S[s].name), "%s", a[1].s);
 	} else if (!strcmp(p, "/scene/list")) {
 		for (int s = 0; s < ns; s++)
-			dzd_reply("/scene", "isi", s + 1, S[s].name, S[s].n);
+			dzd_reply("/scene", "isii", s + 1, S[s].name, S[s].n, S[s].loop);
 		dzd_reply("/scene/end", "i", ns);
 	} else if (!strcmp(p, "/show/new")) {
 		const char *nm = n >= 1 && a[0].type == 's' ? a[0].s : "show";

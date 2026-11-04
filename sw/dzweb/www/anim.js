@@ -115,13 +115,17 @@ async function reencode(file, w, hh, q) {
 }
 
 function uploadPanel() {
-  const st = { convert: true, rename: true, q: 85, ...store.get("animup", {}) };
+  const st = { convert: true, rename: true, q: 85, fit: "slot", ...store.get("animup", {}) };
   const keep = () => store.set("animup", st);
   const name = h("input", { type: "text", placeholder: "folder name", style: "width:150px",
     title: "folder in /media/debaz/anim (A-Z a-z 0-9 . _ -); a chosen folder fills it in" });
   const clean = (n) => n.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 90);
   const conv = h("input", { type: "checkbox", checked: st.convert, title: "this browser converts the pictures before the upload (no OSC)", onchange: () => { st.convert = conv.checked; keep(); } });
   const ren = h("input", { type: "checkbox", checked: st.rename, title: "this browser renames the files in order before the upload (no OSC)", onchange: () => { st.rename = ren.checked; keep(); } });
+  const fit = h("select", { title: "the largest frame size (never enlarged; no OSC)\nslot = 1920×1080: the frames keep their size in the slot, a display shows a window of it (Wall tab)\n" +
+      "output size = the running mode: smaller files, faster decode", onchange: () => { st.fit = fit.value; keep(); } },
+    h("option", { value: "slot", selected: st.fit !== "mode" }, "into the slot (1920×1080)"),
+    h("option", { value: "mode", selected: st.fit === "mode" }, "into the output size"));
   const qOut = h("span.hint", {}, String(st.q));
   const q = h("input.big-range", { type: "range", min: 40, max: 100, value: st.q, style: "width:110px",
     title: "JPEG quality of the converted frames", oninput: () => { st.q = +q.value; qOut.textContent = st.q; keep(); } });
@@ -135,9 +139,11 @@ function uploadPanel() {
     const folder = clean(name.value || "");
     if (!folder) return toast("folder name first", true);
     name.value = folder;
-    let w = 1280, hh = 720;
-    const vm = await net.ask(net.message("/video/mode"), (m) => m.path === "/video/mode" && typeof m.args[0] === "number", 800);
-    if (vm) [w, hh] = vm.args;
+    let w = 1920, hh = 1080; // a whole slot: the player shows frames at their own size (2026-11-04)
+    if (st.fit === "mode") {
+      const vm = await net.ask(net.message("/video/mode"), (m) => m.path === "/video/mode" && typeof m.args[0] === "number", 800);
+      [w, hh] = vm ? vm.args : [1280, 720];
+    }
     // numbering continues after frames already in the folder
     let next = 1;
     if (folders.some((f) => f.name === folder)) {
@@ -192,12 +198,14 @@ function uploadPanel() {
     row("folder", name, h("button", { onclick: () => pickDir.click(), title: "choose a folder of frames" }, "Folder…"),
       h("button", { onclick: () => pickFiles.click(), title: "choose image files" }, "Files…"), pickDir, pickFiles),
     zone,
-    row(null, h("label", {}, conv, " fit to the display + JPEG"), q, qOut),
+    row(null, h("label", {}, conv, " fit + JPEG"), fit, q, qOut),
     row(null, h("label", {}, ren, " rename f00001.jpg … (natural order of the names)")),
     row(null, prog, h("button", { title: "stop after the current file", onclick: () => { stop = true; } }, "Stop")),
     msg,
-    h("p.hint", {}, "Fit converts in this browser before the upload: camera photos become display-size JPEGs " +
-      "(fast playback). Off: .jpg / .png go as they are (other formats are always converted)."));
+    h("p.hint", {}, "Fit converts in this browser before the upload: larger pictures (camera photos) become JPEGs of the " +
+      "slot or the output size (decode time follows the file size). Off: .jpg / .png go as they are (other formats are " +
+      "always converted). The player shows each frame at its own size at the top left of its slot; a display shows a " +
+      "window of the slot (Wall tab: crop)."));
 }
 
 export function playerCard() {

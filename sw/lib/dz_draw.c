@@ -18,6 +18,7 @@
 #include <math.h>
 #include <sched.h>
 #include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,10 @@ typedef struct {
 	char      mname[100];		/* the movie, for a restart with new filters */
 	float     mfps;
 	int       maudio;
+	int       mx, my;		/* /movie/<s>/pos: top left in the slot */
+	int       once;			/* /movie/<s>/loop 0: play once, then end */
+	char      iname[100];		/* /img/<s>/file: the image at its own size,
+					 * until something else draws here */
 	struct {			/* /movie/<s>/stats: CPU ticks at the last call */
 		pid_t pid;
 		unsigned long ticks;
@@ -70,27 +75,93 @@ typedef struct {
 static surf_t surf[DZ_SLOTS];
 static int    movie_verbose;	/* debazd -v: fbfeed -v prints fps to the log */
 
-/* Geometry = the running video mode (dz_geom_*, 2026-10-28: 720p or 1080p).
- * A surface made for another mode starts again: black, its movie stopped
- * (ffmpeg/fbfeed run with the old size and stride). */
+/*
+ * Canvas (2026-11-04): a surface is the whole slot by default (1920 x 1080
+ * at the fixed line pitch), whatever the video mode: a display shows a
+ * mode-sized window of it (/disp/<d>/crop). /surface/<s>/canvas mode = the
+ * old behaviour: the size of the running mode, started again (black, its
+ * movie stopped) after a mode change. A full canvas costs 8.3 MB of RAM
+ * and makes full-frame operations (fade, solid, transforms) 2.25 x slower
+ * than a 720p one.
+ */
+static unsigned char canvas_mode[DZ_SLOTS];	/* 0 = full slot, 1 = mode */
+/* for other threads (a cue follows a movie's end, 2026-11-04): the starts per
+ * slot, and whether the player still runs (the pixel thread reaps it) */
+static unsigned play_gen[DZ_SLOTS];
+static int      play_alive[DZ_SLOTS];
+static const char *surf_err;			/* why get() failed, for the reply */
+
+static void canvas_size(int i, int *w, int *h, size_t *st)
+{
+	*st = dz_geom_stride();
+	if (canvas_mode[i]) {
+		*w = dz_geom_w();
+		*h = dz_geom_h();
+		return;
+	}
+	*w = (int)(*st / DZ_BPP);
+	*h = (int)(DZ_SLOT_PITCH / *st);
+	if (*w > 1920)
+		*w = 1920;
+	if (*h > 1080)
+		*h = 1080;
+}
+
+/* MemAvailable in kB, -1 if unknown */
+static long mem_avail_kb(void)
+{
+	char line[128];
+	long kb = -1;
+	FILE *f = fopen("/proc/meminfo", "r");
+
+	if (!f)
+		return -1;
+	while (fgets(line, sizeof(line), f))
+		if (sscanf(line, "MemAvailable: %ld kB", &kb) == 1)
+			break;
+	fclose(f);
+	return kb;
+}
+
+/* keep this much RAM free after a new shadow (ffmpeg, decoders, the rest) */
+#define SURF_RESERVE_KB	(24 * 1024)
+
+static void surf_release(int i)
+{
+	surf_t *s = &surf[i];
+
+	dz_draw_movie_stop(i);
+	free(s->shadow);
+	s->shadow = NULL;
+	s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
+}
+
 static surf_t *get(int i)
 {
 	surf_t *s;
+	int w, h;
+	size_t st;
 
 	if (i < 0 || i >= DZ_SLOTS)
 		return NULL;
 	s = &surf[i];
-	if (s->shadow && (s->w != dz_geom_w() || s->h != dz_geom_h() ||
-			  s->stride != dz_geom_stride())) {
-		dz_draw_movie_stop(i);
-		free(s->shadow);
-		s->shadow = NULL;
-		s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
-	}
+	canvas_size(i, &w, &h, &st);
+	if (s->shadow && (s->w != w || s->h != h || s->stride != st))
+		surf_release(i);
 	if (!s->shadow) {
-		s->w = dz_geom_w();
-		s->h = dz_geom_h();
-		s->stride = dz_geom_stride();
+		size_t bytes = (size_t)w * h * sizeof(uint32_t);
+		long kb = mem_avail_kb();
+
+		if (kb >= 0 && kb - (long)(bytes / 1024) < SURF_RESERVE_KB) {
+			fprintf(stderr, "dz_draw: surface %d needs %zu kB, %ld kB free: refused "
+				"(/surface/<s>/free, or /surface/<s>/canvas mode)\n", i, bytes / 1024, kb);
+			surf_err = "no RAM for the surface: /surface/<s>/free others, "
+				   "or /surface/<s>/canvas mode";
+			return NULL;
+		}
+		s->w = w;
+		s->h = h;
+		s->stride = st;
 		s->alpha = 256;
 		s->blend = DZ_BLEND_NORMAL;
 		s->autoflush = 1;
@@ -98,12 +169,55 @@ static surf_t *get(int i)
 		s->shadow = calloc((size_t)s->w * s->h, sizeof(uint32_t));
 		if (!s->shadow) {
 			fprintf(stderr, "dz_draw: no memory for surface %d\n", i);
+			surf_err = "no RAM for the surface";
 			return NULL;
 		}
 		for (size_t k = 0; k < (size_t)s->w * s->h; k++)
 			s->shadow[k] = 0xFF000000u;
 	}
 	return s;
+}
+
+/* 0 = full slot, 1 = mode size; a change starts the surface again */
+int dz_draw_canvas(int i, int mode)
+{
+	if (i < 0 || i >= DZ_SLOTS || mode < 0 || mode > 1)
+		return -1;
+	if (canvas_mode[i] != mode) {
+		canvas_mode[i] = (unsigned char)mode;
+		if (surf[i].shadow)
+			surf_release(i);
+	}
+	return 0;
+}
+
+/* the canvas setting and size (the size it has, or would have on first use);
+ * *bytes = RAM in use for the shadow (0 = not allocated) */
+int dz_draw_canvas_get(int i, int *w, int *h, size_t *bytes)
+{
+	size_t st;
+
+	if (i < 0 || i >= DZ_SLOTS)
+		return -1;
+	canvas_size(i, w, h, &st);
+	*bytes = surf[i].shadow ? (size_t)surf[i].w * surf[i].h * 4 : 0;
+	return canvas_mode[i];
+}
+
+/* give the shadow back (the slot memory keeps its picture); a later draw
+ * allocates a black one again */
+void dz_draw_free(int i)
+{
+	if (i >= 0 && i < DZ_SLOTS && surf[i].shadow)
+		surf_release(i);
+}
+
+const char *dz_draw_take_err(void)
+{
+	const char *e = surf_err;
+
+	surf_err = NULL;
+	return e;
 }
 
 void dz_draw_close(void)
@@ -711,6 +825,7 @@ uint32_t *dz_surf(int i, int *w, int *h)
 	if (!s)
 		return NULL;
 	dz_draw_movie_stop(i);
+	s->iname[0] = 0;
 	*w = s->w;
 	*h = s->h;
 	return s->shadow;
@@ -905,6 +1020,26 @@ static int name_ok(const char *n)
 	return 1;
 }
 
+/* a w x h picture at its own size at the top left; a larger one made
+ * smaller to fit the surface (aspect kept) */
+static dz_rect own_size(const surf_t *s, int w, int h)
+{
+	dz_rect r = { 0, 0, w, h };
+
+	if (w > s->w || h > s->h) {
+		if ((long)w * s->h > (long)h * s->w) {
+			r.w = s->w;
+			r.h = (int)((long)h * s->w / w);
+		} else {
+			r.h = s->h;
+			r.w = (int)((long)w * s->h / h);
+		}
+	}
+	if (r.w < 1) r.w = 1;
+	if (r.h < 1) r.h = 1;
+	return r;
+}
+
 int dz_draw_image(int i, const char *name, dz_rect r)
 {
 	surf_t *s = get(i);
@@ -912,10 +1047,14 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 	uint32_t *line;
 	FILE *fp;
 	int rows = 0;
+	/* no rectangle = the picture's own size (2026-11-04: the surface is the
+	 * whole slot, so "fill the surface" would scale it up) */
+	int own = !r.x && !r.y && !r.w && !r.h;
 
-	if (!s || !name_ok(name) || !clip(s, &r))
+	if (!s || !name_ok(name) || (!own && !clip(s, &r)))
 		return -1;
 	dz_draw_movie_stop(i);
+	s->iname[0] = 0;
 	/* JPEG / PNG in process (dz_img, 2026-11-01: ~60 ms, ffmpeg 0.8-1.7 s);
 	 * same result: the picture stretched to the rectangle */
 	if (dz_img_available(dz_img_kind(name))) {
@@ -924,7 +1063,11 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 		uint32_t *pic, *fit;
 
 		snprintf(path, sizeof(path), "%s/%s", DZ_IMG_DIR, name);
-		pic = dz_img_load(path, r.w, r.h, &w, &h, err, sizeof(err));
+		pic = dz_img_load(path, own ? s->w : r.w, own ? s->h : r.h, &w, &h, err, sizeof(err));
+		/* a smaller picture comes at its full size, a larger one scaled
+		 * on decode to just cover the surface: the aspect is the same */
+		if (pic && own)
+			r = own_size(s, w, h);
 		if (pic) {
 			fit = pic;
 			if (w != r.w || h != r.h) {
@@ -945,11 +1088,30 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 				free(pic);
 				dirty(s, r.x, r.y, r.x + r.w, r.y + r.h);
 				finish(s, i);
+				if (own)
+					snprintf(s->iname, sizeof(s->iname), "%s", name);
 				return 0;
 			}
 			free(pic);
 		}
 		fprintf(stderr, "dz_draw: %s: %s - trying ffmpeg\n", name, pic ? "out of memory" : err);
+	}
+	if (own) {
+		int w = 0, h = 0;
+
+		snprintf(cmd, sizeof(cmd), "ffprobe -v error -select_streams v:0 -show_entries "
+			 "stream=width,height -of csv=p=0 '%s/%s'", DZ_IMG_DIR, name);
+		fp = popen(cmd, "r");
+		if (fp) {
+			if (fscanf(fp, "%d,%d", &w, &h) != 2)
+				w = h = 0;
+			pclose(fp);
+		}
+		r = DZ_ALL;
+		if (w > 0 && h > 0)
+			r = own_size(s, w, h);
+		else if (!clip(s, &r))
+			return -1;
 	}
 	snprintf(cmd, sizeof(cmd),
 		 "ffmpeg -nostdin -hide_banner -loglevel error -i '%s/%s' -frames:v 1 "
@@ -978,48 +1140,112 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 		return -1;
 	dirty(s, r.x, r.y, r.x + r.w, r.y + rows);
 	finish(s, i);
+	if (own)
+		snprintf(s->iname, sizeof(s->iname), "%s", name);
 	return 0;
+}
+
+/* /img/<s>/file: the image at its own size now ("" = none) */
+const char *dz_draw_img_name(int i)
+{
+	return i >= 0 && i < DZ_SLOTS ? surf[i].iname : "";
+}
+
+/* posix_spawn, not fork (2026-11-03): glibc spawns with vfork semantics
+ * (CLONE_VM), so the time does not grow with the page tables of debazd. A
+ * fork copied them: 9 ms with the 12 slots mapped, 19 ms with 40 MB of
+ * shadow buffers, in the frame tick (33-37 ms ticks while react restarted
+ * arecord every 4 s). posix_spawn also returns only after the exec (it
+ * reports a failed exec), so the group exists when it returns: a stop right
+ * after the start reaches it. Before 2026-11-01 a stop could come between
+ * fork and the child's setsid: kill(-pid) found no group, waitpid(pid) then
+ * waited for a movie that kept running and debazd hung. */
+extern char **environ;
+
+static pid_t spawn_sh(const char *cmd, int rt_prio, const char *out)
+{
+	posix_spawnattr_t at;
+	posix_spawn_file_actions_t fa;
+	char *argv[] = { "sh", "-c", (char *)cmd, NULL };
+	short fl = POSIX_SPAWN_SETSID;
+	pid_t pid = 0;
+	int rc;
+
+	if (posix_spawnattr_init(&at))
+		return 0;
+	if (posix_spawn_file_actions_init(&fa)) {
+		posix_spawnattr_destroy(&at);
+		return 0;
+	}
+	if (rt_prio > 0) {	/* inherited by ffmpeg */
+		struct sched_param sp = { .sched_priority = rt_prio };
+
+		fl |= POSIX_SPAWN_SETSCHEDULER;
+		posix_spawnattr_setschedpolicy(&at, SCHED_FIFO);
+		posix_spawnattr_setschedparam(&at, &sp);
+	}
+	posix_spawnattr_setflags(&at, fl);
+	if (out) {		/* detached: nothing of debazd lives on in it */
+		posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
+		posix_spawn_file_actions_addopen(&fa, 1, out, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		posix_spawn_file_actions_adddup2(&fa, 1, 2);
+	}
+	/* fds 3+ never: a movie that outlived debazd held the debazd.lock flock
+	 * and the next debazd refused to start (2026-11-04). The commands open
+	 * their FIFOs in the shell (0<>, 3<>). */
+	posix_spawn_file_actions_addclosefrom_np(&fa, 3);
+	rc = posix_spawn(&pid, "/bin/sh", &fa, &at, argv, environ);
+	posix_spawn_file_actions_destroy(&fa);
+	posix_spawnattr_destroy(&at);
+	return rc == 0 ? pid : 0;
 }
 
 pid_t dz_spawn(const char *cmd, int rt_prio)
 {
-	int sync[2];
-	pid_t pid;
-	char c;
-
-	/* the parent waits until the child has exec'd: the write end closes
-	 * on exec. Before (2026-11-01) a stop could come between fork and the
-	 * child's setsid: kill(-pid) found no group, waitpid(pid) then waited
-	 * for a movie that kept running and debazd hung (ASCII drawing into
-	 * the slot a movie had just started on) */
-	if (pipe2(sync, O_CLOEXEC) < 0)
-		return 0;
-	pid = fork();
-	if (pid == 0) {
-		close(sync[0]);
-		setsid();	/* own process group: a stop kills the whole command */
-		if (rt_prio > 0) {
-			struct sched_param sp = { .sched_priority = rt_prio };
-
-			sched_setscheduler(0, SCHED_FIFO, &sp);	/* inherited by ffmpeg */
-		}
-		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
-		_exit(127);
-	}
-	close(sync[1]);
-	if (pid > 0)
-		while (read(sync[0], &c, 1) < 0 && errno == EINTR)
-			;
-	close(sync[0]);
-	return pid > 0 ? pid : 0;
+	return spawn_sh(cmd, rt_prio, NULL);
 }
 
+/* ( cmd ) in the background of a short sh (no zombie, debazd does not wait for
+ * it), in its own session, fds 0-2 = /dev/null and out, all others closed
+ * (the OSC socket and the debazd.lock flock must not live on in it) */
+int dz_spawn_detached(const char *cmd, const char *out)
+{
+	char bg[1100];
+	pid_t pid;
+
+	/* ( ): "a && b; c &" would put only c in the background */
+	if (snprintf(bg, sizeof(bg), "( %s ) &", cmd) >= (int)sizeof(bg))
+		return -1;
+	pid = spawn_sh(bg, 0, out ? out : "/dev/null");
+	if (pid <= 0)
+		return -1;
+	waitpid(pid, NULL, 0);	/* the sh only: it exits after the "&" */
+	return 0;
+}
+
+/* At most ~0.5 s, then SIGKILL (2026-11-03): an arecord without input
+ * samples ends only when its ALSA read times out, 10 s later, and the wait
+ * blocked debazd's main loop for those 10 s (/audio/react/source in a
+ * recall: 10.2 s; a debazd stop: 10.3 s). */
 void dz_kill_group(pid_t pid, int sig)
 {
+	int grp = 1;
+
 	if (pid <= 0)
 		return;
-	if (kill(-pid, sig) < 0 && errno == ESRCH)
+	if (kill(-pid, sig) < 0 && errno == ESRCH) {
+		grp = 0;
 		kill(pid, sig);
+	}
+	for (int k = 0; k < 50 && sig != SIGKILL; k++) {
+		pid_t r = waitpid(pid, NULL, WNOHANG);
+
+		if (r == pid || (r < 0 && errno == ECHILD))
+			return;
+		nanosleep(&(struct timespec){ 0, 10000000 }, NULL);
+	}
+	if (sig != SIGKILL)
+		kill(grp ? -pid : pid, SIGKILL);
 	waitpid(pid, NULL, 0);
 }
 
@@ -1033,6 +1259,7 @@ int dz_draw_movie_running(int i)
 		return 0;
 	if (waitpid(s->player, NULL, WNOHANG) == s->player) {
 		s->player = 0;
+		__atomic_store_n(&play_alive[i], 0, __ATOMIC_RELEASE);
 		return 0;
 	}
 	return 1;
@@ -1071,6 +1298,7 @@ int dz_draw_movie_stop(int i)
 		return 0;
 	dz_kill_group(s->player, SIGTERM);
 	s->player = 0;
+	__atomic_store_n(&play_alive[i], 0, __ATOMIC_RELEASE);
 	return 1;
 }
 
@@ -1097,8 +1325,8 @@ int dz_draw_movie_play_fps(int i, const char *name, float fps)
 int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 {
 	surf_t *s = get(i);
-	char cmd[2400], path[256], dst[96], cap[32] = "", aud[900] = "", vf[210] = "";
-	char mname[100], fxo[80];
+	char cmd[3200], path[256], dst[96], cap[32] = "", aud[1200] = "", vf[210] = "";
+	char mname[100], fxo[80], geo[128];
 	static const int pcm_of[3] = { 0, 1, 3 };
 	pid_t pid;
 
@@ -1106,6 +1334,7 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 		return -1;
 	snprintf(mname, sizeof(mname), "%s", name);	/* name may be s->mname */
 	dz_draw_movie_stop(i);
+	s->iname[0] = 0;
 	snprintf(s->mname, sizeof(s->mname), "%s", mname);
 	s->mfps = fps;
 	s->maudio = audio;
@@ -1138,7 +1367,7 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 		fprintf(stderr, "dz_draw: no such movie %s\n", path);
 		return -1;
 	}
-	if (!dz_reserved(DZ_SLOT_ADDR(i), (uint32_t)(s->stride * s->h))) {
+	if (!dz_reserved(DZ_SLOT_ADDR(i), DZ_SLOT_PITCH)) {
 		fprintf(stderr, "dz_draw: slot %d is outside reserved memory - refused\n", i);
 		return -1;
 	}
@@ -1151,9 +1380,25 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 	 * slot 0 lies inside /dev/fb0: use its write-combined mapping.
 	 */
 	if (i == DZ_SLOT_FB0)
-		snprintf(dst, sizeof(dst), "-d /dev/fb0 -o 0");
+		snprintf(dst, sizeof(dst), "-d /dev/fb0 -o $o");
 	else
-		snprintf(dst, sizeof(dst), "-a 0x%08X", (unsigned)DZ_SLOT_ADDR(i));
+		snprintf(dst, sizeof(dst), "-a $((%u + o))", (unsigned)DZ_SLOT_ADDR(i));
+	/*
+	 * The movie's own size (2026-11-04): never scaled to the video mode
+	 * (measured on the board, 720p movie, decode alone 46 fps: + scale to
+	 * 640x480 34 fps, to 1024x768 27, to 1080p 16). Its top left sits at
+	 * /movie/<s>/pos in the slot and a display shows a window of the slot
+	 * (/disp/<d>/crop). Not clamped: a movie taller than the slot or placed
+	 * near its edge runs on into the next slot (on purpose: the user wants
+	 * it); fbfeed refuses rows wider than the line (1920) and anything
+	 * outside reserved memory. Odd sizes are rounded down to even: fbfeed
+	 * reads w/2 chroma columns, ffmpeg's yuv420p has ceil(w/2), and the
+	 * frames would drift. The final scale stays in the chain: a no-op at
+	 * the same size, and it undoes a preset's own scale (pixel, edges).
+	 */
+	snprintf(geo, sizeof(geo), "w=$((${2:-1280} & ~1)); h=$((${3:-720} & ~1)); o=%u; L='%s'; ",
+		 (unsigned)((size_t)s->my * s->stride + (size_t)s->mx * DZ_BPP),
+		 s->once ? "" : "-stream_loop -1");
 	/* frame-rate cap before the scaler: a dropped frame costs no scaling,
 	 * pipe copy or conversion (DDR traffic at 1080p60, CLAUDE.md) */
 	if (fps > 0.0f && fps <= 120.0f)
@@ -1164,13 +1409,30 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 				 " -map 0:a:0%s%s%s -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d",
 				 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "", pcm_of[k]);
 	if (aud[0]) {
-		char acmd[1400];
+		char acmd[1800], tap[64] = "";
+		struct stat st;
 
+		/* the tap for the audio analysis (2026-11-04): one more output with
+		 * the same filter, raw into a FIFO that debazd (react.c) reads every
+		 * frame. The FIFO stays (react keeps it open); the shell opens it
+		 * read-write (3<>), so the open never blocks. Never a plain file:
+		 * ffmpeg would fill /tmp. */
+		snprintf(tap, sizeof(tap), DZ_MAUDIO, i);
+		if (lstat(tap, &st) == 0 && !S_ISFIFO(st.st_mode))
+			unlink(tap);
+		if (mkfifo(tap, 0600) == 0 || errno == EEXIST)
+			snprintf(aud + strlen(aud), sizeof(aud) - strlen(aud),
+				 " -map 0:a:0%s%s%s -ac 2 -ar 48000 -f s16le pipe:3",
+				 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "");
+		else
+			tap[0] = 0;
 		snprintf(acmd, sizeof(acmd),
 			 "ffprobe -v error -select_streams a:0 -show_entries stream=index "
 			 "-of csv=p=0 '%s' | grep -q . || exit 0; "
-			 "exec ffmpeg -hide_banner -loglevel error -stream_loop -1 -re "
-			 "-i '%s'%s 0<>" DZ_FFA_CTL " 2>/dev/null", path, path, aud, i);
+			 "exec ffmpeg -hide_banner -loglevel error %s-re "
+			 "-i '%s'%s 0<>" DZ_FFA_CTL "%s%s 2>/dev/null", path,
+			 s->once ? "" : "-stream_loop -1 ", path, aud, i,
+			 tap[0] ? " 3<>" : "", tap);
 		pid = dz_spawn(acmd, 20);
 		s->aplayer = pid > 0 ? pid : 0;
 	}
@@ -1186,31 +1448,95 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 	 */
 	snprintf(cmd, sizeof(cmd),
 		 "set -- $(ffprobe -v error -select_streams v:0 -show_entries "
-		 "stream=codec_name,avg_frame_rate,r_frame_rate -of csv=p=0 '%s' | tr , ' '); "
-		 "r=$2; [ \"$r\" = 0/0 ] && r=$3; "
+		 "stream=codec_name,width,height,r_frame_rate,avg_frame_rate -of csv=p=0 '%s' "
+		 "| tr , ' '); r=$4; [ \"$r\" = 0/0 ] && r=$5; %s"
 		 "if [ \"$1\" = mpeg4 ] && [ -x %s ]; then "
-		 "ffmpeg -nostdin -hide_banner -loglevel error -stream_loop -1 -i '%s' "
+		 "ffmpeg -nostdin -hide_banner -loglevel error $L -i '%s' "
 		 "-map 0:v:0 -c:v copy -bsf:v dump_extra -f m4v pipe:1 "
 		 "| %s -r \"$r\" -c " DZ_MOSH_CTL " -S " DZ_MOSH_STAT " "
 		 "| ffmpeg -hide_banner -loglevel fatal -use_wallclock_as_timestamps 1 "
 		 "-f m4v -i /dev/fd/3 -vsync passthrough "
-		 "-vf '%s%sscale=%d:%d:flags=fast_bilinear' -pix_fmt yuv420p -f rawvideo pipe:1 "
+		 "-vf '%s%sscale='$w:$h':flags=fast_bilinear' -pix_fmt yuv420p -f rawvideo pipe:1 "
 		 "3<&0 0<>" DZ_FFV_CTL " 2>/dev/null "
-		 "| %s -y %s -w %d -h %d -s %u -S " DZ_FBFEED_STAT "%s%s; "
+		 "| %s -y %s -w $w -h $h -s %u -S " DZ_FBFEED_STAT "%s%s; "
 		 "else "
-		 "ffmpeg -hide_banner -loglevel error -stream_loop -1 -re "
-		 "-i '%s' -map 0:v:0 -vf '%s%sscale=%d:%d:flags=fast_bilinear' -pix_fmt yuv420p "
+		 "ffmpeg -hide_banner -loglevel error $L -re "
+		 "-i '%s' -map 0:v:0 -vf '%s%sscale='$w:$h':flags=fast_bilinear' -pix_fmt yuv420p "
 		 "-f rawvideo pipe:1 0<>" DZ_FFV_CTL " 2>/dev/null "
-		 "| %s -y %s -w %d -h %d -s %u -S " DZ_FBFEED_STAT "%s%s; fi",
-		 path, DZ_DZMOSH, path, DZ_DZMOSH, i, i,
-		 cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride, i,
+		 "| %s -y %s -w $w -h $h -s %u -S " DZ_FBFEED_STAT "%s%s; fi",
+		 path, geo, DZ_DZMOSH, path, DZ_DZMOSH, i, i,
+		 cap, vf, i, DZ_FBFEED, dst, (unsigned)s->stride, i,
 		 movie_verbose ? " -v" : "", fxo,
-		 path, cap, vf, s->w, s->h, i, DZ_FBFEED, dst, s->w, s->h, (unsigned)s->stride, i,
+		 path, cap, vf, i, DZ_FBFEED, dst, (unsigned)s->stride, i,
 		 movie_verbose ? " -v" : "", fxo);
 	pid = dz_spawn(cmd, 0);
 	if (!pid)
 		return -1;
 	s->player = pid;
+	__atomic_store_n(&play_alive[i], 1, __ATOMIC_RELEASE);	/* before the new start count */
+	__atomic_add_fetch(&play_gen[i], 1, __ATOMIC_RELEASE);
+	return 0;
+}
+
+/* /movie/<s>/loop 0|1 (2026-11-04): 0 = play once and end (a cue can
+ * follow the end); a playing movie restarts when it changes */
+int dz_draw_movie_loop(int i, int loop)
+{
+	surf_t *s;
+
+	if (i < 0 || i >= DZ_SLOTS)
+		return -1;
+	s = &surf[i];
+	if (s->once == !loop)
+		return 0;			/* cue recalls: no restart */
+	s->once = !loop;
+	if (dz_draw_movie_running(i) && s->mname[0])
+		return dz_draw_movie_play_av(i, s->mname, s->mfps, s->maudio);
+	return 0;
+}
+
+int dz_draw_movie_loop_get(int i)
+{
+	return i >= 0 && i < DZ_SLOTS ? !surf[i].once : 1;
+}
+
+unsigned dz_draw_movie_gen(int i)
+{
+	return i >= 0 && i < DZ_SLOTS ? __atomic_load_n(&play_gen[i], __ATOMIC_ACQUIRE) : 0;
+}
+
+int dz_draw_movie_alive(int i)
+{
+	return i >= 0 && i < DZ_SLOTS ? __atomic_load_n(&play_alive[i], __ATOMIC_ACQUIRE) : 0;
+}
+
+/* /movie/<s>/pos x y: where the movie's top left sits in the slot (x even;
+ * not moved in: a movie may run on into the next slot); a playing movie
+ * restarts */
+int dz_draw_movie_pos(int i, int x, int y)
+{
+	surf_t *s;
+
+	if (i < 0 || i >= DZ_SLOTS)
+		return -1;
+	s = &surf[i];
+	x = x < 0 ? 0 : x > 1918 ? 1918 : x & ~1;
+	y = y < 0 ? 0 : y > 1079 ? 1079 : y;
+	if (s->mx == x && s->my == y)
+		return 0;			/* cue recalls: no restart */
+	s->mx = x;
+	s->my = y;
+	if (dz_draw_movie_running(i) && s->mname[0])
+		return dz_draw_movie_play_av(i, s->mname, s->mfps, s->maudio);
+	return 0;
+}
+
+int dz_draw_movie_pos_get(int i, int *x, int *y)
+{
+	if (i < 0 || i >= DZ_SLOTS)
+		return -1;
+	*x = surf[i].mx;
+	*y = surf[i].my;
 	return 0;
 }
 
@@ -1734,7 +2060,6 @@ static int save_png(surf_t *s, const char *base)
 	static unsigned seq;
 	char raw[96], cmd[768];
 	FILE *fp;
-	pid_t pid;
 	size_t n = (size_t)s->w * s->h;
 
 	snprintf(raw, sizeof(raw), "/tmp/dz_save_%d_%u.raw", (int)getpid(), seq++);
@@ -1752,20 +2077,10 @@ static int save_png(surf_t *s, const char *base)
 		 "-s %dx%d -i '%s' -frames:v 1 -pix_fmt rgb24 '%s/.%s.png' && "
 		 "mv -f '%s/.%s.png' '%s/%s.png'; rm -f '%s'",
 		 s->w, s->h, raw, DZ_IMG_DIR, base, DZ_IMG_DIR, base, DZ_IMG_DIR, base, raw);
-	pid = fork();
-	if (pid < 0) {
+	if (dz_spawn_detached(cmd, NULL) < 0) {
 		unlink(raw);
 		return -1;
 	}
-	if (pid == 0) {
-		if (fork() == 0) {
-			setsid();
-			execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
-			_exit(127);
-		}
-		_exit(0);
-	}
-	waitpid(pid, NULL, 0);
 	return 0;
 }
 
@@ -1918,6 +2233,7 @@ static int is_xform_op(const char *op)
 int dz_draw_dispatch(const dz_msg *m, int verbose)
 {
 	movie_verbose = verbose;
+	surf_err = NULL;
 	const dz_arg *a = m->a;
 	const char *op = "";
 	unsigned mask = 0;
@@ -1935,6 +2251,7 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			 * buffer already. */
 			if (is_xform_op(op) && dz_draw_movie_running(i))
 				dz_draw_grab(i, i);
+			surf[i].iname[0] = 0;		/* drawn on: no longer that image */
 			if (!strcmp(op, "solid") && n >= 3)
 				rc = dz_draw_solid(i, col(a, 0), rect_at(a, n, 3));
 			else if (!strcmp(op, "clear"))
@@ -2041,7 +2358,18 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 	}
 	if (split(m->path, "img", &mask, &op)) {
 		for (int i = 0; i < DZ_SLOTS; i++)
-			if ((mask & (1u << i)) && !strcmp(op, "load") && n >= 1 && a[0].type == 's') {
+			if ((mask & (1u << i)) && !strcmp(op, "file") && n >= 1 && a[0].type == 's') {
+				/* the state model (cues): "" = forget it (the picture
+				 * stays), the same image = nothing, else the slot black
+				 * and the image at its own size at the top left (a
+				 * playlist: no movie frame left around a small image) */
+				if (!a[0].s[0])
+					surf[i].iname[0] = 0;
+				else if (strcmp(surf[i].iname, a[0].s) &&
+					 (dz_draw_solid(i, DZ_RGB8(0, 0, 0), DZ_ALL) || dz_draw_image(i, a[0].s, DZ_ALL)))
+					fails++;
+				hits++;
+			} else if ((mask & (1u << i)) && !strcmp(op, "load") && n >= 1 && a[0].type == 's') {
 				int rc = dz_draw_image(i, a[0].s, rect_at(a, n, 1));
 
 				hits++;
@@ -2072,6 +2400,14 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 				hits++;
 			} else if (!strcmp(op, "stop")) {
 				dz_draw_movie_stop(i);
+				hits++;
+			} else if (!strcmp(op, "loop") && n >= 1) {
+				if (dz_draw_movie_loop(i, (int)argn(&a[0]) != 0))
+					fails++;
+				hits++;
+			} else if (!strcmp(op, "pos") && n >= 2) {
+				if (dz_draw_movie_pos(i, (int)argn(&a[0]), (int)argn(&a[1])))
+					fails++;
 				hits++;
 			} else if (!strcmp(op, "file") && n >= 1 && a[0].type == 's') {
 				/* the state model: "" = stop; the same movie, fps and
@@ -2150,6 +2486,16 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 			}
 			else if (!strcmp(op, "auto") && n >= 1)
 				dz_draw_set_auto(i, a[0].i);
+			else if (!strcmp(op, "canvas") && n >= 1) {
+				int mode = a[0].type == 's' ? (!strcmp(a[0].s, "mode") ? 1 :
+							       !strcmp(a[0].s, "full") ? 0 : -1) :
+					   a[0].type == 'f' ? (int)a[0].f : a[0].i;
+
+				if (dz_draw_canvas(i, mode) < 0)
+					fails++;
+			}
+			else if (!strcmp(op, "free"))
+				dz_draw_free(i);
 			else if (!strcmp(op, "save") && n >= 1 && a[0].type == 's') {
 				if (dz_draw_save(i, a[0].s) < 0)
 					fails++;

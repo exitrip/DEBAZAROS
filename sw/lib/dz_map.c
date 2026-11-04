@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fb.h>
+#include <pthread.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -95,7 +96,7 @@ static void probe_sigbus(int sig)
 }
 
 /* 0 = present (or no probe for this block), -1 = absent */
-static int probe(block *b)
+static int probe(const block *b, void *map)
 {
 	struct sigaction sa, old;
 	volatile uint32_t v = 0;
@@ -111,7 +112,7 @@ static int probe(block *b)
 	sa.sa_handler = probe_sigbus;
 	sigaction(SIGBUS, &sa, &old);
 	if (sigsetjmp(probe_jmp, 1) == 0)
-		v = b->map[off / 4];
+		v = ((volatile uint32_t *)map)[off / 4];
 	else
 		bad = 1;
 	sigaction(SIGBUS, &old, NULL);
@@ -126,6 +127,11 @@ static int probe(block *b)
 static block blocks[N_KNOWN];
 static int   sim;
 static int   mem_fd = -1;
+
+/* Two threads map blocks and slots (debazd: the main thread and the pixel
+ * thread, 2026-11-03). A mapping is made once under this lock and then only
+ * read: the fast paths take no lock. */
+static pthread_mutex_t map_mu = PTHREAD_MUTEX_INITIALIZER;
 
 void dz_map_simulate(int on) { sim = on; }
 int  dz_map_simulating(void) { return sim; }
@@ -203,14 +209,31 @@ static block *find_block(uint32_t base)
 	return NULL;
 }
 
+static volatile uint32_t *regs_locked(block *b, uint32_t base);
+
 volatile uint32_t *dz_regs(uint32_t base)
 {
 	block *b = find_block(base);
+	volatile uint32_t *r;
+
+	if (!b)
+		return NULL;
+	r = __atomic_load_n(&b->map, __ATOMIC_ACQUIRE);
+	if (r || b->absent)
+		return r;		/* absent = not in this bitstream: refuse */
+	pthread_mutex_lock(&map_mu);
+	r = regs_locked(b, base);
+	pthread_mutex_unlock(&map_mu);
+	return r;
+}
+
+/* the first map of a block. The pointer is published (b->map) only after
+ * the probe: another thread never sees a block that may be absent. */
+static volatile uint32_t *regs_locked(block *b, uint32_t base)
+{
 	void *m;
 
-	if (!b || b->absent)
-		return NULL;		/* not in this bitstream: refuse */
-	if (b->map)
+	if (b->absent || b->map)
 		return b->map;
 
 	b->base = base;
@@ -229,14 +252,14 @@ volatile uint32_t *dz_regs(uint32_t base)
 	if (b->fd >= 0) {
 		m = mmap(NULL, b->len, PROT_READ | PROT_WRITE, MAP_SHARED, b->fd, 0);
 		if (m != MAP_FAILED) {
-			b->map = m;
-			if (probe(b) < 0) {
+			if (probe(b, m) < 0) {
 				munmap(m, b->len);
 				close(b->fd);
 				b->fd = -1;
-				b->map = NULL;
 				b->absent = 1;
+				return NULL;
 			}
+			__atomic_store_n(&b->map, (volatile uint32_t *)m, __ATOMIC_RELEASE);
 			return b->map;
 		}
 		close(b->fd);
@@ -253,13 +276,13 @@ volatile uint32_t *dz_regs(uint32_t base)
 			strerror(errno));
 		return NULL;
 	}
-	b->map = m;
 	snprintf(b->via, sizeof(b->via), "mem");
-	if (probe(b) < 0) {
+	if (probe(b, m) < 0) {
 		munmap(m, BLOCK_MAP);
-		b->map = NULL;
 		b->absent = 1;
+		return NULL;
 	}
+	__atomic_store_n(&b->map, (volatile uint32_t *)m, __ATOMIC_RELEASE);
 	return b->map;
 }
 
@@ -422,26 +445,47 @@ fail:
 	fb_fd = -1;
 }
 
+static uint8_t *slot_locked(slotmap *s, int n, size_t len);
+
+/* A slot is mapped once with its full pitch when the reservation covers it
+ * (2026-11-03): before, a longer request unmapped the slot and mapped it
+ * again, under the feet of another thread that held the old pointer (anim
+ * workers map the full pitch, the draw code the mode-sized part). */
 uint8_t *dz_slot(int n, size_t len, const char **via)
 {
 	slotmap *s;
-	uint32_t phys;
-	void *m;
+	uint8_t *p;
 
 	if (n < 0 || n >= DZ_SLOTS || len == 0 || len > DZ_SLOT_PITCH)
 		return NULL;
 	s = &slots[n];
-	phys = DZ_SLOT_ADDR(n);
+	p = __atomic_load_n(&s->ptr, __ATOMIC_ACQUIRE);
+	if (!p || s->len < len) {
+		pthread_mutex_lock(&map_mu);
+		p = slot_locked(s, n, len);
+		pthread_mutex_unlock(&map_mu);
+	}
+	if (p && via)
+		*via = s->via;
+	return p;
+}
+
+static uint8_t *slot_locked(slotmap *s, int n, size_t len)
+{
+	uint32_t phys = DZ_SLOT_ADDR(n);
+	void *m;
+
 	if (!dz_reserved(phys, (uint32_t)len)) {
 		fprintf(stderr, "dz_map: slot %d (0x%08X + %zu) is outside reserved "
 			"memory - refused (see CLAUDE.md, reserved-memory)\n", n,
 			(unsigned)phys, len);
 		return NULL;
 	}
-
 	if (s->ptr && s->len >= len)
-		goto done;
-	if (s->map) {			/* grow: drop the old mapping */
+		return s->ptr;
+	if (dz_reserved(phys, DZ_SLOT_PITCH))
+		len = DZ_SLOT_PITCH;		/* the whole slot: never grows again */
+	if (s->map) {			/* grow (reservation ends inside the slot) */
 		if (sim)
 			free(s->map);
 		else
@@ -454,18 +498,18 @@ uint8_t *dz_slot(int n, size_t len, const char **via)
 		s->map = calloc(1, DZ_SLOT_PITCH);
 		if (!s->map)
 			return NULL;
-		s->ptr = s->map;
 		s->len = DZ_SLOT_PITCH;
 		snprintf(s->via, sizeof(s->via), "sim");
-		goto done;
+		__atomic_store_n(&s->ptr, (uint8_t *)s->map, __ATOMIC_RELEASE);
+		return s->ptr;
 	}
 
 	fb_probe();
 	if (fb_map && phys >= fb_phys && (size_t)(phys - fb_phys) + len <= fb_len) {
-		s->ptr = fb_map + (phys - fb_phys);
 		s->len = fb_len - (phys - fb_phys);
 		snprintf(s->via, sizeof(s->via), "fb0");
-		goto done;
+		__atomic_store_n(&s->ptr, fb_map + (phys - fb_phys), __ATOMIC_RELEASE);
+		return s->ptr;
 	}
 
 	if (mem_open() < 0)
@@ -477,12 +521,9 @@ uint8_t *dz_slot(int n, size_t len, const char **via)
 		return NULL;
 	}
 	s->map = m;
-	s->ptr = m;
 	s->len = len;
 	snprintf(s->via, sizeof(s->via), "mem");
-done:
-	if (via)
-		*via = s->via;
+	__atomic_store_n(&s->ptr, (uint8_t *)m, __ATOMIC_RELEASE);
 	return s->ptr;
 }
 

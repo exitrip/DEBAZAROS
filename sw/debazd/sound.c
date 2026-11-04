@@ -280,6 +280,12 @@ static int out_ok(int out)
 	return 0;
 }
 
+/* a file plays on output out (a cue follows its end) */
+int sound_playing(int out)
+{
+	return out >= 0 && out < OUTS && play[out].pid > 0;
+}
+
 void sound_tick(void)
 {
 	for (int k = 0; k < OUTS; k++)

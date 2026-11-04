@@ -7,6 +7,8 @@
 #include "dz_osc.h"
 #include "dz_fields.h"
 
+#include <netinet/in.h>
+
 /* Reply to the sender of the message being handled. No-op for messages
  * that the daemon sends to itself (LFO templates, sequencers). */
 void dzd_reply(const char *path, const char *tags, ...);
@@ -28,6 +30,7 @@ int  disp_vsync_ok(void);	/* 1 while real vsync arrives */
 double disp_frame_hz(void);	/* measured frame rate, 0 without vsync */
 void disp_crop_reset(void);	/* crops back to 0 0 (video mode change) */
 extern int capture_auto;	/* debazd.c: capture size follows the input */
+extern int capture_plocked;	/* debazd.c: HDMI_2 input locked (1), not (0), not read yet (-1) */
 
 void disp_anim_attach(int d, int on);	/* anim.c drives store 0 / gives it back */
 void disp_anim_frame(void);		/* no vsync: one anim frame (main loop) */
@@ -83,7 +86,24 @@ int    stats_dispatch(const dz_msg *m);
 double stats_now(void);			/* ms, monotonic */
 void   stats_tick(double ms);		/* one frame tick took ms */
 void   stats_osc(double ms);		/* one OSC packet took ms */
-void ascii_tick(void);			/* once per frame */
+void   stats_pix(double ms);		/* one pixel-thread job or frame took ms */
+void ascii_tick(void);			/* once per frame (pixel thread) */
+
+/* ---- pix.c: the pixel thread (2026-11-03) ---- */
+int  pix_init(void);
+void pix_close(void);
+int  pix_owns(const char *path);	/* 1 = an address of the pixel domain */
+int  pix_here(void);			/* 1 = run pixel work inline (on the thread, or no thread) */
+int  pix_post(const dz_msg *m, const struct sockaddr_in *from, int internal);
+					/* 0, -1 = no thread (run inline), -2 = queue full */
+void pix_frame(void);			/* main: once per frame (ASCII, movie ticks) */
+void pix_monitor(void);			/* main: monitor interval (inline only without thread) */
+void pix_sync(void);			/* main: wait until the messages posted so far ran */
+void pix_lock(void);			/* main: no pixel job runs until pix_unlock */
+void pix_unlock(void);
+int  pix_queued(void);
+/* debazd.c: run one message of the pixel domain with this reply context */
+void dzd_pix_run(const uint8_t *msg, size_t len, const struct sockaddr_in *from, int internal);
 
 /* ---- state model (state.c; ROADMAP.md section 15) ----
  * Every subsystem lists its targets: one OSC message of debazd each (the
@@ -141,6 +161,7 @@ void audio_tick(long ms);		/* from the monitor loop */
 void audio_rx_hold(void);		/* no input rate replug for 10 s (video mode change) */
 int  sound_dispatch(const dz_msg *m);	/* 0 = not /audio/play|stop|rec|status|out/<n>/source */
 void sound_tick(void);			/* reaps finished players / recorder */
+int  sound_playing(int out);		/* a file player runs on output out */
 void sound_close(void);
 
 /* ---- pwm.c: software PWM / servo pulses on the fan pin 4 outputs ---- */

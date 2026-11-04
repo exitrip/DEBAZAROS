@@ -4,7 +4,8 @@
  * one OSC message each (the message that sets it), in a fixed order:
  *
  *   system     /capture/auto, /audio/fs/auto, /audio/rx/auto
- *   media      /movie/<s>/vf, af, trails, ghost, then /movie/<s>/file, then
+ *   media      /surface/<s>/canvas, /movie/<s>/pos, loop, vf, af, trails, ghost,
+ *              then /movie/<s>/file, /img/<s>/file, then
  *              (while it plays) mosh, bloom, corrupt, pause; audio sources
  *              and file players (key /audio/out/<n>/file: play or stop)
  *   displays   /disp/<d>/show or seq, blank, crop/x, crop/y   (disp.c)
@@ -99,8 +100,22 @@ static void movie_state(state_cb cb, void *ctx)
 		st_emit(cb, ctx, NULL, p, "f", (double)tr);
 		snprintf(p, sizeof(p), "/movie/%d/ghost", s);
 		st_emit(cb, ctx, NULL, p, "f", (double)gh);
+		{
+			int x, y, w, h;
+			size_t b;
+
+			snprintf(p, sizeof(p), "/surface/%d/canvas", s);
+			st_emit(cb, ctx, NULL, p, "s", dz_draw_canvas_get(s, &w, &h, &b) ? "mode" : "full");
+			dz_draw_movie_pos_get(s, &x, &y);
+			snprintf(p, sizeof(p), "/movie/%d/pos", s);
+			st_emit(cb, ctx, NULL, p, "ii", x, y);
+			snprintf(p, sizeof(p), "/movie/%d/loop", s);
+			st_emit(cb, ctx, NULL, p, "i", dz_draw_movie_loop_get(s));
+		}
 		snprintf(p, sizeof(p), "/movie/%d/file", s);
 		st_emit(cb, ctx, NULL, p, "sfi", run ? name : "", (double)fps, audio);
+		snprintf(p, sizeof(p), "/img/%d/file", s);	/* after the movie: a stop first */
+		st_emit(cb, ctx, NULL, p, "s", dz_draw_img_name(s));
 		if (!run)
 			continue;
 		dz_draw_movie_fx(s, &mo, &bl, &co, &pa);
@@ -207,12 +222,17 @@ static void fields_state(state_cb cb, void *ctx)
 
 void state_dump(state_cb cb, void *ctx)
 {
+	/* movies and ASCII belong to the pixel thread (pix.c): the messages
+	 * posted so far (a recall, a cue) must have run, and none runs now */
+	pix_sync();
+	pix_lock();
 	audio_state(cb, ctx);		/* automatic settings first */
 	movie_state(cb, ctx);
 	sound_state(cb, ctx);
 	disp_state(cb, ctx);
 	anim_state(cb, ctx);
 	ascii_state(cb, ctx);
+	pix_unlock();
 	dds_state(cb, ctx);
 	react_state(cb, ctx);
 	lfo_state(cb, ctx);
@@ -363,8 +383,9 @@ static int rank_of(const char *a)
 {
 	static const struct { const char *pre, *suf; int r; } tab[] = {
 		{ "/capture/auto", "", 0 }, { "/audio/fs/auto", "", 0 }, { "/audio/rx/auto", "", 0 },
+		{ "/surface/", "/canvas", 5 }, { "/movie/", "/pos", 10 }, { "/movie/", "/loop", 10 },
 		{ "/movie/", "/vf", 10 }, { "/movie/", "/af", 10 }, { "/movie/", "/trails", 10 },
-		{ "/movie/", "/ghost", 10 }, { "/movie/", "/file", 11 }, { "/movie/", "", 12 },
+		{ "/movie/", "/ghost", 10 }, { "/movie/", "/file", 11 }, { "/img/", "/file", 11 }, { "/movie/", "", 12 },
 		{ "/audio/out/", "/source", 20 }, { "/audio/out/", "/file", 21 },
 		{ "/disp/", "", 30 }, { "/anim/", "/play", 32 }, { "/anim/", "/pause", 33 },
 		{ "/anim/", "", 31 },

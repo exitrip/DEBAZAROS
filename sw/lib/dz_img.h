@@ -31,10 +31,13 @@ int dz_img_available(int kind);
  * TurboJPEG scales on decode (1/2 .. 1/8: the largest that fits); a
  * picture that is still larger (or a large PNG) is cropped to its centre.
  * dst is only written, in order (uncached or write-combined memory is fine).
- * flags: DZ_IMG_FAST = TurboJPEG fast DCT + fast upsampling (~20 % faster).
+ * flags: DZ_IMG_FAST = TurboJPEG fast DCT + fast upsampling (~20 % faster);
+ * DZ_IMG_TOPLEFT = the picture at the top left of the window and nothing
+ * else written (no black borders: the rest of the window keeps its pixels).
  * Returns 0, or -1 with a message in err.
  */
 #define DZ_IMG_FAST 1
+#define DZ_IMG_TOPLEFT 2
 int dz_img_fit(const char *path, uint8_t *dst, size_t stride, int dw, int dh,
 	       int flags, char *err, size_t errlen);
 

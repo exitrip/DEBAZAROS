@@ -7,9 +7,15 @@
  *   peak     the PL peak meter of hdmi_rx (/audio/rx/peak/l|r, cleared each
  *            frame by a toggle of RX_CTRL[1]): level and peak only, no
  *            ALSA, almost no CPU
- *   auto     default (2026-11-02): capture while a sink asks for the data
- *            (an LFO with shape audio, a DDS audio scope, an /audio/react
- *            query), off 5 s after the last demand
+ *   movie    (2026-11-04) the audio of a playing movie: its audio ffmpeg
+ *            writes a copy, after the /af chain, into /tmp/dzmaudio.<slot>
+ *            (dz_draw.c); all features. Only a movie that plays audio
+ *            (/movie/<s>/play ... audio > 0) has the tap. Several = the one
+ *            in use while it delivers, else the lowest slot
+ *   auto     default (2026-11-02): while a sink asks for the data (an LFO
+ *            with shape audio, a DDS audio scope, an /audio/react query):
+ *            movie when a movie delivers audio, else capture when HDMI_2 has
+ *            lock (since 2026-11-04); off 5 s after the last demand
  *   off
  * Features, 0..1 (a full-scale sine = 1; louder material can exceed 1):
  *   level    RMS of the samples of this frame (x sqrt 2)
@@ -29,10 +35,11 @@
  * before each arecord start the PCM status in /proc/asound is checked, and
  * another owner (pid, name) is reported instead of starting (retry every 2 s).
  * Status: off | starting | ok | held: <why> | busy: <pid name> | no samples |
- * auto: idle (no sink asked for 5 s)
+ * auto: idle (no sink asked for 5 s) | auto: no input | ok: movie <slot> |
+ * no movie audio
  *
  * OSC:
- *   /audio/react/source s:auto|capture|peak|off
+ *   /audio/react/source s:auto|movie|capture|peak|off
  *   /audio/react/fft i:256|512|1024        (default 1024: 47 Hz per bin)
  *   /audio/react                           -> s:source i:running f:level f:peak
  *                                             (source = the setting: auto
@@ -48,6 +55,7 @@
 #include "debazd.h"
 #include "dz_draw.h"
 #include "dz_fields.h"
+#include "dz_hw.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -66,18 +74,19 @@
 #define RING		4096			/* samples kept: 2048 for the scope + a trigger search */
 #define NMAX		1024
 
-enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK, SRC_AUTO };
-static const char *src_names[] = { "off", "capture", "peak", "auto" };
+enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK, SRC_AUTO, SRC_MOVIE, SRC_N };
+static const char *src_names[] = { "off", "capture", "peak", "auto", "movie" };
 #define AUTO_LINGER_MS	5000		/* auto: capture stops this long after the last demand */
 
 typedef struct { float re, im; } cpx;
 
-static int    src = SRC_OFF, fft_n = 1024;	/* src = what runs (off, capture, peak) */
-static int    want = SRC_AUTO;		/* the setting; auto = capture on demand */
+static int    src = SRC_OFF, fft_n = 1024;	/* src = what runs (off, capture, peak, movie) */
+static int    want = SRC_AUTO;		/* the setting; auto = movie or capture on demand */
 static long   need_ms;			/* auto: the last demand of a sink */
 static int    fd = -1;
 static pid_t  rec_pid;
 static long   restart_at;			/* ms: start arecord again */
+static int    fails;			/* arecord ends in a row without a sample */
 static long   last_ms;			/* ms: the last samples */
 static float  ring[RING], ringl[RING], ringr[RING];	/* (L+R)/2, L, R */
 static int    held;				/* react_hold count */
@@ -321,61 +330,66 @@ static int capture_start(void)
 	return rec_pid > 0 ? 0 : -1;
 }
 
-/* read what arrived: s16 stereo -> mono ring; level and peak of these samples */
-static void capture_read(void)
+/* the samples of one tick: level and peak */
+typedef struct {
+	double sq;
+	float  pk;
+	long   cnt;
+} acc_t;
+
+/* s16 stereo -> the rings; n = whole samples x 4 bytes */
+static void ingest(const uint8_t *buf, int n, acc_t *a)
+{
+	for (int i = 0; i + 4 <= n; i += 4) {
+		int16_t l = (int16_t)(buf[i] | buf[i + 1] << 8), rr = (int16_t)(buf[i + 2] | buf[i + 3] << 8);
+		float v = (l + rr) * (0.5f / 32768.0f), av = fabsf(v);
+
+		ring[rpos] = v;
+		ringl[rpos] = l * (1.0f / 32768.0f);
+		ringr[rpos] = rr * (1.0f / 32768.0f);
+		rpos = (rpos + 1) % RING;
+		rtotal++;
+		if (rfill < RING)
+			rfill++;
+		a->sq += (double)v * v;
+		a->pk = av > a->pk ? av : a->pk;
+		a->cnt++;
+	}
+}
+
+/* read all of fd (non-blocking); keep = into the rings, else drop. 1 = data */
+static int drain(int f, uint8_t *cr, int *ncr, int keep, acc_t *a)
 {
 	uint8_t buf[16384 + 4];
-	double sq = 0;
-	float pk = 0;
-	long cnt = 0;
-	ssize_t r;
-	int st;
+	int got = 0;
 
-	if (rec_pid > 0 && waitpid(rec_pid, &st, WNOHANG) == rec_pid) {
-		rec_pid = 0;			/* PCM busy, card gone, ... */
-		running = 0;
-		restart_at = ms_now() + 2000;
-		snprintf(status, sizeof(status), "arecord ended, retry");
-		dzd_log("react: arecord ended (status %d), again in 2 s\n", st);
-	}
-	if (!rec_pid && !held && restart_at && ms_now() >= restart_at) {
-		restart_at = 0;
-		capture_start();
-	}
-	if (fd < 0)
-		return;
 	for (;;) {
+		ssize_t r;
 		int n;
 
-		memcpy(buf, carry, (size_t)ncarry);
-		r = read(fd, buf + ncarry, 16384);
+		memcpy(buf, cr, (size_t)*ncr);
+		r = read(f, buf + *ncr, 16384);
 		if (r <= 0)
 			break;
-		n = ncarry + (int)r;
-		for (int i = 0; i + 4 <= n; i += 4) {
-			int16_t l = (int16_t)(buf[i] | buf[i + 1] << 8), rr = (int16_t)(buf[i + 2] | buf[i + 3] << 8);
-			float v = (l + rr) * (0.5f / 32768.0f), a = fabsf(v);
-
-			ring[rpos] = v;
-			ringl[rpos] = l * (1.0f / 32768.0f);
-			ringr[rpos] = rr * (1.0f / 32768.0f);
-			rpos = (rpos + 1) % RING;
-			rtotal++;
-			if (rfill < RING)
-				rfill++;
-			sq += (double)v * v;
-			pk = a > pk ? a : pk;
-			cnt++;
-		}
-		ncarry = n & 3;
-		memcpy(carry, buf + (n - ncarry), (size_t)ncarry);
+		got = 1;
+		n = *ncr + (int)r;
+		if (keep)
+			ingest(buf, n, a);
+		*ncr = n & 3;
+		memcpy(cr, buf + (n - *ncr), (size_t)*ncr);
 	}
-	if (cnt) {
+	return got;
+}
+
+/* the features of this tick's samples, or the values fall to 0 */
+static void finish(const acc_t *a, const char *ok)
+{
+	if (a->cnt) {
 		running = 1;
-		snprintf(status, sizeof(status), "ok");
+		snprintf(status, sizeof(status), "%s", ok);
 		last_ms = ms_now();
-		f_level = (float)sqrt(2.0 * sq / cnt);
-		f_peak = pk;
+		f_level = (float)sqrt(2.0 * a->sq / a->cnt);
+		f_peak = a->pk;
 		analyse();
 	} else if (ms_now() - last_ms > 200) {	/* frames between sample blocks keep the values */
 		if (running)
@@ -383,6 +397,97 @@ static void capture_read(void)
 		running = 0;
 		f_level = f_peak = 0;
 	}
+}
+
+/* read what arrived: s16 stereo -> mono ring; level and peak of these samples */
+static void capture_read(void)
+{
+	acc_t a = { 0, 0, 0 };
+	int st;
+
+	if (rec_pid > 0 && waitpid(rec_pid, &st, WNOHANG) == rec_pid) {
+		long wait = 2000L << (fails < 4 ? fails : 4);	/* 2 4 8 16 32 s */
+
+		rec_pid = 0;			/* PCM busy, card gone, no input, ... */
+		running = 0;
+		restart_at = ms_now() + wait;
+		fails++;
+		snprintf(status, sizeof(status), "arecord ended, retry");
+		dzd_log("react: arecord ended (status %d), again in %ld s\n", st, wait / 1000);
+	}
+	if (!rec_pid && !held && restart_at && ms_now() >= restart_at) {
+		restart_at = 0;
+		capture_start();
+	}
+	if (fd < 0)
+		return;
+	if (drain(fd, carry, &ncarry, 1, &a))
+		fails = 0;
+	finish(&a, "ok");
+}
+
+/* ---- the movie source: the audio ffmpeg's tap (dz_draw.c, DZ_MAUDIO) -------
+ * Every movie that plays audio writes it, at its real rate, into
+ * /tmp/dzmaudio.<slot> as well. These FIFOs are drained EVERY tick, also
+ * when no sink asks and the source is something else: a full pipe would
+ * stop the audio ffmpeg and with it the sound (pipe 256 KB = 1.3 s). The
+ * source uses one movie: the one in use while it delivers, else the lowest
+ * slot that delivers. */
+#define MOVIE_GONE_MS	500		/* no data this long = the movie has stopped */
+static int    mfd[DZ_SLOTS], m_init;
+static ino_t  mino[DZ_SLOTS];
+static uint8_t mcarry[DZ_SLOTS][4];
+static int    mncarry[DZ_SLOTS], mslot = -1;
+static long   mlast[DZ_SLOTS], mscan_ms;
+
+static void movie_drain(acc_t *a)
+{
+	long now = ms_now();
+
+	if (!m_init) {
+		for (int s = 0; s < DZ_SLOTS; s++)
+			mfd[s] = -1;
+		m_init = 1;
+	}
+	if (now - mscan_ms >= 500) {	/* new FIFOs; a FIFO made again = a new pipe */
+		mscan_ms = now;
+		for (int s = 0; s < DZ_SLOTS; s++) {
+			char p[40];
+			struct stat st;
+
+			snprintf(p, sizeof(p), DZ_MAUDIO, s);
+			if (stat(p, &st) < 0 || !S_ISFIFO(st.st_mode)) {
+				if (mfd[s] >= 0) {
+					close(mfd[s]);
+					mfd[s] = -1;
+				}
+				continue;
+			}
+			if (mfd[s] >= 0 && st.st_ino == mino[s])
+				continue;
+			if (mfd[s] >= 0)
+				close(mfd[s]);
+			/* O_NONBLOCK: the open does not wait for a writer */
+			mfd[s] = open(p, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+			if (mfd[s] >= 0) {
+				fcntl(mfd[s], F_SETPIPE_SZ, 1 << 18);
+				mino[s] = st.st_ino;
+				mncarry[s] = 0;
+			}
+		}
+	}
+	for (int s = 0; s < DZ_SLOTS; s++)
+		if (mfd[s] >= 0 && drain(mfd[s], mcarry[s], &mncarry[s], src == SRC_MOVIE && s == mslot, a))
+			mlast[s] = now;
+	if (mslot >= 0 && now - mlast[mslot] <= MOVIE_GONE_MS)
+		return;
+	mslot = -1;
+	for (int s = 0; s < DZ_SLOTS; s++)
+		if (mlast[s] && now - mlast[s] <= MOVIE_GONE_MS) {
+			mslot = s;
+			dzd_log("react: movie audio from slot %d\n", s);
+			break;
+		}
 }
 
 /* ---- the peak source: PL meter -------------------------------------------- */
@@ -407,14 +512,14 @@ static void peak_read(void)
 	f_level = f_peak;
 }
 
-/* the newest n mono samples (-1..1) of the capture source, oldest first;
+/* the newest n mono samples (-1..1) of the capture or movie source, oldest first;
  * 0 when there are none (other source, not running, fewer than n yet) */
 int react_samples(float *out, int n, int chan)
 {
 	const float *r = chan == 1 ? ringl : chan == 2 ? ringr : ring;
 
 	need_ms = ms_now();
-	if (src != SRC_CAPTURE || !running || n > RING || rfill < (unsigned)n)
+	if ((src != SRC_CAPTURE && src != SRC_MOVIE) || !running || n > RING || rfill < (unsigned)n)
 		return 0;
 	for (int i = 0; i < n; i++)
 		out[i] = r[(rpos + RING - (unsigned)n + (unsigned)i) % RING];
@@ -437,7 +542,7 @@ int react_spectrum(float *amp, int chan)
 	float pw[NMAX / 2 + 1];
 
 	need_ms = ms_now();
-	if (chan < 0 || chan > 2 || src != SRC_CAPTURE || !running)
+	if (chan < 0 || chan > 2 || (src != SRC_CAPTURE && src != SRC_MOVIE) || !running)
 		return 0;
 	if (plan_n != fft_n)
 		mkplan(fft_n);
@@ -481,22 +586,41 @@ static void set_source(int s);
 
 void react_tick(void)
 {
-	if (want == SRC_AUTO) {		/* capture while a sink asks */
-		int need = need_ms && ms_now() - need_ms < AUTO_LINGER_MS;
+	acc_t ma = { 0, 0, 0 };
 
-		if (need && src != SRC_CAPTURE) {
-			dzd_log("react: auto: a sink asks, capture on\n");
-			set_source(SRC_CAPTURE);
-		} else if (!need && src != SRC_OFF) {
-			dzd_log("react: auto: no sink for %d s, capture off\n", AUTO_LINGER_MS / 1000);
-			set_source(SRC_OFF);
-			snprintf(status, sizeof(status), "auto: idle");
+	movie_drain(&ma);		/* always: a full tap stops the movie's sound */
+	if (want == SRC_AUTO) {		/* while a sink asks: a movie, else HDMI_2 */
+		int need = need_ms && ms_now() - need_ms < AUTO_LINGER_MS, to;
+
+		/* no HDMI_2 lock = no samples: arecord only ends with an error
+		 * (2026-11-03: restarted every ~4 s for 15 h, 3600 times).
+		 * DZ_REACT_CMD (host tests) has no input to wait for. */
+		to = !need ? SRC_OFF : mslot >= 0 ? SRC_MOVIE
+		   : (capture_plocked || getenv("DZ_REACT_CMD")) ? SRC_CAPTURE : SRC_OFF;
+		if (to != src) {
+			dzd_log("react: auto: %s\n", to == SRC_MOVIE ? "movie audio, analyse it"
+				: to == SRC_CAPTURE ? "a sink asks, capture on"
+				: need ? "no movie audio, no HDMI_2 input: off"
+				: "no sink for 5 s, off");
+			if (to == SRC_CAPTURE)
+				fails = 0;
+			set_source(to);
 		}
+		if (src == SRC_OFF)
+			snprintf(status, sizeof(status), "%s", need ? "auto: no input" : "auto: idle");
 	}
 	if (src == SRC_CAPTURE)
 		capture_read();
 	else if (src == SRC_PEAK)
 		peak_read();
+	else if (src == SRC_MOVIE) {
+		char ok[24];
+
+		snprintf(ok, sizeof(ok), "ok: movie %d", mslot);
+		finish(&ma, mslot >= 0 ? ok : "no movie audio");
+		if (mslot < 0)
+			snprintf(status, sizeof(status), "no movie audio");
+	}
 }
 
 static const char *feat_names[] = { "level", "peak", "bass", "low", "mid", "high", "air",
@@ -591,7 +715,7 @@ int react_dispatch(const dz_msg *m)
 	}
 	if (!strcmp(m->path, "/audio/react/source")) {
 		if (m->n >= 1 && m->a[0].type == 's') {
-			for (int s = 0; s < 4; s++)
+			for (int s = 0; s < SRC_N; s++)
 				if (!strcmp(m->a[0].s, src_names[s])) {
 					want = s;
 					if (s == SRC_AUTO) {	/* react_tick starts it on demand */
@@ -604,7 +728,7 @@ int react_dispatch(const dz_msg *m)
 					dzd_reply("/audio/react/source", "s", src_names[want]);
 					return 1;
 				}
-			dzd_reply("/error", "ss", "/audio/react/source", "auto, capture, peak or off");
+			dzd_reply("/error", "ss", "/audio/react/source", "auto, movie, capture, peak or off");
 			return 1;
 		}
 		dzd_reply("/audio/react/source", "s", src_names[want]);

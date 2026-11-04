@@ -74,20 +74,30 @@ int dz_geom_refresh(void)
 			w = rw; h = rh; st = rs;
 		}
 	}
-	changed = g_read && (w != g_w || h != g_h || st != g_stride);
-	g_w = w; g_h = h; g_stride = st; g_read = 1;
+	/* debazd reads the geometry in two threads (main, pixel; 2026-11-03):
+	 * written only when it changes, each value atomic. Across a mode change
+	 * a reader can see the new width with the old height for a moment: the
+	 * slots are mapped with their full pitch, so that stays inside memory. */
+	changed = __atomic_load_n(&g_read, __ATOMIC_ACQUIRE) &&
+		  (w != g_w || h != g_h || st != g_stride);
+	if (changed || !__atomic_load_n(&g_read, __ATOMIC_ACQUIRE)) {
+		__atomic_store_n(&g_w, w, __ATOMIC_RELAXED);
+		__atomic_store_n(&g_h, h, __ATOMIC_RELAXED);
+		__atomic_store_n(&g_stride, st, __ATOMIC_RELAXED);
+		__atomic_store_n(&g_read, 1, __ATOMIC_RELEASE);
+	}
 	return changed;
 }
 
 static void geom_once(void)
 {
-	if (!g_read)
+	if (!__atomic_load_n(&g_read, __ATOMIC_ACQUIRE))
 		dz_geom_refresh();
 }
 
-int    dz_geom_w(void)      { geom_once(); return g_w; }
-int    dz_geom_h(void)      { geom_once(); return g_h; }
-size_t dz_geom_stride(void) { geom_once(); return g_stride; }
+int    dz_geom_w(void)      { geom_once(); return __atomic_load_n(&g_w, __ATOMIC_RELAXED); }
+int    dz_geom_h(void)      { geom_once(); return __atomic_load_n(&g_h, __ATOMIC_RELAXED); }
+size_t dz_geom_stride(void) { geom_once(); return __atomic_load_n(&g_stride, __ATOMIC_RELAXED); }
 
 static int running(const dz_vdma_regs *r)
 {

@@ -184,6 +184,13 @@ static int read_phys(uint8_t *dst, uint32_t phys, size_t len, uint8_t **map);
 static int slot_taken(int d, int slot);
 static int inited;
 
+/* a whole slot at the fixed line pitch: 1920 x 1080 */
+static void slot_size(int *w, int *h)
+{
+	*w = (int)(DZ_STRIDE / DZ_BPP);
+	*h = (int)(DZ_SLOT_PITCH / DZ_STRIDE);
+}
+
 static double now_ms(void)
 {
 	struct timespec t;
@@ -723,8 +730,12 @@ static void *worker(void *arg)
 		pthread_mutex_unlock(&p->mu);
 
 		t0 = now_ms();
+		/* the frame's own size at the top left of the slot (2026-11-04;
+		 * was fitted and centred in the mode): a display shows a window
+		 * of it (/disp/<d>/crop). Only a frame larger than the slot is
+		 * made smaller. The rest of the slot keeps its old pixels. */
 		ok = dz_img_fit(path, p->e[i].ptr, DZ_STRIDE, p->dw, p->dh,
-				p->fast ? DZ_IMG_FAST : 0, err, sizeof(err)) == 0;
+				(p->fast ? DZ_IMG_FAST : 0) | DZ_IMG_TOPLEFT, err, sizeof(err)) == 0;
 		dt = now_ms() - t0;
 		if (!ok) {
 			dzd_log("anim: %s: %s\n", path, err);
@@ -1026,7 +1037,9 @@ static int start(int d, const char *name, float fps, char *err, size_t errlen)
 	 * not thread safe) */
 	p->ne = p->nslots;
 	for (int k = 0; k < p->ne; k++) {
+		pix_lock();	/* the pixel thread owns the movies */
 		dz_draw_movie_stop(p->slots[k]);
+		pix_unlock();
 		memset(&p->e[k], 0, sizeof(entry));
 		p->e[k].slot = p->slots[k];
 		p->e[k].pos = -1;
@@ -1037,8 +1050,7 @@ static int start(int d, const char *name, float fps, char *err, size_t errlen)
 		}
 	}
 	p->resident = p->nfiles <= p->ne;	/* entry k = file k */
-	p->dw = dz_geom_w();
-	p->dh = dz_geom_h();
+	slot_size(&p->dw, &p->dh);
 	p->paused = p->ended = p->end_pending = 0;
 	p->cur = -1;
 	p->flips = p->late_n = p->last_flip_vs = p->dec_n = 0;
@@ -1095,7 +1107,9 @@ static int start_onion(int d, const char *name, float op, int frames, int src, c
 	snprintf(p->dir, sizeof(p->dir), "%s/%s", anim_dir(), name);
 	p->ne = p->nslots;
 	for (int k = 0; k < p->ne; k++) {
+		pix_lock();	/* the pixel thread owns the movies */
 		dz_draw_movie_stop(p->slots[k]);
+		pix_unlock();
 		memset(&p->e[k], 0, sizeof(entry));
 		p->e[k].slot = p->slots[k];
 		p->e[k].pos = -1;
@@ -1151,21 +1165,14 @@ void anim_geometry(void)
 		if (!inited || !p->on)
 			continue;
 		pthread_mutex_lock(&p->mu);
-		p->dw = dz_geom_w();
-		p->dh = dz_geom_h();
 		if (p->onion) {
+			p->dw = dz_geom_w();
+			p->dh = dz_geom_h();
 			p->on_reload = 1;
 			pthread_cond_broadcast(&p->cv);
-			pthread_mutex_unlock(&p->mu);
-			continue;
 		}
-		if (p->resident) {
-			p->geo++;
-			for (int k = 0; k < p->ne; k++)
-				if (p->e[k].pos >= 0 && p->e[k].state == E_READY)
-					p->e[k].state = E_FREE;
-		}
-		flush(p, p->last_pos >= 0 ? p->last_pos : first_pos(p));
+		/* a sequence keeps its frames: they have their own size in the
+		 * slot, not the mode's (2026-11-04) */
 		pthread_mutex_unlock(&p->mu);
 	}
 }
@@ -1634,6 +1641,12 @@ static void save_frame(const dz_msg *m)
 			return;
 		}
 		phys = DZ_SLOT_ADDR(slot);
+		{	/* a slot: the surface's canvas (the whole slot by default,
+			 * 2026-11-04), not only the mode's window */
+			size_t b;
+
+			dz_draw_canvas_get(slot, &w, &h, &b);
+		}
 	}
 	int hold = 1;
 

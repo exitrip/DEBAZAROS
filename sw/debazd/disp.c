@@ -55,6 +55,7 @@
  */
 #define _GNU_SOURCE
 #include "debazd.h"
+#include "dz_draw.h"
 #include "dz_hw.h"
 #include "dz_map.h"
 #include "dz_path.h"
@@ -588,37 +589,23 @@ static void hdmi2_stop(void)
 		kill(pids[i], SIGKILL);
 }
 
-/* hdmi2.elf -r name, detached (double fork, all inherited fds closed: the OSC
- * socket and the /tmp/debazd.lock flock must not live on in hdmi2).
+/* hdmi2.elf -r name, detached (own session, all inherited fds closed: the
+ * OSC socket and the /tmp/debazd.lock flock must not live on in hdmi2).
+ * posix_spawn of a short sh (dz_spawn_detached), not a double fork: a fork
+ * of debazd costs 9-19 ms (2026-11-03). Names and the program path are
+ * from tables and dz_prog (no quotes in them).
  * DZ_HDMI2 = another program (host tests); else dz_prog("hdmi2.elf"). */
 static int hdmi2_start(const char *name)
 {
 	const char *prog = getenv("DZ_HDMI2");
-	pid_t pid;
+	char cmd[600];
 
 	if (!prog || !*prog)
 		prog = dz_prog("hdmi2.elf");	/* dev copy, else the image's */
 	if (access(prog, X_OK))
 		return -1;
-	pid = fork();
-	if (pid < 0)
-		return -1;
-	if (pid == 0) {
-		if (fork() == 0) {
-			setsid();
-			for (int fd = 3; fd < 1024; fd++)
-				close(fd);
-			if (!freopen("/dev/null", "r", stdin) ||
-			    !freopen("/tmp/hdmi2.log", "w", stdout))
-				_exit(127);
-			dup2(1, 2);
-			execl(prog, prog, "-r", name, (char *)NULL);
-			_exit(127);
-		}
-		_exit(0);
-	}
-	waitpid(pid, NULL, 0);
-	return 0;
+	snprintf(cmd, sizeof(cmd), "exec '%s' -r '%s'", prog, name);
+	return dz_spawn_detached(cmd, "/tmp/hdmi2.log");
 }
 
 static int video_dispatch(const dz_msg *m)

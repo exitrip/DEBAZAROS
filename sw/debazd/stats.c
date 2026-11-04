@@ -7,9 +7,13 @@
  *   /stats   -> /stats f:debazd_cpu f:cpu_total (% of one core; 200 = both
  *               cores busy) f:tick_hz f:tick_max_ms f:osc_max_ms f:load1
  *               i:mem_avail_kb f:temp_c (XADC, -1 = none)
+ *               f:pix_max_ms i:pix_queue (2026-11-03: the slowest job or
+ *               frame of the pixel thread, messages waiting for it now)
  *
- * tick_hz, tick_max_ms and osc_max_ms cover the last full second; the CPU
- * values cover the time since the previous /stats (the first: since start).
+ * tick_hz, tick_max_ms, osc_max_ms and pix_max_ms cover the last full
+ * second; the CPU values cover the time since the previous /stats (the
+ * first: since start). Since the pixel thread, tick_max_ms no longer
+ * includes the ASCII frames.
  */
 #include "debazd.h"
 
@@ -23,7 +27,8 @@
 
 static double win_t0, tick_max, osc_max;
 static int win_ticks;
-static float last_hz, last_tick_max, last_osc_max;
+static float last_hz, last_tick_max, last_osc_max, last_pix_max;
+static unsigned pix_max_us;		/* the pixel thread writes it: atomics */
 
 double stats_now(void)
 {
@@ -42,6 +47,7 @@ static void window(double t)
 	last_hz = (float)(win_ticks * 1000.0 / (t - win_t0));
 	last_tick_max = (float)tick_max;
 	last_osc_max = (float)osc_max;
+	last_pix_max = __atomic_exchange_n(&pix_max_us, 0u, __ATOMIC_RELAXED) / 1000.0f;
 	win_t0 = t;
 	win_ticks = 0;
 	tick_max = osc_max = 0;
@@ -62,6 +68,15 @@ void stats_osc(double ms)
 	window(stats_now());
 	if (ms > osc_max)
 		osc_max = ms;
+}
+
+void stats_pix(double ms)
+{
+	unsigned us = (unsigned)(ms * 1000.0), old = __atomic_load_n(&pix_max_us, __ATOMIC_RELAXED);
+
+	while (us > old && !__atomic_compare_exchange_n(&pix_max_us, &old, us, 0,
+							__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		;
 }
 
 static double read_num(const char *path)
@@ -156,7 +171,7 @@ int stats_dispatch(const dz_msg *m)
 		fclose(f);
 	}
 	window(stats_now());
-	dzd_reply("/stats", "ffffffif", self, total, last_hz, last_tick_max, last_osc_max,
-		  load, (int)mem_avail_kb(), temp_c());
+	dzd_reply("/stats", "ffffffiffi", self, total, last_hz, last_tick_max, last_osc_max,
+		  load, (int)mem_avail_kb(), temp_c(), last_pix_max, pix_queued());
 	return 1;
 }
