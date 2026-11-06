@@ -45,6 +45,28 @@ Since Oct 27 2026 build.tcl runs phys_opt + post-route phys_opt (AggressiveExplo
 at ~95 % slices FCLK2 has ~0.1 ns inside the capture VDMA S2MM datamover and
 the default flow failed it once (-0.39 ns). Always check FCLK2 in the report. Since dz_osc2 (build osc, Oct 29 2026) slices are at 100 %: the default directives failed FCLK2 (-0.017); `DZ_PLACE_DIRECTIVE=ExtraPostPlacementOpt DZ_ROUTE_DIRECTIVE=AggressiveExplore` (env, read by build.tcl) gave +0.268 (Explore: +0.006). ⚠️ Do NOT try the mixer word-only write patch again (user, Nov 2 2026): it failed to help placement 4 times. Parallel runs: the PetaLinux build machine has Vivado 2022.2 too (sources in ~/dz-hwbuild, not its repo): `sh hw/remote_build.sh start|status|fetch|stop <dir> [<srctree>] [DZ_...=]` (2026-11-02). Build speed (2026-11-02): IP cache `~/dz-ipcache` (DZ_IP_CACHE, "off"), launch_runs -jobs = cores − 4 (DZ_JOBS): a build that changes one IP reaches placement in ~5 min. At 100 % slices the placer directive decides: run 2-3 at once (ExtraTimingOpt and AltSpreadLogic_high placed smix4 and gpclkt, ExtraPostPlacementOpt did not). ⚠️ In -filter patterns `[*]` is a character class, not a literal bracket: a constraint on `gen_chan[*].x_reg[*]` matches nothing (CRITICAL WARNING 18-540, check the log).
 
+**Three bench boards (Nov 4 2026, all `_dsp` in BOOT.BIN, HEAD software in
+/home/ebaz/bin):** debaz-67b806 = 10.42.0.210 (main bench, HDMI1 -> the only
+monitor), debaz-00e1da = 10.42.0.104, debaz-c153e5 = 10.42.0.33 (both: image
+debazaros-20261102 burnt Nov 4, BOOT.BIN md5 26dd6362, no media partition).
+.104 and .33 have PL_KEY0-5 + GND wired 0-0 .. 5-5 (no fan / 12 V; one of
+them lacks the PL_KEY4/5 pull-ups); I/O test results in sw/README.md "User
+I/O lines". HDMI ring: .33 HDMI0 -> .210 HDMI2, .104 HDMI0 -> .33 HDMI2 (25"
+active cable, unpowered), .210 HDMI0 -> .104 HDMI2. Laptop = DHCP for all
+(enp0s31f6, e1000e: the link dropped once and came back at 10 Mb half,
+then 1 Gb). ⚠️ After a devmem SLCR write, never lock the SLCR again (Linux
+keeps it unlocked; locked = every kernel clock gate write is lost).
+Image `debazaros-20261105-speed.wic.xz` (Nov 5; laptop build/images/, build
+machine ~/dz-sandbox/): -O2 kernel + tracing, OpenSSH, perf/iperf3/tcpdump/
+trace-cmd, hardware groups for ebaz (PetaLinux/README.md). NOT on a card yet;
+.33 runs ITS kernel + modules by hand (both sets kept: /boot/uImage.os-20261105
++ /lib/modules/5.15.36-xilinx-v2022.2.os-20261105 = -Os, *.O2-20261105 = -O2;
+rootfs still Dropbear). A/B results: PetaLinux/README.md (2026-11-05).
+Never swap only uImage: the tracing options change struct module, and the
+loader checks only the version string (old modules could corrupt memory).
+Fleet page `www/fleet.html` (Nov 4): the browser connects to each unit's
+dzweb itself (no hub relay); dzweb `/units` works again (replies are bundles).
+
 ## Folder map (after the cleanup of Oct 25 2026)
 
 | Path | Notes |
@@ -337,7 +359,7 @@ thread writes IO_OUT).
 hardware):** `hw/rtl/pl_io/` (module ref `pl_io_0`, IOBUFs; the BD ports
 PL_KEY/AUDIO_L/AUDIO_R are now inout, names unchanged) gives each line one of:
 in (reset default = as before), out, PS I2C0 SCL/SDA (open drain), PS SPI0
-SCLK/MOSI/MISO/CS0/CS1, PS UART0 TXD/RXD, PL I2S master BCLK/LRCLK/DOUT/DIN
+SCLK/COSI/CISO/CS0/CS1, PS UART0 TXD/RXD, PL I2S master BCLK/LRCLK/DOUT/DIN
 (16 in 32, 48 kHz, NCO on FCLK0 steered by the TX FIFO level; DOUT = HDMI_2
 audio, DIN can replace the loop as HDMI_1 audio). PS7: I2C0/SPI0/UART0 on
 EMIO (XSA change; no FSBL change needed for EMIO routing). Registers

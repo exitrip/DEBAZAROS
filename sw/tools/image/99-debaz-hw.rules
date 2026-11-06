@@ -1,0 +1,10 @@
+# 99-debaz-hw.rules - the user ebaz may use the hardware (2026-11-05): the
+# device nodes below are root-only by default. Groups made by the image
+# (PetaLinux CONFIG_CREATE_NEW_GROUPS), ebaz is in all of them
+# (CONFIG_ADD_USERS_TO_GROUPS). Not /dev/watchdog: opening it arms it.
+SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0660"
+SUBSYSTEM=="spidev", GROUP="spi", MODE="0660"
+SUBSYSTEM=="gpio", GROUP="gpio", MODE="0660"
+SUBSYSTEM=="iio", GROUP="iio", MODE="0660"
+SUBSYSTEM=="uio", GROUP="uio", MODE="0660"
+SUBSYSTEM=="mtd", GROUP="disk", MODE="0660"

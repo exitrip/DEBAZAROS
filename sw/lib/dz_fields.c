@@ -158,7 +158,7 @@ static const dz_field static_fields[] = {
 	{ "/audio/rx/cts",    AUD, 0x20, 0, 20, DZ_RAW,  DZ_F_RO, "HDMI_2 input: ACR CTS (720p60 = 74250)" },
 	/* user I/O lines PL_KEY0-5 (hw/rtl/pl_io, 2026-10-27): names for
 	 * /io/func/<n> in debazd/io.c (/io/pin <n> <name>) */
-	{ "/io/func/0",       AUD, 0x40, 0, 4,   DZ_RAW,  0, "line 0 function: 0 in 1 out 2 scl 3 sda 4 sclk 5 mosi 6 miso 7 cs0 8 txd 9 rxd 10 bclk 11 lrclk 12 dout 13 din 14 cs1" },
+	{ "/io/func/0",       AUD, 0x40, 0, 4,   DZ_RAW,  0, "line 0 function: 0 in 1 out 2 scl 3 sda 4 sclk 5 cosi 6 ciso 7 cs0 8 txd 9 rxd 10 bclk 11 lrclk 12 dout 13 din 14 cs1" },
 	{ "/io/func/1",       AUD, 0x40, 4, 4,   DZ_RAW,  0, "line 1 function (see /io/func/0)" },
 	{ "/io/func/2",       AUD, 0x40, 8, 4,   DZ_RAW,  0, "line 2 function (see /io/func/0)" },
 	{ "/io/func/3",       AUD, 0x40, 12, 4,  DZ_RAW,  0, "line 3 function (see /io/func/0)" },

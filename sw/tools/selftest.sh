@@ -139,11 +139,12 @@ check replug      "/ok \"/capture/replug\""         q /capture/replug 0.3
 check replug-low  "/value \"/hdmi/2/hpd_low\" 1"   q /hdmi/2/hpd_low
 check audio-fs    "/audio/fs"                      q /audio/fs
 # --- user I/O line functions (io.c) ---
-check io-pin-name "/io/pin 2 \"mosi\""            q /io/pin 2 mosi
+check io-pin-name "/io/pin 2 \"cosi\""            q /io/pin 2 cosi
+check io-pin-old  "/io/pin 3 \"ciso\""            q /io/pin 3 miso
 check io-pin-code "/value \"/io/func/2\" 5"       q /io/func/2
 check io-pin-bad  "unknown function"               q /io/pin 2 nonsense
-check io-pins     "/io/pins \"in\" \"in\" \"mosi\"" q /io/pins
-q /io/pin 2 in >/dev/null
+check io-pins     "/io/pins \"in\" \"in\" \"cosi\" \"ciso\"" q /io/pins
+q /io/pin 2 in >/dev/null; q /io/pin 3 in >/dev/null
 check io-pin-in   "/io/pins \"in\" \"in\" \"in\""   q /io/pins
 check disp-show   "/disp/0 4 0 0"                  q /disp/0/show 4
 check disp-blank  "/disp/0 4 1 0"                  q /disp/0/blank 1

@@ -8,11 +8,11 @@
 //   2 I2C0 SCL (PS, open drain; 10k pull-ups on board)    10 I2S BCLK
 //   3 I2C0 SDA (PS, open drain)                           11 I2S LRCLK
 //   4 SPI0 SCLK (PS master)                               12 I2S DOUT
-//   5 SPI0 MOSI                                           13 I2S DIN
-//   6 SPI0 MISO (input)                                   14 SPI0 SS1 (2nd CS)
+//   5 SPI0 COSI (controller out)                          13 I2S DIN
+//   6 SPI0 CISO (controller in)                                   14 SPI0 SS1 (2nd CS)
 //   7 SPI0 SS0 (CS)                                       15 = 0 (reserved)
-// An input function on several pins: SCL/SDA/RXD = AND (idle high), MISO and
-// DIN = OR. Unmapped inputs read idle (SCL/SDA/RXD 1, MISO/DIN 0).
+// An input function on several pins: SCL/SDA/RXD = AND (idle high), CISO and
+// DIN = OR. Unmapped inputs read idle (SCL/SDA/RXD 1, CISO/DIN 0).
 // Caution: a button pressed while its line drives high shorts the output.
 //
 // i2s_ctrl: [0] I2S on, [1] DOUT plays the HDMI_2 input audio (else silence),

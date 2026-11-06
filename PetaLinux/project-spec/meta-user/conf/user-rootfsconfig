@@ -6,6 +6,9 @@
 CONFIG_exfat-utils
 CONFIG_htop
 CONFIG_luajit
+# analysis tools (2026-11-05): no cost until run
+CONFIG_iperf3
+CONFIG_trace-cmd
 CONFIG_debaz-audio
 CONFIG_debaz-firstboot
 CONFIG_debaz-sw

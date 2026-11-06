@@ -22,6 +22,9 @@ Three parts:
 | debazd has a vsync thread at 60.03 Hz; `/disp` changes apply right after vsync | Scheduled changes can be frame-exact on one unit. |
 | `dz_osc` reads OSC bundles but ignores their time tags | Time tags are free for scheduled execution (section 2.2). |
 | Each board has its own pixel clock crystal; no genlock | Units cannot be frame-locked. Best case: the same frame within about one frame period (17 ms). |
+| MEASURED 2026-11-04, three boards on one unmanaged switch, laptop = DHCP (NetworkManager shared): unique MACs (debaz-mac.sh), a broadcast `/info` from the laptop answered by all three in 2.6 ms, `/ping` round trip 0.34-0.38 ms median, < 0.75 ms max, 0 lost of 600 | The LAN adds well under 1 ms: clock sync to 1 ms (section 2.2) is realistic. |
+| MEASURED 2026-11-04: one broadcast bundle, each of two boards drives its own PL_KEY line low, one board timestamps both edges (dzbus sniff): the second board acts 60-88 us after the first (median), max 0.31 ms (one outlier of 11.8 ms of 40 with the sampler on that board) | Without a show clock, a broadcast already reaches all units within a fraction of a frame; time tags (2.3) are for scheduled changes and frame-exact sequences. |
+| dzweb `/units` found nothing since 2026-11-01 (replies are bundles); FIXED 2026-11-04 | Discovery works: each unit lists itself ("ip": "") and the others. |
 
 ## 1. Control of many units from one UI
 
@@ -307,6 +310,7 @@ today; h264 in software is probably slower).
 | F2 | debazd: lock file per port; `/units` with ip:port (fleet test on one laptop) | - | clanker |
 | F3 | Hub mode in dzweb: registry, `/@selector` fan-out, `/from/<unit>` replies; fleet bar with "same" spread | F2 | clanker |
 | F4 | Spreads (all modes), preview strip, Fleet tab, Identify | F3 | clanker |
+| F3/F4 instead (2026-11-04, BUILT): `www/fleet.html` - the BROWSER is the hub: one WebSocket per unit's dzweb, no relay, no hub process (user: "I don't want a hub to reroute OSC"). Units, Identify, send, cues, displays, spreads (same / ramp / reverse / alternate / random). Missing from the F3/F4 plan: per-control unit selectors in the normal tabs, preview strip. | F1 | main |
 | F5 | Show clock (`/clock/ping`) + time-tag queue in debazd | - | clanker |
 | F6 | Timed sends from the hub (`/fleet/at`, timing per control); interim movie sync with timed `/movie/play` | F3, F5 | clanker |
 | F7 | dzplay with transport (section 3.4) | - (step 4 needs F5) | transport |

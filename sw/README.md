@@ -103,6 +103,20 @@ debazd. The browser sends OSC packets as WebSocket frames, and dzweb sends
 them to debazd over UDP. Replies and events come back the same way. Thus the
 browser uses the same OSC addresses as `dzctl`.
 
+**Fleet page (2026-11-04): `http://<any unit>:8080/fleet.html`** (also the
+"Fleet" link in the header). The browser opens a WebSocket to the dzweb of
+every unit and sends to each one itself: no unit relays for another (CORS
+does not cover WebSockets; dzweb accepts any page, and its HTTP replies
+carry `Access-Control-Allow-Origin: *`). Units: Scan (`/units` of the
+serving unit) or Add by IP; list, order and selection stay in the browser.
+Per unit: connection, `/ping` round trip, mode, vsync, debazd CPU, cue,
+Identify (`/led/red` blinks), its own UI. For the selected units, in list
+order: any OSC line, cue GO / Next / Back / Stop, blank / home, video mode,
+and a spread (one value per unit: same, ramp, reverse, alternate, random).
+Replies show per unit in the log. Tested on three boards (page from .210
+and from .104): 3 units in 0.2 ms per command, an offline unit shown as
+such, every unit's own error reply in the log.
+
 ```sh
 dzweb &      # -p 8080  -w <www>  -m /media/debaz  -d 127.0.0.1 -o 9000  -v   (dzstart.sh starts it as ebaz)
 ```
@@ -621,8 +635,8 @@ error). At power-up every line is an input, as before.
 
 ```sh
 dzctl /io/pin 0 scl; dzctl /io/pin 1 sda      # PS I2C0 -> /dev/i2c-0 (i2cdetect -y 0)
-dzctl /io/pin 2 sclk; dzctl /io/pin 3 mosi    # PS SPI0 -> /dev/spidev0.0
-dzctl /io/pin 4 miso; dzctl /io/pin 5 cs0
+dzctl /io/pin 2 sclk; dzctl /io/pin 3 cosi    # PS SPI0 -> /dev/spidev0.0
+dzctl /io/pin 4 ciso; dzctl /io/pin 5 cs0
 dzctl /io/pin 2 txd; dzctl /io/pin 3 rxd      # PS UART0 -> /dev/ttyPS1
 dzctl /io/pin 0 bclk; dzctl /io/pin 1 lrclk; dzctl /io/pin 2 dout   # I2S DAC
 dzctl /i2s/on 1; dzctl /i2s/play 1; dzctl /i2s/steer 1  # play the HDMI_2 audio
@@ -632,10 +646,36 @@ dzctl /io/pin 5 out; dzctl /io/out/5 1        # plain output
 dzctl /io/pins                                # all six functions
 ```
 
-Names: in out scl sda sclk mosi miso cs0 cs1 txd rxd bclk lrclk dout din.
+Names: in out scl sda sclk cosi ciso cs0 cs1 txd rxd bclk lrclk dout din
+(COSI = controller out, CISO = controller in; `mosi` / `miso` still work).
+Any function goes on any line, so TX/RX and COSI/CISO swaps are a
+setting, not a wiring change.
 The Linux devices need the PetaLinux image with the 2026-10-27 device tree.
 Do not press a button whose line is an output driving high (it shorts the
 output); use series resistors on add-on boards.
+
+Tested 2026-11-04 between two boards (debaz-00e1da / debaz-c153e5, PL_KEY0-5
+wired 0-0 .. 5-5 + GND, bitstream `_dsp`):
+
+| Test | Result |
+| --- | --- |
+| GPIO: each line driven low by one board, all 6 read on both | 12 of 12 right: no open, no short, idle high |
+| UART0 (/dev/ttyPS1), line 0 TXD -> RXD, line 1 RXD <- TXD (crossed in pl_io) | 20000 random bytes echoed at 115200 and 921600: 0 wrong, 0 lost |
+| I2C0 (/dev/i2c-0, 100 kHz) against `dzbus i2csub` | write + read back byte-exact; ~1 in 5 transactions missed by the software subordinate |
+| SPI0 (/dev/spidev0.0, 625 kHz = 160 MHz / 256, the lowest) against `dzbus spisub` | 13 of 20 frames exact, the rest 1-2 bits late (software CISO) |
+
+Tools: `sw/tools/dzbus` (C, root, real time on CPU 1): `levels`, `set <line>
+in|out0|out1`, `sniff <ms> [-i scl sda] [-s sclk cosi cs [ciso]] [-r]` (4.6 M
+samples/s: edges, I2C / SPI decode), `i2csub`, `spisub` (software
+subordinates: the kernel has no CONFIG_I2C_SLAVE / SPI_SLAVE). `sw/tools/
+dzcomm.py` (python3, the controller side): `uart-echo`, `uart-test`, `spi`,
+`i2c ... write|read|test`. Found: `/dev/ttyPS1` is group dialout (ebaz is not
+in it: sudo); clock stretching by the software subordinate (`i2csub -x`)
+left the Cadence I2C "bus active" bit set (EAGAIN for every transfer; only
+an I2C0 reset through the SLCR cleared it). ⚠️ After a devmem write to the
+SLCR, leave it UNLOCKED: Linux keeps it unlocked, and with the lock set
+every clock gate write of the kernel is lost (I2C0 and SPI0 stopped: their
+APER_CLK_CTRL bits stayed off while the clock framework counted them on).
 
 ## Fan connectors J3 / J5: inputs, outputs, PWM
 

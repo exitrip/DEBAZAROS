@@ -286,6 +286,16 @@ static void serve_file(client_t *c, const char *path)
 }
 
 /* ---- /units: broadcast /info, collect replies ---------------------------------- */
+/* the /info message of a reply: debazd sends every reply as a bundle
+ * (2026-11-01), older versions a plain message */
+static void info_of(dz_msg *m, void *ctx)
+{
+	dz_msg *out = ctx;
+
+	if (!strcmp(m->path, "/info") && m->n >= 6 && !out->path)
+		*out = *m;
+}
+
 static void serve_units(client_t *c)
 {
 	int s = socket(AF_INET, SOCK_DGRAM, 0), one = 1, n = 0;
@@ -320,8 +330,8 @@ static void serve_units(client_t *c)
 			if (ms <= 0 || poll(&pf, 1, (int)ms) <= 0)
 				break;
 			k = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&from, &fl);
-			if (k <= 0 || dz_osc_parse(buf, (size_t)k, &m) < 0 ||
-			    strcmp(m.path, "/info") || m.n < 6)
+			m.path = NULL;
+			if (k <= 0 || dz_osc_walk(buf, (size_t)k, info_of, &m) < 0 || !m.path)
 				continue;
 			for (int i = 0; i < nseen; i++)	/* local + broadcast reply */
 				dup |= !strcmp(seen[i], m.a[5].s);

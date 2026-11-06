@@ -5,7 +5,8 @@
 #   make install        copy out/arm/* + scripts to the board ($(TARGET):$(DEST))
 #   make image-install DESTDIR=dir   the image layout under dir (PetaLinux
 #                       recipe debaz-sw): /usr/bin, /usr/share/debaz/www,
-#                       /etc/debaz, the systemd unit
+#                       /etc/debaz, the systemd unit, the udev rules (ebaz
+#                       may use I2C, SPI, GPIO, IIO, UIO, NAND)
 #   make test           host self test (simulated hardware)
 #   make hwmap          refresh include/hw_map.h from build/$(VARIANT)/
 #   make DEBUG=1        -O0 -g (gdbserver sessions)
@@ -23,7 +24,7 @@ WWW     ?= /home/ebaz/www
 LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h debazd/*.h)
-BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/dzmosh $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay
+BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/dzmosh $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay $(OUT)/dzbus
 SCRIPTS := tools/capstat.sh tools/plreload.sh tools/dzstart.sh tools/dzsetup.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
 # the image: debaz-mac.sh + debaz-firstboot.sh come from recipe debaz-firstboot (/usr/sbin)
 IMG_SCRIPTS := $(filter-out tools/debaz-mac.sh tools/debaz-firstboot.sh,$(SCRIPTS))
@@ -57,6 +58,9 @@ $(OUT)/vsync_probe: $(OBJ)/tools/vsync_probe.o $(OUT)/libdz.a
 $(OUT)/pcmplay: $(OBJ)/tools/pcmplay.o $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm -lpthread -ldl $(LDLIBS)
 
+$(OUT)/dzbus: $(OBJ)/tools/dzbus.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 $(OUT)/dzmosh: $(OBJ)/dzmosh/dzmosh.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
@@ -75,12 +79,13 @@ install: all
 # the image layout (no ssh): the recipe runs it with DESTDIR=${D}
 image-install: all
 	install -d $(DESTDIR)/usr/bin $(DESTDIR)/usr/share/debaz/www $(DESTDIR)/etc/debaz \
-		$(DESTDIR)/lib/systemd/system
+		$(DESTDIR)/lib/systemd/system $(DESTDIR)/etc/udev/rules.d
 	install -m 0755 $(BINS) $(OUT)/hdmi2.elf $(DESTDIR)/usr/bin/
 	install -m 0755 $(IMG_SCRIPTS) $(DESTDIR)/usr/bin/
 	install -m 0644 dzweb/www/* $(DESTDIR)/usr/share/debaz/www/
 	install -m 0644 tools/image/dzstart.conf $(DESTDIR)/etc/debaz/
 	install -m 0644 tools/image/debaz.service $(DESTDIR)/lib/systemd/system/
+	install -m 0644 tools/image/99-debaz-hw.rules $(DESTDIR)/etc/udev/rules.d/
 
 test:
 	$(MAKE) NATIVE=1 $(BINS:out/arm/%=out/native/%)

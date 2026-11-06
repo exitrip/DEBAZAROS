@@ -116,7 +116,8 @@ All gateware variants share one PS7 configuration (ROADMAP.md section 8;
 when the PS7 setup changes, or to change the default bitstream in BOOT.BIN.
 The Oct 28 image was built from `_pwm` (its BOOT.BIN bitstream is older than
 the software since build `osc`: such a card needs `dzstart.sh` with
-BITSTREAM); the next image from `_sdly`. Use a hardware-tested XSA from `artifacts/`:
+BITSTREAM); the Nov 1 sandbox image from `_sdly`; since Nov 2 (and in
+`project-spec/hw-description/` since 2026-11-05) `_dsp`. Use a hardware-tested XSA from `artifacts/`:
 
 ```sh
 petalinux-config --get-hw-description=<repo>/artifacts/<variant>_<date>.xsa --silentconfig
@@ -179,6 +180,34 @@ new package still needs one networked build (then back up again).
 - rootfs: SDR-era packages removed (361 MB); ffmpeg, parted, dosfstools,
   exfat-utils, mtd-utils, rsync, python3 added. ffmpeg needs the
   `commercial` license flag (`meta-user/conf/petalinuxbsp.conf`).
+- 2026-11-05 (image `debazaros-20261105-speed.wic.xz`, 627 packages):
+  - kernel fragment `user_2026-11-05-speed.cfg`: -O2 instead of -Os
+    (`CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE`; -O3 exists only for ARC in 5.15),
+    tracepoints + kprobes + uprobes for perf / trace-cmd (no function tracer:
+    its hook is in every function), I2C subordinate mode + EEPROM back-end.
+    Full preemption stays (debazd's real-time threads). Measured on .33 at
+    100 Mbit/s line rate: TCP receive 90 -> 72 % of a core (both cores
+    busy), send 71 -> 46 %, HTTP download 40 -> 26 %, upload 65 -> 56 %.
+    A/B on .33, same rootfs, one kernel swap (scratchpad tools kbench.c +
+    battery.sh; -O2 twice): system call 583 -> 553 ns, pipe round trip
+    46 -> 38 us, page fault 7.2 -> 6.2 us, posix_spawn 2.7 -> 2.3 ms, OSC
+    ping to debazd 179 -> 146 us (p99 305 -> 234-248), debazd slowest tick
+    0.23 -> 0.17 ms, real-time timer lateness avg 21 -> 17 us (max 31-44 vs
+    37: noise), movie chain 16.9 -> 17.5-17.8 fps at the same CPU. Unchanged:
+    ffmpeg decode, user memcpy, uncached /dev/mem slots, SD, page cache.
+    vsync jitter 9 -> 11 us (one -Os run). Cost: uImage 4.9 -> 6.0 MB,
+    MemTotal -2.4 MB, unreclaimable slab +0.5 MB.
+  - OpenSSH instead of Dropbear: image feature AND
+    `CONFIG_packagegroup-core-ssh-dropbear` off (that group alone pulls
+    Dropbear back in: dnf conflict in do_rootfs); `allow-empty-password`
+    (petalinuxbsp.conf) keeps the empty ebaz password working.
+  - perf (no Perl/Python scripting: `PACKAGECONFIG:pn-perf`), iperf3,
+    tcpdump, trace-cmd; gdb/gdbserver, ethtool, strace, lsof were already in.
+    Several tools are in the rootfs menu already: switch the menu entry on
+    instead of a user-rootfsconfig line (duplicates).
+  - ebaz may use the hardware: new groups i2c spi gpio iio uio + udev rules
+    (`sw/tools/image/99-debaz-hw.rules`, recipe debaz-sw); ebaz also in
+    dialout, disk (NAND), kmem (read /dev/mem). Not /dev/watchdog.
 
 Plan for the full SD card image (partitions, read-only root): ROADMAP.md
 section 10. Partitions and the first boot: done (debaz-firstboot); our

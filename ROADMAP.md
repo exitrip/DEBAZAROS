@@ -776,7 +776,7 @@ blanking has room for 8 ch at 48 kHz (the block does 2 ch).
 
 **Built 2026-10-27 (branch hdmi-audio), simulated, NOT yet on hardware:**
 `hw/rtl/pl_io/` = per-line function select (4 bits per line: in, out, I2C0
-SCL/SDA, SPI0 SCLK/MOSI/MISO/CS0/CS1, UART0 TXD/RXD, I2S BCLK/LRCLK/DOUT/DIN)
+SCL/SDA, SPI0 SCLK/COSI/CISO/CS0/CS1, UART0 TXD/RXD, I2S BCLK/LRCLK/DOUT/DIN)
 + an I2S master (dz_i2s.v) + two async FIFOs (dz_async_fifo.v). PS I2C0/SPI0/
 UART0 on EMIO (standard Linux drivers). Registers 0x43C6_0040: IO_FUNC,
 IO_OUT, IO_IN, I2S_CTRL, I2S_INC, I2S_STATUS. Test

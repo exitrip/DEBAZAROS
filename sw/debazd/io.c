@@ -5,8 +5,9 @@
  *   /io/pin i:line s:name    set the function of line 0..5 (or i:code)
  *   /io/pin i:line           -> /io/pin i:line s:name
  *   /io/pins                 -> /io/pins s:name0 ... s:name5
- * Names: in out scl sda sclk mosi miso cs0 txd rxd bclk lrclk dout din cs1.
- * scl/sda = PS I2C0 (/dev/i2c-0), sclk/mosi/miso/cs0/cs1 = PS SPI0
+ * Names: in out scl sda sclk cosi ciso cs0 txd rxd bclk lrclk dout din cs1
+ * (mosi / miso are accepted for cosi / ciso: older commands and shows).
+ * scl/sda = PS I2C0 (/dev/i2c-0), sclk/cosi/ciso/cs0/cs1 = PS SPI0
  * (/dev/spidev0.0/0.1), txd/rxd = PS UART0 (/dev/ttyPS1), bclk..din = the PL
  * I2S master (/i2s/...). "in" (the reset state) = input, as before.
  */
@@ -17,7 +18,7 @@
 #include <string.h>
 
 static const char *names[16] = {
-	"in", "out", "scl", "sda", "sclk", "mosi", "miso", "cs0",
+	"in", "out", "scl", "sda", "sclk", "cosi", "ciso", "cs0",
 	"txd", "rxd", "bclk", "lrclk", "dout", "din", "cs1", "-"
 };
 
@@ -60,10 +61,14 @@ int io_dispatch(const dz_msg *m)
 			for (int k = 0; k < 15; k++)
 				if (!strcmp(a[1].s, names[k]))
 					code = k;
+			if (!strcmp(a[1].s, "mosi"))	/* the old names */
+				code = 5;
+			else if (!strcmp(a[1].s, "miso"))
+				code = 6;
 		} else if (a[1].type == 'i' && a[1].i >= 0 && a[1].i < 15)
 			code = a[1].i;
 		if (code < 0) {
-			dzd_reply("/error", "ss", "unknown function (in out scl sda sclk mosi miso cs0 txd rxd bclk lrclk dout din cs1)", m->path);
+			dzd_reply("/error", "ss", "unknown function (in out scl sda sclk cosi ciso cs0 txd rxd bclk lrclk dout din cs1)", m->path);
 			return 1;
 		}
 		if (dz_field_write(func_field(a[0].i), (uint32_t)code) < 0) {
