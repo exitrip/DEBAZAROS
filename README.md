@@ -8,11 +8,17 @@
 > [!IMPORTANT]
 > This repo contains a lot of LLM generated code as of about Aug. 15th 2026.  
 > Generally this is bad for the world as much as I wanna hem and haw about
-> recycling all the embodied energy in this hardware,  but it's been really
-> good for the maturity of this project and my own sanity.  Most of the important 
-> parts of the design, the core block diagram, hardware, and ring-modulator 
-> colour matrix mixer predate my summoning with and bargaining with the
->**F**ascist **A**hrimanic **D**istributed coding machine.
+> recycling all the embodied energy in this hardware, but it's also been really
+> good for the maturity of this project and my own sanity as professionally 
+> overwhelmed engineer.  Most of the important  parts of the design, the core 
+> block diagram, hardware, and ring-modulated colour matrix mixer predate my 
+> summoning with and bargaining with the **F**ascist **A**hrimanic **D**istributed 
+> paywalled coding machine.  "AI" (I'm still linquistically miffed that they managed to
+> steal this term) is just a paywall.  "AI" as a term is being used as a dissonant 
+> basket for many unrelated systems, and it seems the common factor is the paywall
+> pay for multiplier hardware machine time and pay for stolen goods.  That said, 
+> these systems can write a month's of VDHL, C, **AND** javascript in an afternoon.
+> One day this will all be obsolete too.
 
 # DEBAZAROS
 
