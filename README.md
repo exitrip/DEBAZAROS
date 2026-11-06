@@ -14,10 +14,10 @@
 > block diagram, hardware, and ring-modulated colour matrix mixer predate my 
 > summoning with and bargaining with the **F**ascist **A**hrimanic **D**istributed 
 > paywalled coding machine.  "AI" (I'm still linquistically miffed that they managed to
-> steal this term) is just a paywall.  "AI" as a term is being used as a dissonant 
-> basket for many unrelated systems, and it seems the common factor is the paywall
-> pay for multiplier hardware machine time and pay for stolen goods.  That said, 
-> these systems can write a month's of VDHL, C, **AND** javascript in an afternoon.
+> steal this term) is functionally just a paywall.  "AI" as a term is being used as a dissonant 
+> basket for many unrelated systems, and it seems the common factor is the paywall...
+> pay for matrix multiplier hardware machine time and pay for stolen goods.  That said, 
+> these systems can generate and test a month's of VDHL, C, **AND** javascript in an afternoon.
 > One day this will all be obsolete too.
 
 # DEBAZAROS
