@@ -233,7 +233,7 @@ static char doc[] = "Set the resolution and optionally display color bars for th
 static char args_doc[] = "[FILENAME]...";
 static struct argp_option options[] = {
     { "menu", 'm', 0, 0, "Show a menu to change settings."},
-	{ "resolution", 'r', 0, 0, "Both displays: 640x480 800x600 1024x768 1280x720[x60Hz] 1280x720x50Hz 1280x720x30Hz 1920x1080x25Hz 1920x1080x30Hz 1920x1080x60Hz. Default 1280x720x60Hz; the capture takes the same size"},
+	{ "resolution", 'r', 0, 0, "Both displays: 640x480 800x600 1024x768 1280x1024 1280x720[x60Hz] 1280x720x50Hz 1280x720x45Hz 1280x720x30Hz 1280x720x25Hz 1920x1080x25Hz 1920x1080x30Hz 1920x1080x60Hz. Default 1280x720x60Hz; the capture takes the same size"},
     { 0 }
 };
 
@@ -253,12 +253,18 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 				m = VMODE_800x600;
 			else if (strcmp(r, "1024x768") == 0)
 				m = VMODE_1024x768;
+			else if (strcmp(r, "1280x1024") == 0 || strcmp(r, "1280x1024x60Hz") == 0)
+				m = VMODE_1280x1024;	/* the menu had it; -r did not (2026-11-18) */
 			else if (strcmp(r, "1280x720") == 0 || strcmp(r, "1280x720x60Hz") == 0)
 				m = VMODE_1280x720x60Hz;
 			else if (strcmp(r, "1280x720x50Hz") == 0)
 				m = VMODE_1280x720x50Hz;
+			else if (strcmp(r, "1280x720x45Hz") == 0)
+				m = VMODE_1280x720x45Hz;
 			else if (strcmp(r, "1280x720x30Hz") == 0)
 				m = VMODE_1280x720x30Hz;
+			else if (strcmp(r, "1280x720x25Hz") == 0)
+				m = VMODE_1280x720x25Hz;
 			else if (strcmp(r, "1920x1080x25Hz") == 0)
 				m = VMODE_1920x1080x25Hz;
 			else if (strcmp(r, "1920x1080x30Hz") == 0)

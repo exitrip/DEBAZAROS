@@ -208,6 +208,14 @@ new package still needs one networked build (then back up again).
   - ebaz may use the hardware: new groups i2c spi gpio iio uio + udev rules
     (`sw/tools/image/99-debaz-hw.rules`, recipe debaz-sw); ebaz also in
     dialout, disk (NAND), kmem (read /dev/mem). Not /dev/watchdog.
+  - (2026-11-18, image `debazaros-20261118-modes.wic.xz`, recipe debaz-sw;
+    not in the Nov 5 image) `kernel.perf_event_paranoid = -1`
+    (`sw/tools/image/debaz-sysctl.conf`: the Cortex-A9 PMU cannot count
+    user space alone, so with 2 every hardware event was "not supported"
+    for ebaz) and the logind drop-in
+    `KillUserProcesses=no` (`sw/tools/image/debaz-logind.conf`): OpenSSH
+    logins are logind sessions, and systemd 249 stopped every program a
+    login started (also with setsid) at the logout.
 
 Plan for the full SD card image (partitions, read-only root): ROADMAP.md
 section 10. Partitions and the first boot: done (debaz-firstboot); our

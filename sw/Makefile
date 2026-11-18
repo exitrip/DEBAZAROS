@@ -79,13 +79,16 @@ install: all
 # the image layout (no ssh): the recipe runs it with DESTDIR=${D}
 image-install: all
 	install -d $(DESTDIR)/usr/bin $(DESTDIR)/usr/share/debaz/www $(DESTDIR)/etc/debaz \
-		$(DESTDIR)/lib/systemd/system $(DESTDIR)/etc/udev/rules.d
+		$(DESTDIR)/lib/systemd/system $(DESTDIR)/etc/udev/rules.d \
+		$(DESTDIR)/etc/systemd/logind.conf.d $(DESTDIR)/etc/sysctl.d
 	install -m 0755 $(BINS) $(OUT)/hdmi2.elf $(DESTDIR)/usr/bin/
 	install -m 0755 $(IMG_SCRIPTS) $(DESTDIR)/usr/bin/
 	install -m 0644 dzweb/www/* $(DESTDIR)/usr/share/debaz/www/
 	install -m 0644 tools/image/dzstart.conf $(DESTDIR)/etc/debaz/
 	install -m 0644 tools/image/debaz.service $(DESTDIR)/lib/systemd/system/
 	install -m 0644 tools/image/99-debaz-hw.rules $(DESTDIR)/etc/udev/rules.d/
+	install -m 0644 tools/image/debaz-logind.conf $(DESTDIR)/etc/systemd/logind.conf.d/debaz.conf
+	install -m 0644 tools/image/debaz-sysctl.conf $(DESTDIR)/etc/sysctl.d/debaz.conf
 
 test:
 	$(MAKE) NATIVE=1 $(BINS:out/arm/%=out/native/%)

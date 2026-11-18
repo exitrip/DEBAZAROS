@@ -25,8 +25,8 @@ const save = () => store.set("wall", cfg);
 // the source display d crops from: the input when it shows the capture, else a 1920 x 1080 slot
 const srcW = (d = 0) => (geom.live[d] && geom.iw) || 1920, srcH = (d = 0) => (geom.live[d] && geom.ih) || 1080;
 const maxX = (d = 0) => Math.max(0, srcW(d) - geom.mw), maxY = (d = 0) => Math.max(0, srcH(d) - geom.mh);
-const MODES = ["640x480", "800x600", "1024x768", "1280x720", "1280x720x50Hz", "1280x720x30Hz",
-  "1920x1080x25Hz", "1920x1080x30Hz", "1920x1080x60Hz"]; // fallback for /video/modes
+const MODES = ["640x480", "800x600", "1024x768", "1280x1024", "1280x720", "1280x720x50Hz", "1280x720x45Hz",
+  "1280x720x30Hz", "1280x720x25Hz", "1920x1080x25Hz", "1920x1080x30Hz", "1920x1080x60Hz"]; // fallback for /video/modes
 
 function setCrop(d, x, y, send = true) {
   x = Math.max(0, Math.min(maxX(d), Math.round(x))) & ~1;

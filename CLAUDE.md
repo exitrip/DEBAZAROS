@@ -58,9 +58,22 @@ then 1 Gb). ⚠️ After a devmem SLCR write, never lock the SLCR again (Linux
 keeps it unlocked; locked = every kernel clock gate write is lost).
 Image `debazaros-20261105-speed.wic.xz` (Nov 5; laptop build/images/, build
 machine ~/dz-sandbox/): -O2 kernel + tracing, OpenSSH, perf/iperf3/tcpdump/
-trace-cmd, hardware groups for ebaz (PetaLinux/README.md). NOT on a card yet;
+trace-cmd, hardware groups for ebaz (PetaLinux/README.md). ON A CARD since
+Nov 18: debaz-7130d5 = 10.42.0.236 (checked: OpenSSH, no Dropbear, groups +
+udev rules, -O2, perf; HEAD software in /home/ebaz/bin). ⚠️ OpenSSH logins are
+logind sessions and systemd 249 defaults to KillUserProcesses=yes: a program
+started by hand over ssh (setsid too: debazd restart, dzstart.sh,
+plreload.sh, dzweb) was stopped at the logout. Fix: /etc/systemd/logind.conf.d/
+debaz.conf KillUserProcesses=no (sw/tools/image/debaz-logind.conf, recipe
+debaz-sw; set by hand on .236 - cards burnt from the Nov 5 image lack it).
+NEWEST image (Nov 18): `debazaros-20261118-modes.wic.xz` (build machine
+~/dz-sandbox/, laptop build/images/; sha256 e766aa85b0d7c10e…) = the Nov 5
+image + logind drop-in + perf sysctl + the 12 video modes (same kernel);
+contents checked in rootfs.ext4, NOT yet booted from a card.
+Video modes (Nov 18): debazd /video/modes = hdmi2 -r = all 12 hdmi2 modes
+(+ 1280x1024, 1280x720x45Hz, 1280x720x25Hz, before only in the hdmi2 menu).
 .33 runs ITS kernel + modules by hand (both sets kept: /boot/uImage.os-20261105
-+ /lib/modules/5.15.36-xilinx-v2022.2.os-20261105 = -Os, *.O2-20261105 = -O2;
+and /lib/modules/5.15.36-xilinx-v2022.2.os-20261105 = -Os, *.O2-20261105 = -O2;
 rootfs still Dropbear). A/B results: PetaLinux/README.md (2026-11-05).
 Never swap only uImage: the tracing options change struct module, and the
 loader checks only the version string (old modules could corrupt memory).

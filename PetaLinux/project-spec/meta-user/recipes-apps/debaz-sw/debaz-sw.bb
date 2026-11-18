@@ -46,7 +46,8 @@ do_install() {
 }
 
 FILES:${PN} += "${datadir}/debaz ${sysconfdir}/debaz ${systemd_system_unitdir}/debaz.service \
-                ${nonarch_base_libdir}/firmware ${sysconfdir}/udev/rules.d/99-debaz-hw.rules"
+                ${nonarch_base_libdir}/firmware ${sysconfdir}/udev/rules.d/99-debaz-hw.rules \
+                ${sysconfdir}/systemd/logind.conf.d/debaz.conf ${sysconfdir}/sysctl.d/debaz.conf"
 CONFFILES:${PN} = "${sysconfdir}/debaz/dzstart.conf"
 
 # ffmpeg/ffprobe (movies, images), arecord (in -aplay)/amixer/alsactl (audio, react.c,
