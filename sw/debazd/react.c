@@ -47,6 +47,10 @@
  *                                             f:bass f:low f:mid f:high f:air
  *                                             f:flux f:beat s:status
  *   /audio/react/bands                     -> 16 x f
+ * Other processes (2026-11-20): /dev/shm/dzreact (lib/dz_react_shm.h):
+ * features, bands, the amplitude spectrum and the newest 2048 samples of
+ * mix / L / R, written each tick while a reader poked it in the last 5 s
+ * (dzlua: `audio`). A poke counts as a sink demand (source auto).
  * Use: /lfo/<n>/shape audio, /lfo/<n>/audio <feature> (lfo.c); the
  * waveform: /dds/<n>/scope (dds.c, writes the newest 2048 samples, or the
  * spectrum of one channel (react_spectrum), into the AWG table each frame).
@@ -56,6 +60,7 @@
 #include "dz_draw.h"
 #include "dz_fields.h"
 #include "dz_hw.h"
+#include "dz_react_shm.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -64,6 +69,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -100,6 +106,8 @@ static int    ncarry;
 static float  f_level, f_peak, f_bass, f_low, f_mid, f_high, f_air, f_flux, f_beat;
 static float  f_band[16], prev_band[16], flux_mean;
 static int    running;
+static float  last_pw[NMAX / 2 + 1];	/* power spectrum of the last analyse() */
+static int    last_pw_n;		/* its fft size, 0 = none */
 
 /* FFT plan for fft_n */
 static int    plan_n;
@@ -231,6 +239,8 @@ static void analyse(void)
 	if (rfill < (unsigned)plan_n)
 		return;
 	spectrum(ring, pw);
+	memcpy(last_pw, pw, sizeof(float) * (size_t)(plan_n / 2 + 1));
+	last_pw_n = plan_n;
 	f_bass = bins_amp(pw, 1, hz_bin(250));
 	f_low  = bins_amp(pw, hz_bin(250), hz_bin(500));
 	f_mid  = bins_amp(pw, hz_bin(500), hz_bin(2000));
@@ -584,9 +594,103 @@ int react_capturing(void)
 
 static void set_source(int s);
 
+/* ---- shared memory for other processes (dz_react_shm.h; dzlua `audio`) --- */
+static dz_react_shm *shm;
+static uint32_t shm_seen;
+static long   shm_need_ms, shm_retry_ms;
+
+static void shm_open_once(void)
+{
+	int f;
+	void *p;
+
+	if (shm || (shm_retry_ms && ms_now() < shm_retry_ms))
+		return;
+	shm_retry_ms = ms_now() + 10000;
+	f = open(DZ_REACT_SHM, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+	if (f < 0)
+		return;
+	if (fchmod(f, 0666) < 0 || ftruncate(f, sizeof(dz_react_shm)) < 0) {
+		close(f);
+		return;
+	}
+	p = mmap(NULL, sizeof(dz_react_shm), PROT_READ | PROT_WRITE, MAP_SHARED, f, 0);
+	close(f);
+	if (p == MAP_FAILED)
+		return;
+	shm = p;
+	memset(shm, 0, sizeof(*shm));
+	shm->magic = DZ_REACT_SHM_MAGIC;
+	shm->version = DZ_REACT_SHM_VERSION;
+	shm->movie_slot = -1;
+	shm_seen = shm->poke;
+}
+
+static void wave_copy(float *dst, const float *r, int n)
+{
+	unsigned s = (rpos + RING - (unsigned)n) % RING;
+
+	for (int i = 0; i < n; i++)
+		dst[i] = r[(s + (unsigned)i) % RING];
+}
+
+/* once per tick while a reader asked in the last AUTO_LINGER_MS */
+static void shm_write(void)
+{
+	dz_react_shm *m = shm;
+	int on = running && src != SRC_OFF, full = on && (src == SRC_CAPTURE || src == SRC_MOVIE);
+	int n = full ? (int)(rfill < DZ_REACT_WAVE ? rfill : DZ_REACT_WAVE) : 0;
+
+	m->seq++;			/* odd: being written */
+	__sync_synchronize();
+	m->frame++;
+	m->running = on;
+	m->source = src;
+	m->movie_slot = src == SRC_MOVIE ? mslot : -1;
+	{
+		struct timespec ts;
+
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		m->t = ts.tv_sec + ts.tv_nsec * 1e-9;
+	}
+	{
+		const float v[9] = { f_level, f_peak, f_bass, f_low, f_mid, f_high, f_air,
+				     f_flux, f_beat };
+
+		for (int i = 0; i < 9; i++)
+			m->feat[i] = on ? v[i] : 0.0f;
+	}
+	for (int b = 0; b < 16; b++)
+		m->band[b] = full ? f_band[b] : 0.0f;
+	m->fft_n = plan_n ? plan_n : fft_n;
+	if (full && last_pw_n) {
+		float k = 4.0f / last_pw_n;
+
+		m->nbins = last_pw_n / 2 + 1;
+		for (int i = 0; i < m->nbins; i++)
+			m->spec[i] = sqrtf(last_pw[i]) * k;
+	} else
+		m->nbins = 0;
+	m->nwave = n;
+	m->total_lo = (uint32_t)rtotal;
+	if (n) {
+		wave_copy(m->wave_m, ring, n);
+		wave_copy(m->wave_l, ringl, n);
+		wave_copy(m->wave_r, ringr, n);
+	}
+	__sync_synchronize();
+	m->seq++;
+}
+
 void react_tick(void)
 {
 	acc_t ma = { 0, 0, 0 };
+
+	shm_open_once();
+	if (shm && shm->poke != shm_seen) {	/* a reader (dzlua) asks: a sink */
+		shm_seen = shm->poke;
+		shm_need_ms = need_ms = ms_now();
+	}
 
 	movie_drain(&ma);		/* always: a full tap stops the movie's sound */
 	if (want == SRC_AUTO) {		/* while a sink asks: a movie, else HDMI_2 */
@@ -621,6 +725,8 @@ void react_tick(void)
 		if (mslot < 0)
 			snprintf(status, sizeof(status), "no movie audio");
 	}
+	if (shm && shm_need_ms && ms_now() - shm_need_ms < AUTO_LINGER_MS)
+		shm_write();
 }
 
 static const char *feat_names[] = { "level", "peak", "bass", "low", "mid", "high", "air",
@@ -679,6 +785,7 @@ static void set_source(int s)
 	memset(f_band, 0, sizeof(f_band));
 	memset(prev_band, 0, sizeof(prev_band));
 	rfill = 0;
+	last_pw_n = 0;
 	snprintf(status, sizeof(status), "%s", s == SRC_OFF ? "off" : s == SRC_PEAK ? "ok" : "starting");
 	if (s == SRC_CAPTURE && capture_start() < 0)
 		dzd_log("react: cannot start arecord\n");

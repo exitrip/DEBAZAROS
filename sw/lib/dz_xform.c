@@ -28,6 +28,14 @@ typedef struct {
 	size_t          stride;
 } xf_t;
 
+/* memory trim (2026-11-19): only between operations */
+void dz_xform_trim(void)
+{
+	free(spare);
+	spare = NULL;
+	spare_n = 0;
+}
+
 static int ensure_spare(size_t n)
 {
 	if (spare_n >= n)

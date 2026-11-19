@@ -236,3 +236,43 @@ button:disabled { opacity: 0.35; cursor: default; }
 .anim-up h3 { margin: 4px 0; font-size: 0.95rem; }
 .anim-row { border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 6px; }
 .anim-up .meter { flex: 1; min-width: 120px; }
+
+/* console: Lua editor (luaedit.js) */
+textarea.code { width: 100%; box-sizing: border-box; font: 13px/1.45 var(--mono); padding: 10px;
+  background: #07080a; color: #d7dde4; tab-size: 2; resize: vertical; min-height: 300px; white-space: pre; }
+.log.lualog { height: 22vh; margin-top: 8px; }
+/* highlighting: a coloured <pre> under the transparent textarea (luahl.js) */
+.luaed { position: relative; }
+.luaed textarea.code { position: relative; z-index: 1; background: transparent; color: transparent;
+  caret-color: #f2f4f7; display: block; }
+.luaed textarea.code::selection { background: rgba(130, 170, 255, 0.35); color: transparent; }
+.luaed pre.luahl { position: absolute; left: 0; top: 0; right: 0; margin: 0; overflow: hidden; pointer-events: none;
+  box-sizing: border-box; font: 13px/1.45 var(--mono); padding: 10px; border: 1px solid transparent;
+  border-radius: 8px; background: #07080a; color: #d7dde4; tab-size: 2; white-space: pre; }
+.luahl .kw { color: #c792ea; } .luahl .st { color: #c3e88d; } .luahl .cm { color: #6b7385; font-style: italic; }
+.luahl .nu { color: #f78c6c; } .luahl .api { color: #82aaff; } .luahl .lib { color: #89ddff; }
+.luahl .wv { text-decoration: underline wavy #f5a524; text-underline-offset: 3px; }
+.luahl .luaerr { position: absolute; left: 0; width: 100000px; background: rgba(255, 70, 70, 0.22); }
+.luahelp { min-height: 1.4em; margin: 6px 0 2px; } .luahelp code { color: var(--text); font-family: var(--mono); }
+.luadiag { font: 12px/1.5 var(--mono); } .luadiag div { cursor: pointer; } .luadiag .err { color: var(--bad); }
+.luaref { max-height: 40vh; overflow: auto; margin: 6px 0; font-size: 12px; }
+.luaref-g { font-weight: 600; margin: 8px 0 2px; color: var(--dim); }
+.luaref-r { display: flex; gap: 12px; padding: 2px 4px; cursor: pointer; border-radius: 4px; }
+.luaref-r:hover { background: var(--panel2); }
+.luaref-r code { flex: 0 0 300px; font-family: var(--mono); color: var(--text); }
+.luaref-r span { color: var(--dim); }
+@media (max-width: 700px) { .luaref-r { flex-direction: column; gap: 0; } .luaref-r code { flex: none; } }
+
+/* sprites (sprites.js): thumbnails on a checkerboard, the palette, the Paint preview */
+.sthumb { display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 6px;
+  background: repeating-conic-gradient(#2a2d35 0 25%, #1b1d22 0 50%) 0 0 / 12px 12px; flex: none; }
+.sthumb img { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: auto; }
+.sthumb-text { font-size: 11px; line-height: 1.1; text-align: center; padding: 2px; overflow: hidden; word-break: break-all; max-height: 100%; }
+.sthumb-empty { font-size: 10px; color: var(--dim); white-space: pre-line; text-align: center; }
+.spal { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.spal-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; min-height: 0; }
+.spal-cell.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+.spal-id { font-size: 11px; color: var(--dim); }
+.spal-cell.on .spal-id { color: var(--accent); font-weight: 600; }
+.spr-row { align-items: flex-start; gap: 10px; flex-wrap: nowrap; }
+.spr-desc { margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

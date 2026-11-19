@@ -66,10 +66,13 @@ started by hand over ssh (setsid too: debazd restart, dzstart.sh,
 plreload.sh, dzweb) was stopped at the logout. Fix: /etc/systemd/logind.conf.d/
 debaz.conf KillUserProcesses=no (sw/tools/image/debaz-logind.conf, recipe
 debaz-sw; set by hand on .236 - cards burnt from the Nov 5 image lack it).
-NEWEST image (Nov 18): `debazaros-20261118-modes.wic.xz` (build machine
-~/dz-sandbox/, laptop build/images/; sha256 e766aa85b0d7c10e…) = the Nov 5
-image + logind drop-in + perf sysctl + the 12 video modes (same kernel);
-contents checked in rootfs.ext4, NOT yet booted from a card.
+NEWEST image (Nov 19): `debazaros-20261119-data.wic.xz` (build machine
+~/dz-sandbox/, laptop build/images/; sha256 3881f6e2f1573c21…) = the Nov 18
+modes image + the systemd units / resume / memory / cut-gate / show-bundle
+software of Nov 19 + /data config + text rules (same kernel); contents
+checked in rootfs.ext4, NOT yet booted from a card. (Replaces
+`debazaros-20261119-services.wic.xz` of the same night.) (Nov 18 `debazaros-20261118-modes.wic.xz` = Nov 5 +
+logind drop-in + perf sysctl + 12 video modes, also never booted.)
 Video modes (Nov 18): debazd /video/modes = hdmi2 -r = all 12 hdmi2 modes
 (+ 1280x1024, 1280x720x45Hz, 1280x720x25Hz, before only in the hdmi2 menu).
 .33 runs ITS kernel + modules by hand (both sets kept: /boot/uImage.os-20261105
@@ -912,7 +915,9 @@ Details: sw/README.md "Video mode and video wall".
 **Crops / video wall (Oct 28 2026, software only):** ONE fixed line pitch of
 7680 bytes (1920 px) for every slot, VDMA and mode (hdmi2 DISPLAY_STRIDE,
 libdz DZ_STRIDE); `/disp/<d>/crop x y` shows the mode-sized window at x, y of
-the shown slot (x even; clamped; the capture's real size when it is shown);
+the shown slot (x even; the capture's real size when it is shown; since
+Nov 20 also OUTSIDE the slot: y < 0 = the slot before, x < 0 = the slot's
+own lines wrapped; disp.c at() keeps every address in reserved memory);
 debazd sets the capture size from the INPUT (RX_SIZE; dz_capture_arm = soft
 reset + arm; /capture/auto). New hdmi2 mode 1024x768@60 (65 MHz). EDID (build
 `edid`): + 1600x1200@30 (81 MHz, DMT blanking at half clock: dvi2rgb
@@ -1096,6 +1101,60 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   and dzstart run it; dzstart only when it started hdmi2 itself = fresh PL);
   config fallback /etc/debaz/dzstart.conf (image); BITSTREAM empty = no PL load
   (BOOT.BIN's bitstream); programs from $DZ_BIN, /home/ebaz/bin, else /usr/bin.
+- **Services + memory (Nov 19 2026, sw/README.md "Services, restart and
+  memory"):** units debaz-video (hdmi2), debazd (Restart=always,
+  WatchdogSec=15, OOMScoreAdjust=-800, stop kills its movies), dzweb (as
+  ebaz); `tools/dzrun.sh` = their command; dzstart/plreload start units when
+  `debazd.service` exists (else the old setsid way). Logs:
+  `journalctl -u debazd` (NOT /tmp/debazd.log any more on such a card).
+  debazd/resume.c: state autosave /run/debaz/autosave.bin every 5 s; a
+  restart resumes show + cue + state; /run/debaz/fresh (PL at reset) = no
+  resume + dzsetup in ExecStartPost. Install debazd with `mv` (cp over the
+  running file: "Text file busy"), then `sudo systemctl restart debazd`
+  (no dzstate needed: it resumes). ON .236 (Nov 19, by hand: units in
+  /etc/systemd/system, dzrun.sh in /usr/bin; hdmi2 still runs outside its
+  unit until the next /video/mode or boot). Hardware watchdog config
+  prepared (tools/image/debaz-watchdog.conf), NOT enabled anywhere. Memory:
+  clean paint buffers freed (60 s idle / RAM < 48 MB) and rebuilt from the
+  slot; saves in-process (PNG libpng / JPG TurboJPEG); movie start guard.
+  Cut flashes fixed: `/disp/<d>/source show` ends a sequence; cue media
+  gate (switches wait for the pixel thread's media jobs, max 3 s). Show
+  bundles: Cues tab Download/Upload (dzweb /shows/<name>.json, /show/import).
+  Slit scan (Nov 19, ROADMAP §18, debazd/slit.c, /slit/<d>/...: row, col,
+  scan, scanv, tiles, waterfall via disp_slot_scroll; tested on .236).
+  Persistent files: only on /data (DEBAZDATA): /data/shows,
+  /data/debaz/dzstart.conf (old /home/ebaz/dzstart.conf still read, copied
+  once); the root fs goes read-only later (ROADMAP §10 inventory). Text:
+  lib/dz_text.c text_norm (\n \t \\, controls dropped; same rules in the
+  Paint preview, paint.js normText; Paint text box = textarea).
+- **Lua scripts (Nov 20 2026, ON .236):** `sw/dzlua/` (dzlua: LuaJIT by
+  dlopen of the image's libluajit-5.1.so.2.1.0, no headers; drawing in C,
+  API in prelude.lua built in by .incbin, exported to the FFI with
+  -rdynamic) + `sw/debazd/lua.c` (`/lua/<s>/start|run|stop|p/<key>|status|log`,
+  pixel thread; `dz_draw_claim_hook` in dz_draw_movie_stop stops a script
+  when anything else takes the slot; on that path NO dz_draw_adopt: the
+  draw's get() has just built the buffer it writes). Scripts in
+  /media/debaz/scripts (dzweb kind "scripts"). Web: Console tab, Lua.
+  Nov 20: `osc()`/`osc_get()` (prelude: FFI UDP to 127.0.0.1:9000),
+  `audio` = react.c via /dev/shm/dzreact (lib/dz_react_shm.h; ⚠️ the
+  prelude repeats the struct: change both + the version), MIDI by FFI on
+  ALSA raw MIDI (VirMIDI card 1; no fluidsynth in the image), web editor
+  highlighting + lint (vendored www/luaparse.js) + reference
+  (www/luaapi.js = the prelude API as data: keep in step).
+  sw/README.md "Lua scripts into a slot" (API, costs: DDR bound, trails()).
+- **Shared slots (Nov 20 2026, ON .236, ROADMAP §19 / task 26):** a slot is
+  LIVE while a movie plays there, it is the capture slot, or a script runs
+  there (dz_draw_live_hook = lua.c). Bounded ops SPLAT (dz_draw.c SPLAT
+  macro: rectangle read into a buffer with origin ox/oy = rd redirect in
+  get(), dz_draw_movie_stop is a no-op for it); text/shapes/sprites use
+  dz_surf_splat_area (full-size malloc, only the box read; lazy pages);
+  get() on a live slot re-reads once per OSC message (surf.job) and
+  dz_draw_job_end (after every pixel message + frame tick) frees those
+  buffers. Unbounded ops still take over. ⚠️ Any new bounded op must get a
+  SPLAT guard as its FIRST line (before get(): get() on a live slot reads
+  the whole slot, 80-200 ms). dzlua -l = layer mode (NEON run scan, black
+  = transparent), grab(). NEXT: the cached-slot experiment (u-dma-buf) on
+  the build machine; fbfeed overlay only as a cheap toggle (user).
 - **Oct 29 2026 web/draw additions:** tab DDS (sw/dzweb/www/dds.js: patterns,
   step table, AWG draw panel; hover = OSC address), tab Wall (wall.js: crop
   tiles + exerciser that counts /event/video, PASS = 0 events); debazd

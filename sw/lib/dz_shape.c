@@ -211,14 +211,29 @@ static int raster(int i, const paint_t *pt, int evenodd)
 	static edge_t *act[MAXE];
 	static float xs[2 * MAXE];	/* x, dir pairs */
 	int W, H, y0, y1, bx0 = 1 << 30, bx1 = -1, plain;
-	float fy0 = 1e9f, fy1 = -1e9f;
-	uint32_t *buf = dz_surf(i, &W, &H);
+	float fy0 = 1e9f, fy1 = -1e9f, fx0 = 1e9f, fx1 = -1e9f;
+	uint32_t *buf;
 	int *acc;
 
-	if (!buf)
-		return -1;
 	if (!ne)
 		return 0;
+	{	/* the shape's box: a live slot reads only that */
+		float by0 = 1e9f, by1 = -1e9f;
+
+		for (int k = 0; k < ne; k++) {
+			float a = E[k].x0 < E[k].x1 ? E[k].x0 : E[k].x1;
+			float b = E[k].x0 < E[k].x1 ? E[k].x1 : E[k].x0;
+
+			if (a < fx0) fx0 = a;
+			if (b > fx1) fx1 = b;
+			if (E[k].y0 < by0) by0 = E[k].y0;
+			if (E[k].y1 > by1) by1 = E[k].y1;
+		}
+		buf = dz_surf_splat_area(i, &W, &H, (int)floorf(fx0) - 2, (int)floorf(by0) - 2,
+					 (int)ceilf(fx1) + 3, (int)ceilf(by1) + 3);
+	}
+	if (!buf)
+		return -1;
 	for (int k = 0; k < ne; k++) {
 		if (E[k].y0 < fy0) fy0 = E[k].y0;
 		if (E[k].y1 > fy1) fy1 = E[k].y1;
@@ -486,10 +501,11 @@ int dz_shape_starpoly(int i, dz_color c, float cx, float cy, float rx, float ry,
 int dz_shape_radial(int i, dz_color a, dz_color b, float cx, float cy, float radius)
 {
 	int W, H, plain;
-	uint32_t *buf = dz_surf(i, &W, &H);
+	uint32_t *buf;
 	paint_t pt;
 	fill_t keep;
 
+	buf = dz_surf(i, &W, &H);	/* the whole canvas: takes the slot over */
 	if (!buf)
 		return -1;
 	if (radius <= 0.0f)		/* default: centre to the far corner */

@@ -1,0 +1,31 @@
+# debazd.service (2026-11-19): the hardware daemon, restarted when it dies.
+# Started by dzstart.sh (debaz.service at boot) after the PL and the displays
+# are up - not by itself at boot: it must run on the PL it was built for.
+#   journalctl -u debazd -f                     the log (was /tmp/debazd.log)
+#   sudo systemctl restart debazd               restart (the state comes back:
+#                                               sw/debazd/resume.c)
+# Stop / restart kill the whole group: also its movies, audio players and
+# arecord (before: orphans that kept writing the slots).
+[Unit]
+Description=DEBAZAROS hardware daemon (debazd)
+After=debaz-video.service
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Environment=DZ_VIDEO_UNIT=debaz-video.service
+ExecStart=/bin/sh /usr/bin/dzrun.sh debazd
+ExecStartPost=-/bin/sh /usr/bin/dzrun.sh setup
+Restart=always
+RestartSec=1
+# when RAM runs out the kernel kills a movie (children are set back to 0),
+# not the daemon (2026-11-18: it killed debazd)
+OOMScoreAdjust=-800
+# a main loop blocked > 15 s (a hang, not a crash): killed + restarted
+# (debazd sends WATCHDOG=1 every 2 s, sw/debazd/resume.c)
+WatchdogSec=15
+NotifyAccess=main
+KillMode=control-group
+TimeoutStopSec=5
+SyslogIdentifier=debazd

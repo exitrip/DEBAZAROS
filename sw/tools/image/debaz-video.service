@@ -1,0 +1,13 @@
+# debaz-video.service (2026-11-19): hdmi2.elf, the display bring-up (video
+# mode, VDMAs, VTC). Started by dzstart.sh; debazd restarts it for
+# /video/mode (new arguments in /run/debaz/video.args). No restart policy:
+# the displays keep running when hdmi2 exits.
+[Unit]
+Description=DEBAZAROS displays (hdmi2.elf)
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /usr/bin/dzrun.sh video
+KillMode=control-group
+TimeoutStopSec=3
+SyslogIdentifier=hdmi2

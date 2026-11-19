@@ -31,11 +31,28 @@
  *                                  pixel x, y (2026-10-28). Window = the video
  *                                  mode (both displays share it); a slot is
  *                                  1920 x 1080 at the fixed 7680-byte pitch, so
- *                                  at 720p x = 0..640, y = 0..360. x is made
- *                                  even (8-byte VDMA address alignment); the
- *                                  values are clamped. Also for show, capture
- *                                  and seq; lands on the next vsync, so it can
- *                                  move every frame (LFO: "/disp/0/crop $0 $1").
+ *                                  at 720p x = 0..640, y = 0..360 stay inside
+ *                                  it. x is made even (8-byte VDMA address
+ *                                  alignment). Also for show, capture and seq;
+ *                                  lands on the next vsync, so it can move
+ *                                  every frame (LFO: "/disp/0/crop $0 $1").
+ *                                  OUTSIDE the slot (2026-11-20): the slots
+ *                                  are one strip of 1080-row slots, so y < 0
+ *                                  shows the bottom of the slot before, y past
+ *                                  the bottom the top of the next slot (real
+ *                                  neighbour bleed). x < 0 is NOT the slot to
+ *                                  the left: each line starts with the end of
+ *                                  the line above in the same slot (x past
+ *                                  1920 - w wraps the same way); with a black
+ *                                  right margin that centres a small movie
+ *                                  (crop x = -(mode w - movie w) / 2). Limits:
+ *                                  x -1918..1918; the address is kept inside
+ *                                  the reserved slot memory at each switch
+ *                                  (the VDMA only reads, but outside it would
+ *                                  show Linux RAM): at slot 0 a y < 0 stops at
+ *                                  the top of slot 0, at the last slot a large
+ *                                  y at its bottom (the reply keeps the asked
+ *                                  values).
  *   /disp/<d>/crop                 -> /disp/<d>/crop i:x i:y
  *   /disp/<d>/crop/x i, /crop/y i  one coordinate alone (LFO target:
  *                                  "/disp/0/crop/x $i0")
@@ -69,6 +86,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/eventfd.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -83,10 +101,11 @@ typedef struct {
 	int      want;			/* pending: new front address      */
 	uint32_t want_addr;
 	int      want_blank;		/* pending: -1 none, 0, 1          */
+	int      seqhold;		/* a cue waits for its media: no steps */
 	int      seq[SEQ_MAX];		/* slots, -1 = black               */
-	uint32_t off;			/* crop offset in bytes (applied)  */
+	int32_t  off;			/* crop offset in bytes (applied), may be < 0 */
 	int      want_crop;		/* pending: new offset in want_off */
-	uint32_t want_off;
+	int32_t  want_off;
 	int      cx, cy;		/* crop origin, pixels (requested) */
 	int      seqn, seqpos, rate, cnt, seqon, seqstop;
 	int      anim;			/* anim.c drives store 0          */
@@ -162,10 +181,54 @@ static void sleep_until(double t)
 	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
 }
 
+/* ---- crop addresses ------------------------------------------------------- */
+/* the reserved slot memory [mem_lo, mem_hi) (disp_init: dz_slots_usable) */
+static uint32_t mem_lo = DZ_SLOT_BASE, mem_hi = DZ_SLOT_ADDR(DZ_SLOTS);
+
+/* bytes the VDMA reads for one frame of the running mode */
+static int64_t frame_len(void)
+{
+	return (int64_t)(dz_geom_h() - 1) * (int64_t)dz_geom_stride() + (int64_t)dz_geom_w() * DZ_BPP;
+}
+
+/* base + crop offset, kept inside the reserved memory (a crop outside the
+ * slot can run past slot 0 or the last slot) and 8-byte aligned */
+static uint32_t at(uint32_t base, int32_t off)
+{
+	int64_t a = (int64_t)base + off, hi = (int64_t)mem_hi - frame_len();
+
+	if (a > hi)
+		a = hi;
+	if (a < (int64_t)mem_lo)
+		a = mem_lo;
+	return (uint32_t)a & ~7u;
+}
+
 /* ---- applying changes (mu held) ------------------------------------------- */
+/*
+ * Park on the black store. Store 2 is set at start, but an hdmi2 restart
+ * (/video/mode) programs the stores again and leaves store 2 at 0: a park
+ * there read address 0, the VDMA got a slave error and halted (2026-11-18,
+ * "blank both" after a mode change). So check the address every time.
+ */
+static void park_blank(int d)
+{
+	uint32_t blank = DZ_SLOT_ADDR(DZ_SLOT_BLANK);
+	dz_vdma_regs r;
+
+	if (dz_disp_regs(d, &r) < 0)
+		return;
+	if (r.addr[STORE_BLANK] != blank && dz_disp_set_store(d, STORE_BLANK, blank) < 0)
+		return;
+	dz_disp_park(d, STORE_BLANK);
+}
+
 static void park_front_or_blank(int d)
 {
-	dz_disp_park(d, D[d].blanked ? STORE_BLANK : STORE_FRONT);
+	if (D[d].blanked)
+		park_blank(d);
+	else
+		dz_disp_park(d, STORE_FRONT);
 }
 
 static void apply(int d)
@@ -178,18 +241,18 @@ static void apply(int d)
 		s->off = s->want_off;
 		s->want_crop = 0;
 		if (!s->seqon && !s->want && base)
-			dz_disp_set_store(d, STORE_FRONT, base + s->off);
+			dz_disp_set_store(d, STORE_FRONT, at(base, s->off));
 	}
 	if (s->seqstop) {
 		s->seqon = s->seqstop = 0;
-		dz_disp_set_store(d, STORE_FRONT, s->front + s->off);
+		dz_disp_set_store(d, STORE_FRONT, at(s->front, s->off));
 		park_front_or_blank(d);
 	}
 	if (s->want) {
 		s->front = s->want_addr;
 		s->want = 0;
 		if (!s->seqon) {
-			dz_disp_set_store(d, STORE_FRONT, s->front + s->off);
+			dz_disp_set_store(d, STORE_FRONT, at(s->front, s->off));
 			park_front_or_blank(d);
 		}
 	}
@@ -199,15 +262,15 @@ static void apply(int d)
 		if (!s->seqon)
 			park_front_or_blank(d);
 	}
-	if (s->seqon && s->seqn > 0 && ++s->cnt >= s->rate) {
+	if (s->seqon && s->seqn > 0 && !s->seqhold && ++s->cnt >= s->rate) {
 		int slot = s->seq[s->seqpos];
 
 		s->cnt = 0;
 		s->seqpos = (s->seqpos + 1) % s->seqn;
 		if (slot < 0) {
-			dz_disp_park(d, STORE_BLANK);
+			park_blank(d);
 		} else {
-			dz_disp_set_store(d, STORE_FRONT, DZ_SLOT_ADDR(slot) + s->off);
+			dz_disp_set_store(d, STORE_FRONT, at(DZ_SLOT_ADDR(slot), s->off));
 			dz_disp_park(d, STORE_FRONT);
 		}
 	}
@@ -225,7 +288,7 @@ static void anim_apply(int d)
 	if (!a)
 		return;
 	s->anim_addr = a;
-	dz_disp_set_store(d, STORE_FRONT, a + s->off);
+	dz_disp_set_store(d, STORE_FRONT, at(a, s->off));
 	if (!s->blanked)
 		dz_disp_park(d, STORE_FRONT);
 }
@@ -237,7 +300,7 @@ void disp_anim_attach(int d, int on)
 	D[d].anim = on;
 	D[d].anim_addr = 0;
 	if (!on && D[d].front && !D[d].seqon) {
-		dz_disp_set_store(d, STORE_FRONT, D[d].front + D[d].off);
+		dz_disp_set_store(d, STORE_FRONT, at(D[d].front, D[d].off));
 		park_front_or_blank(d);
 	}
 	pthread_mutex_unlock(&mu);
@@ -399,6 +462,11 @@ static void blank_slot_fill(void)
 int disp_init(int simulate)
 {
 	sim = simulate;
+	if (!sim) {
+		int n = dz_slots_usable();
+
+		mem_hi = n > 0 ? DZ_SLOT_ADDR(n) : DZ_SLOT_ADDR(1);
+	}
 	blank_slot_fill();
 	for (int d = 0; d < DZ_DISPLAYS; d++) {
 		dstate *s = &D[d];
@@ -445,6 +513,40 @@ int disp_frame_fd(void) { return efd; }
 int disp_vsync_ok(void) { return vs_ok; }
 double disp_frame_hz(void) { return vs_ok ? 1.0 / period : 0.0; }
 
+
+/* slit.c waterfall (2026-11-19): every display that shows `slot` (not a
+ * sequence, not an image sequence) starts `rows` rows further down, on top
+ * of its crop; 0 = the crop alone. Applied at the next vsync. */
+void disp_slot_scroll(int slot, int rows)
+{
+	uint32_t a = DZ_SLOT_ADDR(slot);
+	size_t st = dz_geom_stride();
+
+	pthread_mutex_lock(&mu);
+	for (int d = 0; d < DZ_DISPLAYS; d++) {
+		dstate *s = &D[d];
+
+		if (s->seqon || s->anim || (s->want ? s->want_addr : s->front) != a)
+			continue;
+		s->want_off = (int32_t)(((int64_t)s->cy + rows) * (int64_t)st + (int64_t)s->cx * DZ_BPP);
+		s->want_crop = 1;
+	}
+	pthread_mutex_unlock(&mu);
+	kick(0);
+	kick(1);
+}
+
+/* cue.c media gate (2026-11-19): a display whose switch waits for the cue's
+ * media keeps its sequence on the current step (it used to step on to other
+ * slots for the ~0.3 s of a PNG decode) */
+void disp_seq_hold(int d, int on)
+{
+	if (d < 0 || d >= DZ_DISPLAYS)
+		return;
+	pthread_mutex_lock(&mu);
+	D[d].seqhold = on;
+	pthread_mutex_unlock(&mu);
+}
 
 /* ---- OSC ---------------------------------------------------------------------- */
 static int slot_of(uint32_t a)
@@ -610,6 +712,28 @@ static int hdmi2_start(const char *name)
 	return dz_spawn_detached(cmd, "/tmp/hdmi2.log");
 }
 
+/*
+ * Under systemd (2026-11-19, debazd.service sets DZ_VIDEO_UNIT): hdmi2 is
+ * its own unit (debaz-video.service, dzrun.sh video reads the arguments
+ * from /run/debaz/video.args). A copy started by debazd would sit in
+ * debazd's cgroup and die at every debazd restart. Not saved over a
+ * reboot: the boot mode stays HDMI2_ARGS (dzstart.conf).
+ */
+static int hdmi2_restart_unit(const char *unit, const char *name)
+{
+	char cmd[300];
+	FILE *f;
+
+	mkdir("/run/debaz", 0755);
+	if (!(f = fopen("/run/debaz/video.args.part", "w")))
+		return -1;
+	fprintf(f, "-r %s\n", name);
+	if (fclose(f) || rename("/run/debaz/video.args.part", "/run/debaz/video.args"))
+		return -1;
+	snprintf(cmd, sizeof(cmd), "exec systemctl restart --no-block '%s'", unit);
+	return dz_spawn_detached(cmd, NULL);
+}
+
 static int video_dispatch(const dz_msg *m)
 {
 	if (!strcmp(m->path, "/video/modes")) {
@@ -631,8 +755,20 @@ static int video_dispatch(const dz_msg *m)
 	for (int i = 0; i < N_VMODES; i++) {
 		if (strcmp(m->a[0].s, video_modes[i].name))
 			continue;
-		dzd_log("debazd: video mode -> %s (hdmi2 restart)\n", video_modes[i].name);
+		const char *unit = getenv("DZ_VIDEO_UNIT");
+
+		dzd_log("debazd: video mode -> %s (hdmi2 restart%s%s)\n", video_modes[i].name,
+			unit && *unit ? ", unit " : "", unit && *unit ? unit : "");
 		audio_rx_hold();
+		if (unit && *unit) {
+			hdmi2_stop();		/* also a copy started outside the unit */
+			if (hdmi2_restart_unit(unit, video_modes[i].name)) {
+				dzd_reply("/error", "ss", "/video/mode", "cannot restart the video unit");
+				return 1;
+			}
+			dzd_reply("/video/mode", "s", "starting");
+			return 1;
+		}
 		hdmi2_stop();
 		if (hdmi2_start(video_modes[i].name)) {
 			dzd_reply("/error", "ss", "/video/mode", "hdmi2.elf missing");
@@ -693,6 +829,18 @@ int disp_dispatch(const dz_msg *m)
 
 			snprintf(p, sizeof(p), "%s/%s", base, !strcmp(a[0].s, "seq") ? "seq/rate" : a[0].s);
 			mm.path = p;
+			/* one source per display: show / capture END a running
+			 * sequence. A plain /disp/<d>/show only moves the front
+			 * slot under it, so before 2026-11-19 a cue after a
+			 * "seq" cue kept the old sequence running ("cut flashes
+			 * slots of other cues"): the state dump reported the
+			 * show slot, so no cue ever sent a stop. */
+			if (!strcmp(a[0].s, "show") || !strcmp(a[0].s, "capture")) {
+				pthread_mutex_lock(&mu);
+				if (D[d].seqon)
+					D[d].seqstop = 1;
+				pthread_mutex_unlock(&mu);
+			}
 			if (!strcmp(a[0].s, "show") && n >= 2) {
 				mm.a[0] = a[1];
 				mm.n = 1;
@@ -771,27 +919,17 @@ int disp_dispatch(const dz_msg *m)
 			if (D[d].seqon)
 				D[d].seqstop = 1;
 		} else if (!strncmp(op, "crop", 4)) {
-			/* window = the mode, inside the source: the capture's
-			 * real size (e.g. 1600 x 1200, which runs into the next
-			 * slot) when it is shown, else a 1920 x 1080 slot at
-			 * the running line pitch; x even: 8-byte VDMA alignment */
+			/* window = the mode; its line = the capture's real width
+			 * when it is shown, else the 1920-px slot line at the
+			 * running pitch; x even: 8-byte VDMA alignment */
 			size_t st = dz_geom_stride();
-			int sw = (int)(st / DZ_BPP), sh = (int)(DZ_SLOT_PITCH / st);
+			int sw = (int)(st / DZ_BPP);
 			dz_vdma_regs cr;
 			int maxx, maxy, x = 0, y = 0;
 
-			if (sh > 1080)
-				sh = 1080;
 			if (D[d].front && D[d].front == dz_capture_addr() &&
-			    dz_capture_regs(&cr) == 0 && cr.vsize) {
+			    dz_capture_regs(&cr) == 0 && cr.vsize)
 				sw = (int)(cr.hsize & 0xFFFF) / DZ_BPP;
-				sh = (int)(cr.vsize & 0x1FFF);
-			}
-			maxx = sw - dz_geom_w();
-			maxy = sh - dz_geom_h();
-			maxx = maxx < 0 ? 0 : maxx;
-			maxy = maxy < 0 ? 0 : maxy;
-
 			if (!strcmp(op, "crop") && n >= 2) {
 				x = a[0].type == 'f' ? (int)a[0].f : a[0].i;
 				y = a[1].type == 'f' ? (int)a[1].f : a[1].i;
@@ -801,12 +939,19 @@ int disp_dispatch(const dz_msg *m)
 				x = op[5] == 'x' ? v : D[d].cx;
 				y = op[5] == 'y' ? v : D[d].cy;
 			}
-			x = x < 0 ? 0 : x > maxx ? maxx : x;
-			y = y < 0 ? 0 : y > maxy ? maxy : y;
-			x &= ~1;
+			/* x: one line either way (beyond it = the next line).
+			 * y: only the size of the slot memory here; at() keeps
+			 * the real address inside it at every switch (a cue may
+			 * set the crop before it sets the source, so the slot
+			 * shown now is no limit) */
+			maxx = sw - 2;
+			x = x < -maxx ? -maxx : x > maxx ? maxx : x;
+			x = x < 0 ? -((-x + 1) & ~1) : x & ~1;
+			maxy = (int)((mem_hi - mem_lo) / st);
+			y = y < -maxy ? -maxy : y > maxy ? maxy : y;
 			D[d].cx = x;
 			D[d].cy = y;
-			D[d].want_off = (uint32_t)((size_t)y * st + (size_t)x * DZ_BPP);
+			D[d].want_off = (int32_t)((int64_t)y * (int64_t)st + (int64_t)x * DZ_BPP);
 			D[d].want_crop = 1;
 		}
 		pthread_mutex_unlock(&mu);

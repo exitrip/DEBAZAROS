@@ -11,6 +11,15 @@
 /* Painting buffer of surface (slot) i: w*h a8r8g8b8 words, allocated on
  * first use. NULL for a bad slot. Stops a movie that plays into the slot. */
 uint32_t *dz_surf(int i, int *w, int *h);
+/* The same for a op that may SPLAT on a live slot (text, shapes, sprites;
+ * ROADMAP.md section 19): on a live slot the buffer is read from the slot
+ * once per OSC message and the other writer (movie, capture, script)
+ * keeps running; elsewhere = dz_surf. */
+uint32_t *dz_surf_splat(int i, int *w, int *h);
+/* the same, but on a live slot only the area x0..x1, y0..y1 (exclusive)
+ * is read: the op must draw inside it (much faster than the whole slot:
+ * ~80-200 ms uncached) */
+uint32_t *dz_surf_splat_area(int i, int *w, int *h, int x0, int y0, int x1, int y1);
 /* One pixel with the surface alpha and blend mode, scaled by cov (0..256). */
 void dz_surf_put(int i, uint32_t *p, uint32_t v, unsigned cov);
 /* n pixels of src onto dst (in the painting buffer) with the surface alpha

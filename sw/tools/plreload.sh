@@ -28,7 +28,11 @@ if [ -d $DZA ]; then
 	[ -n "$dza_dev" ] && echo "$dza_dev" > $DZA/unbind
 fi
 # hdmi2 and debazd access PL registers all the time: stop them for the load
-kill $(pgrep debazd) $(pgrep -f hdmi2.elf) 2>/dev/null
+# (units, 2026-11-19: stopping debazd.service also stops its movies)
+UNITS=0
+systemctl cat debazd.service > /dev/null 2>&1 && UNITS=1
+[ $UNITS = 1 ] && systemctl stop debazd debaz-video
+kill $(pgrep -x debazd) $(pgrep -x hdmi2.elf) 2>/dev/null
 sleep 1
 /sbin/devmem 0x43020030 32 0x00010004
 sleep 1
@@ -45,9 +49,21 @@ if [ -n "$dza_dev" ]; then
 	echo "$dza_dev" > $DZA/bind
 	/usr/sbin/alsactl restore DEBAZ 2>/dev/null	# bind = controls back at Auto
 fi
-setsid nohup $D/hdmi2.elf "$@" > /tmp/hdmi2.log 2>&1 &
-sleep 4
-setsid nohup $D/debazd -v > /tmp/debazd.log 2>&1 &
-sleep 1
-sh $D/dzsetup.sh	# mixer + sync delays: without it HDMI_0 is black
+# the registers are at reset now: no resume of an old state, boot setup
+mkdir -p /run/debaz
+touch /run/debaz/fresh
+rm -f /run/debaz/autosave.bin
+if [ $UNITS = 1 ]; then
+	[ $# -ge 1 ] && echo "$*" > /run/debaz/video.args
+	systemctl start debaz-video
+	sleep 4
+	systemctl start debazd		# ExecStartPost: dzsetup.sh (fresh)
+else
+	setsid nohup $D/hdmi2.elf "$@" > /tmp/hdmi2.log 2>&1 &
+	sleep 4
+	setsid nohup $D/debazd -v > /tmp/debazd.log 2>&1 &
+	sleep 1
+	sh $D/dzsetup.sh	# mixer + sync delays: without it HDMI_0 is black
+	rm -f /run/debaz/fresh
+fi
 echo DONE

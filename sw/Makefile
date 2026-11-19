@@ -24,8 +24,8 @@ WWW     ?= /home/ebaz/www
 LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h debazd/*.h)
-BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/dzmosh $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay $(OUT)/dzbus
-SCRIPTS := tools/capstat.sh tools/plreload.sh tools/dzstart.sh tools/dzsetup.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
+BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/dzmosh $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay $(OUT)/dzbus $(OUT)/dzlua
+SCRIPTS := tools/capstat.sh tools/plreload.sh tools/dzstart.sh tools/dzrun.sh tools/dzsetup.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
 # the image: debaz-mac.sh + debaz-firstboot.sh come from recipe debaz-firstboot (/usr/sbin)
 IMG_SCRIPTS := $(filter-out tools/debaz-mac.sh tools/debaz-firstboot.sh,$(SCRIPTS))
 
@@ -64,6 +64,15 @@ $(OUT)/dzbus: $(OBJ)/tools/dzbus.o
 $(OUT)/dzmosh: $(OBJ)/dzmosh/dzmosh.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
+# dzlua: LuaJIT by dlopen (no headers); -rdynamic exports dzl_* to the FFI;
+# prelude.lua is built in (.incbin)
+$(OBJ)/dzlua/dzlua.o: dzlua/dzlua.c dzlua/prelude.lua $(HDRS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DDZL_PRELUDE='"$(abspath dzlua/prelude.lua)"' -c -o $@ $<
+
+$(OUT)/dzlua: $(OBJ)/dzlua/dzlua.o $(OUT)/libdz.a
+	$(CC) $(CFLAGS) -rdynamic -o $@ $^ $(LDFLAGS) -lm -lpthread -ldl $(LDLIBS)
+
 $(OUT)/fbfeed: $(OBJ)/fbfeed/fbfeed.o $(OUT)/libdz.a
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lpthread -ldl $(LDLIBS)
 
@@ -85,7 +94,8 @@ image-install: all
 	install -m 0755 $(IMG_SCRIPTS) $(DESTDIR)/usr/bin/
 	install -m 0644 dzweb/www/* $(DESTDIR)/usr/share/debaz/www/
 	install -m 0644 tools/image/dzstart.conf $(DESTDIR)/etc/debaz/
-	install -m 0644 tools/image/debaz.service $(DESTDIR)/lib/systemd/system/
+	install -m 0644 tools/image/debaz.service tools/image/debazd.service \
+		tools/image/debaz-video.service tools/image/dzweb.service $(DESTDIR)/lib/systemd/system/
 	install -m 0644 tools/image/99-debaz-hw.rules $(DESTDIR)/etc/udev/rules.d/
 	install -m 0644 tools/image/debaz-logind.conf $(DESTDIR)/etc/systemd/logind.conf.d/debaz.conf
 	install -m 0644 tools/image/debaz-sysctl.conf $(DESTDIR)/etc/sysctl.d/debaz.conf

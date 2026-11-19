@@ -2,6 +2,7 @@
 import * as net from "./net.js";
 import * as osc from "./osc.js";
 import { h, store } from "./ui.js";
+import * as luaedit from "./luaedit.js";
 
 const MAX = 400;
 let log, input, history = [], hpos = -1, paused = false;
@@ -27,7 +28,31 @@ function run(text) {
   hpos = -1;
 }
 
-export function init(root) {
+// two panels: OSC (the log + command line) and Lua (luaedit.js)
+let panes = {}, modeBtns = {};
+function mode(m) {
+  for (const k of Object.keys(panes)) {
+    panes[k].hidden = k !== m;
+    modeBtns[k].classList.toggle("on", k === m);
+  }
+  store.set("console.mode", m);
+  if (m === "lua") luaedit.show();
+}
+
+export function show() {
+  if (store.get("console.mode", "osc") === "lua") luaedit.show();
+}
+
+export function init(top) {
+  panes = { osc: h("div"), lua: h("div") };
+  modeBtns = {
+    osc: h("button", { title: "the OSC log and a command line", onclick: () => mode("osc") }, "OSC"),
+    lua: h("button", { title: "LuaJIT scripts that draw into a slot", onclick: () => mode("lua") }, "Lua"),
+  };
+  top.append(h("div.row", {}, modeBtns.osc, modeBtns.lua), panes.osc, panes.lua);
+  luaedit.init(panes.lua);
+  mode(store.get("console.mode", "osc"));
+  const root = panes.osc;
   history = store.get("history", []);
   log = h("div.log", { role: "log" });
   input = h("input", { type: "text", title: "an OSC message: /address args (Enter sends; Up/Down: history)", placeholder: '/disp/1/show 5   /draw/6/text 255 255 255 10 10 "hi" 2',

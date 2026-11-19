@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -70,6 +71,10 @@ typedef struct {
 	} cpu_prev[16];
 	int       cpu_n;
 	double    cpu_t;
+	double    used;			/* last get(), monotonic s (memory trim) */
+	int       evicted;		/* shadow freed clean: rebuild from the slot */
+	int       ox, oy;		/* origin in the slot (splat buffers, else 0) */
+	unsigned  job;			/* live slot: the OSC message that read it */
 } surf_t;
 
 static surf_t surf[DZ_SLOTS];
@@ -126,6 +131,32 @@ static long mem_avail_kb(void)
 /* keep this much RAM free after a new shadow (ffmpeg, decoders, the rest) */
 #define SURF_RESERVE_KB	(24 * 1024)
 
+static double mono_s(void)
+{
+	struct timespec t;
+
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (double)t.tv_sec + t.tv_nsec * 1e-9;
+}
+
+/* fill the shadow from the slot memory (uncached: ~60 ms for 1920 x 1080) */
+static int adopt_rows(surf_t *s, int i)
+{
+	const uint8_t *dev = dz_slot(i, (size_t)(s->oy + s->h - 1) * s->stride +
+					   (size_t)(s->ox + s->w) * 4, NULL);
+
+	if (!dev)
+		return -1;
+	for (int y = 0; y < s->h; y++) {
+		uint32_t *row = s->shadow + (size_t)y * s->w;
+
+		memcpy(row, dev + (size_t)(y + s->oy) * s->stride + (size_t)s->ox * 4, (size_t)s->w * 4);
+		for (int x = 0; x < s->w; x++)
+			row[x] |= 0xFF000000u;
+	}
+	return 0;
+}
+
 static void surf_release(int i)
 {
 	surf_t *s = &surf[i];
@@ -133,7 +164,155 @@ static void surf_release(int i)
 	dz_draw_movie_stop(i);
 	free(s->shadow);
 	s->shadow = NULL;
+	s->evicted = 0;
 	s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
+}
+
+/*
+ * Memory trim (2026-11-19). A shadow whose changes are all in the slot
+ * (nothing dirty, autoflush on) is a copy of the slot memory: it can go
+ * and come back from the slot on the next use (get(): adopt_rows), the
+ * movie of the slot keeps playing. The board has ~144 MB for Linux and a
+ * full shadow is 8.1 MB: on 2026-11-18 seven of them + a movie + a PNG save
+ * ran it out of memory and the kernel killed debazd.
+ */
+static int evictable(const surf_t *s)
+{
+	return s->shadow && s->autoflush && (s->dx1 <= s->dx0 || s->dy1 <= s->dy0);
+}
+
+static void evict(int i)
+{
+	surf_t *s = &surf[i];
+
+	free(s->shadow);
+	s->shadow = NULL;
+	s->evicted = 1;			/* w, h, stride kept: adopt at that size */
+}
+
+/*
+ * Free clean shadows, least recently used first, until want_kb are
+ * available; never `keep` and never one used in the last idle_s seconds (an
+ * operation can hold two shadows: src + dst, get() passes 1 s). deep = also
+ * the transform back buffer and the decode scratch: only BETWEEN jobs.
+ */
+long dz_draw_trim(long want_kb, int keep, double idle_s, int deep)
+{
+	long kb;
+	double now = mono_s();
+
+	if (deep) {
+		dz_xform_trim();	/* the transform back buffer (a whole surface) */
+		dz_img_trim();		/* this thread's decode scratch */
+	}
+	kb = mem_avail_kb();
+	while (kb >= 0 && kb < want_kb) {
+		int best = -1;
+
+		for (int i = 0; i < DZ_SLOTS; i++)
+			if (i != keep && evictable(&surf[i]) && now - surf[i].used >= idle_s &&
+			    (best < 0 || surf[i].used < surf[best].used))
+				best = i;
+		if (best < 0)
+			break;
+		evict(best);
+		fprintf(stderr, "dz_draw: memory: slot %d paint buffer freed (rebuilt from the slot "
+			"on its next use)\n", best);
+		kb = mem_avail_kb();
+	}
+	return kb;
+}
+
+/* once a second from the pixel thread: low memory = trim; idle buffers go */
+#define TRIM_LOW_KB	(48 * 1024)
+#define TRIM_IDLE_S	60.0
+void dz_draw_mem_tick(void)
+{
+	static double next;
+	double now = mono_s();
+	long kb;
+
+	if (now < next)
+		return;
+	next = now + 1.0;
+	kb = mem_avail_kb();
+	if (kb >= 0 && kb < TRIM_LOW_KB)
+		dz_draw_trim(TRIM_LOW_KB + 16 * 1024, -1, 2.0, 1);
+	for (int i = 0; i < DZ_SLOTS; i++)
+		if (evictable(&surf[i]) && now - surf[i].used >= TRIM_IDLE_S)
+			evict(i);
+}
+
+/* someone else writes slot i directly (slit.c): drop its paint buffer, the
+ * next draw continues on the slot's picture (a movie keeps playing) */
+void dz_draw_adopt(int i)
+{
+	if (i < 0 || i >= DZ_SLOTS || (!surf[i].shadow && surf[i].evicted))
+		return;			/* nothing to drop (slit.c calls it each frame) */
+	if (surf[i].shadow) {
+		free(surf[i].shadow);
+		surf[i].shadow = NULL;
+		surf[i].dx0 = surf[i].dy0 = surf[i].dx1 = surf[i].dy1 = 0;
+		surf[i].evicted = 1;
+	} else if (!surf[i].evicted) {
+		size_t st;
+
+		canvas_size(i, &surf[i].w, &surf[i].h, &st);
+		surf[i].stride = st;
+		surf[i].alpha = 256;
+		surf[i].blend = DZ_BLEND_NORMAL;
+		surf[i].autoflush = 1;
+		surf[i].evicted = 1;
+	}
+	surf[i].iname[0] = 0;
+}
+
+/* after a debazd restart: the slots still hold the pictures; the first draw
+ * on a slot continues on its picture instead of a black canvas */
+void dz_draw_adopt_all(void)
+{
+	for (int i = 0; i < DZ_SLOTS; i++)
+		if (!surf[i].shadow) {
+			size_t st;
+
+			canvas_size(i, &surf[i].w, &surf[i].h, &st);
+			surf[i].stride = st;
+			surf[i].alpha = 256;
+			surf[i].blend = DZ_BLEND_NORMAL;
+			surf[i].autoflush = 1;
+			surf[i].evicted = 1;
+		}
+}
+
+/*
+ * Shared slots (2026-11-20, ROADMAP.md section 19). A slot is LIVE while
+ * another writer refreshes it: a movie plays there, it is the capture
+ * slot, or (dz_draw_live_hook) a script runs there. On a live slot the
+ * slot memory is the picture:
+ *   - brush, stroke, line, rect, ellipse, solid / gradient / corners with
+ *     a rectangle SPLAT: the op's rectangle is read from the slot into a
+ *     buffer of that size (rd, origin ox / oy), drawn and written back.
+ *     The other writer keeps running.
+ *   - the other users of the paint buffer (text, shapes, sprites via
+ *     dz_surf_splat; the take-over ops before they stop the writer) get a
+ *     buffer read from the slot once per OSC message; dz_draw_job_end
+ *     frees it after the message (it is old as soon as the writer writes).
+ */
+int (*dz_draw_live_hook)(int slot);
+static unsigned job = 1;
+static struct {
+	int    on, slot;
+	surf_t t;
+} rd;
+
+static int live(int i)
+{
+	return surf[i].player > 0 || i == DZ_SLOT_CAPTURE || (dz_draw_live_hook && dz_draw_live_hook(i));
+}
+
+int dz_draw_live(int i)
+{
+	return i >= 0 && i < DZ_SLOTS && live(i);
 }
 
 static surf_t *get(int i)
@@ -144,14 +323,31 @@ static surf_t *get(int i)
 
 	if (i < 0 || i >= DZ_SLOTS)
 		return NULL;
+	if (rd.on && i == rd.slot)
+		return &rd.t;
 	s = &surf[i];
+	if (s->shadow && s->job != job && live(i)) {
+		s->job = job;		/* first: present() calls get() */
+		dz_draw_present(i);	/* what is pending, then read the slot again */
+		dz_draw_adopt(i);
+	}
+	if (live(i))
+		s->job = job;
 	canvas_size(i, &w, &h, &st);
 	if (s->shadow && (s->w != w || s->h != h || s->stride != st))
 		surf_release(i);
+	s->used = mono_s();
 	if (!s->shadow) {
 		size_t bytes = (size_t)w * h * sizeof(uint32_t);
 		long kb = mem_avail_kb();
+		/* rebuilt from the slot: it was freed clean at this size */
+		int adopt = s->evicted && s->w == w && s->h == h && s->stride == st;
+		/* a live slot: always its picture (2026-11-20), and the defaults
+		 * only for a surface never set up */
+		int read = adopt || live(i), fresh = !adopt && !s->evicted;
 
+		if (kb >= 0 && kb - (long)(bytes / 1024) < SURF_RESERVE_KB)
+			kb = dz_draw_trim(SURF_RESERVE_KB + (long)(bytes / 1024), i, 1.0, 0);
 		if (kb >= 0 && kb - (long)(bytes / 1024) < SURF_RESERVE_KB) {
 			fprintf(stderr, "dz_draw: surface %d needs %zu kB, %ld kB free: refused "
 				"(/surface/<s>/free, or /surface/<s>/canvas mode)\n", i, bytes / 1024, kb);
@@ -159,21 +355,24 @@ static surf_t *get(int i)
 				   "or /surface/<s>/canvas mode";
 			return NULL;
 		}
+		if (fresh) {			/* a new surface: the defaults */
+			s->alpha = 256;
+			s->blend = DZ_BLEND_NORMAL;
+			s->autoflush = 1;
+		}
 		s->w = w;
 		s->h = h;
 		s->stride = st;
-		s->alpha = 256;
-		s->blend = DZ_BLEND_NORMAL;
-		s->autoflush = 1;
-		s->player = 0;
-		s->shadow = calloc((size_t)s->w * s->h, sizeof(uint32_t));
+		s->shadow = malloc((size_t)s->w * s->h * sizeof(uint32_t));
 		if (!s->shadow) {
 			fprintf(stderr, "dz_draw: no memory for surface %d\n", i);
 			surf_err = "no RAM for the surface";
 			return NULL;
 		}
-		for (size_t k = 0; k < (size_t)s->w * s->h; k++)
-			s->shadow[k] = 0xFF000000u;
+		s->evicted = 0;
+		if (!read || adopt_rows(s, i) < 0)
+			for (size_t k = 0; k < (size_t)s->w * s->h; k++)
+				s->shadow[k] = 0xFF000000u;
 	}
 	return s;
 }
@@ -252,12 +451,12 @@ int dz_draw_present(int i)
 		return -1;
 	if (s->dx1 <= s->dx0 || s->dy1 <= s->dy0)
 		return 0;
-	dev = dz_slot(i, (size_t)(s->h - 1) * s->stride + (size_t)s->w * 4, NULL);
+	dev = dz_slot(i, (size_t)(s->oy + s->h - 1) * s->stride + (size_t)(s->ox + s->w) * 4, NULL);
 	if (!dev)
 		return -1;
 	x0 = s->dx0; y0 = s->dy0; x1 = s->dx1; y1 = s->dy1;
 	for (int y = y0; y < y1; y++)
-		memcpy(dev + (size_t)y * s->stride + (size_t)x0 * 4,
+		memcpy(dev + (size_t)(y + s->oy) * s->stride + (size_t)(x0 + s->ox) * 4,
 		       s->shadow + (size_t)y * s->w + x0, (size_t)(x1 - x0) * 4);
 	/* drain the write buffer: the VDMA reads DDR and does not snoop */
 	__sync_synchronize();
@@ -397,9 +596,179 @@ static void span(surf_t *s, int y, int x0, int x1, uint32_t v)
 	dirty(s, x0, y, x1, y + 1);
 }
 
+/* ---- splat on a live slot -------------------------------------------------- */
+/* start: the slot rectangle x0..x1, y0..y1 (exclusive, clipped to the
+ * canvas) into a buffer of its size; -1 = nothing to draw, -2 = no RAM */
+static int splat_begin(int i, int x0, int y0, int x1, int y1, int *ox, int *oy)
+{
+	surf_t *b = &surf[i], *t = &rd.t;
+	int w, h, have = b->shadow || b->evicted;
+	size_t st;
+
+	canvas_size(i, &w, &h, &st);
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > w) x1 = w;
+	if (y1 > h) y1 = h;
+	if (x1 <= x0 || y1 <= y0)
+		return -1;
+	if (b->shadow) {		/* a full buffer is old here: drop it */
+		b->job = job;		/* present() -> get(): no new read */
+		dz_draw_present(i);
+		dz_draw_adopt(i);
+	}
+	memset(t, 0, sizeof(*t));
+	t->w = x1 - x0;
+	t->h = y1 - y0;
+	t->stride = st;
+	t->ox = x0;
+	t->oy = y0;
+	t->alpha = have ? b->alpha : 256;
+	t->blend = have ? b->blend : DZ_BLEND_NORMAL;
+	t->autoflush = 1;
+	t->shadow = malloc((size_t)t->w * t->h * 4);
+	if (!t->shadow) {
+		surf_err = "no RAM for the splat";
+		return -2;
+	}
+	if (adopt_rows(t, i) < 0) {
+		free(t->shadow);
+		return -2;
+	}
+	b->iname[0] = 0;
+	rd.slot = i;
+	rd.on = 1;
+	*ox = x0;
+	*oy = y0;
+	return 0;
+}
+
+static void splat_end(void)
+{
+	free(rd.t.shadow);
+	rd.t.shadow = NULL;
+	rd.on = 0;
+}
+
+/* in an op: on a live slot, run the op again on the rectangle's buffer
+ * (call uses ox_ / oy_ to move its coordinates) and return its result */
+#define SPLAT(i, x0, y0, x1, y1, call) do {					\
+		int ox_, oy_, rc_ = splat_begin((i), (x0), (y0), (x1), (y1), &ox_, &oy_); \
+		if (rc_ == -1)							\
+			return 0;						\
+		if (rc_ < 0)							\
+			return -1;						\
+		rc_ = (call);							\
+		splat_end();							\
+		return rc_;							\
+	} while (0)
+#define SPLATTING(i)	(!rd.on && live(i))
+
+static int is_all(dz_rect r)
+{
+	return r.x == 0 && r.y == 0 && r.w == 0 && r.h == 0;
+}
+
+static dz_rect norm_rect(dz_rect r)
+{
+	if (r.w < 0) { r.x += r.w; r.w = -r.w; }
+	if (r.h < 0) { r.y += r.h; r.h = -r.h; }
+	return r;
+}
+
+/* the buffer of the canvas for text, shapes and sprites. On a live slot
+ * only the area x0..x1, y0..y1 (exclusive) is read from the slot, into a
+ * full-size buffer whose other pages are never touched (malloc = lazy
+ * zero pages): the op must draw inside the area. The buffer lives for
+ * this OSC message (dz_draw_job_end); the other writer keeps running. */
+uint32_t *dz_surf_splat_area(int i, int *w, int *h, int x0, int y0, int x1, int y1)
+{
+	surf_t *s;
+	int cw, ch;
+	size_t st;
+	const uint8_t *dev;
+
+	if (i < 0 || i >= DZ_SLOTS || !live(i))
+		return dz_surf(i, w, h);
+	s = &surf[i];
+	canvas_size(i, &cw, &ch, &st);
+	if (s->shadow && (s->job != job || s->w != cw || s->h != ch || s->stride != st)) {
+		s->job = job;		/* present() -> get(): no new read */
+		dz_draw_present(i);
+		dz_draw_adopt(i);
+	}
+	if (!s->shadow) {
+		long kb = mem_avail_kb(), need = (long)((size_t)cw * ch * 4 / 1024);
+
+		if (kb >= 0 && kb - need < SURF_RESERVE_KB)
+			kb = dz_draw_trim(SURF_RESERVE_KB + need, i, 1.0, 0);
+		if (kb >= 0 && kb - need < SURF_RESERVE_KB) {
+			surf_err = "no RAM for the surface";
+			return NULL;
+		}
+		if (!s->evicted) {		/* never set up: the defaults */
+			s->alpha = 256;
+			s->blend = DZ_BLEND_NORMAL;
+			s->autoflush = 1;
+		}
+		s->w = cw;
+		s->h = ch;
+		s->stride = st;
+		s->shadow = malloc((size_t)cw * ch * 4);	/* not filled: lazy pages */
+		if (!s->shadow) {
+			surf_err = "no RAM for the surface";
+			return NULL;
+		}
+		s->evicted = 0;
+		s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
+	}
+	s->job = job;
+	s->used = mono_s();
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > cw) x1 = cw;
+	if (y1 > ch) y1 = ch;
+	dev = dz_slot(i, (size_t)(ch - 1) * st + (size_t)cw * 4, NULL);
+	if (dev && x1 > x0)
+		for (int y = y0; y < y1; y++)
+			memcpy(s->shadow + (size_t)y * cw + x0, dev + (size_t)y * st + (size_t)x0 * 4,
+			       (size_t)(x1 - x0) * 4);
+	s->iname[0] = 0;
+	*w = cw;
+	*h = ch;
+	return s->shadow;
+}
+
+uint32_t *dz_surf_splat(int i, int *w, int *h)
+{
+	return dz_surf_splat_area(i, w, h, 0, 0, 1 << 20, 1 << 20);
+}
+
+/* after each OSC message (pixel thread): the buffers read from live slots
+ * this message are old now: present what is pending, free them */
+void dz_draw_job_end(void)
+{
+	for (int i = 0; i < DZ_SLOTS; i++)
+		if (surf[i].shadow && surf[i].job == job && live(i)) {
+			dz_draw_present(i);
+			dz_draw_adopt(i);
+		}
+	job++;
+	if (!job)
+		job = 1;
+}
+
 /* ---- drawing ---------------------------------------------------------------- */
 int dz_draw_solid(int i, dz_color c, dz_rect r)
 {
+	if (SPLATTING(i) && !is_all(r)) {
+		dz_rect n = norm_rect(r);
+
+		if (!n.w || !n.h)
+			return 0;
+		SPLAT(i, n.x, n.y, n.x + n.w, n.y + n.h,
+		      dz_draw_solid(i, c, (dz_rect){ n.x - ox_, n.y - oy_, n.w, n.h }));
+	}
 	surf_t *s = get(i);
 	uint32_t v;
 
@@ -436,6 +805,14 @@ int dz_draw_bars(int i)
 
 int dz_draw_gradient(int i, dz_color a, dz_color b, float degrees, dz_rect r)
 {
+	if (SPLATTING(i) && !is_all(r)) {
+		dz_rect n = norm_rect(r);
+
+		if (!n.w || !n.h)
+			return 0;
+		SPLAT(i, n.x, n.y, n.x + n.w, n.y + n.h,
+		      dz_draw_gradient(i, a, b, degrees, (dz_rect){ n.x - ox_, n.y - oy_, n.w, n.h }));
+	}
 	surf_t *s = get(i);
 	float rad, ca, sa, p0, p1, den, corner[4];
 
@@ -480,6 +857,14 @@ int dz_draw_gradient(int i, dz_color a, dz_color b, float degrees, dz_rect r)
 int dz_draw_corners(int i, dz_color tl, dz_color tr, dz_color bl, dz_color br,
 		    dz_rect r)
 {
+	if (SPLATTING(i) && !is_all(r)) {
+		dz_rect n = norm_rect(r);
+
+		if (!n.w || !n.h)
+			return 0;
+		SPLAT(i, n.x, n.y, n.x + n.w, n.y + n.h,
+		      dz_draw_corners(i, tl, tr, bl, br, (dz_rect){ n.x - ox_, n.y - oy_, n.w, n.h }));
+	}
 	surf_t *s = get(i);
 
 	if (!s || !clip(s, &r))
@@ -511,6 +896,16 @@ int dz_draw_corners(int i, dz_color tl, dz_color tr, dz_color bl, dz_color br,
 
 int dz_draw_rect(int i, dz_color c, dz_rect r, int t)
 {
+	if (t <= 0)
+		return dz_draw_solid(i, c, r);
+	if (SPLATTING(i) && !is_all(r)) {
+		dz_rect n = norm_rect(r);
+
+		if (!n.w || !n.h)
+			return 0;
+		SPLAT(i, n.x, n.y, n.x + n.w, n.y + n.h,
+		      dz_draw_rect(i, c, (dz_rect){ n.x - ox_, n.y - oy_, n.w, n.h }, t));
+	}
 	surf_t *s = get(i);
 	uint32_t v;
 
@@ -538,6 +933,9 @@ int dz_draw_rect(int i, dz_color c, dz_rect r, int t)
 
 int dz_draw_ellipse(int i, dz_color c, int cx, int cy, int rx, int ry, int t)
 {
+	if (SPLATTING(i) && rx > 0 && ry > 0)
+		SPLAT(i, cx - rx - 1, cy - ry - 1, cx + rx + 2, cy + ry + 2,
+		      dz_draw_ellipse(i, c, cx - ox_, cy - oy_, rx, ry, t));
 	surf_t *s = get(i);
 	uint32_t v;
 
@@ -640,6 +1038,9 @@ static void stamp_line(surf_t *s, uint32_t v, float x0, float y0, float x1, floa
 
 int dz_draw_brush(int i, dz_color c, int x, int y, int radius, float hardness)
 {
+	if (SPLATTING(i) && radius > 0)
+		SPLAT(i, x - radius - 1, y - radius - 1, x + radius + 2, y + radius + 2,
+		      dz_draw_brush(i, c, x - ox_, y - oy_, radius, hardness));
 	surf_t *s = get(i);
 
 	if (!s || radius <= 0)
@@ -652,6 +1053,13 @@ int dz_draw_brush(int i, dz_color c, int x, int y, int radius, float hardness)
 
 int dz_draw_line(int i, dz_color c, int x0, int y0, int x1, int y1, int width)
 {
+	if (SPLATTING(i)) {
+		int m = (width > 1 ? width / 2 : 0) + 2;
+
+		SPLAT(i, (x0 < x1 ? x0 : x1) - m, (y0 < y1 ? y0 : y1) - m,
+		      (x0 > x1 ? x0 : x1) + m + 1, (y0 > y1 ? y0 : y1) + m + 1,
+		      dz_draw_line(i, c, x0 - ox_, y0 - oy_, x1 - ox_, y1 - oy_, width));
+	}
 	surf_t *s = get(i);
 	uint32_t v;
 
@@ -685,6 +1093,37 @@ int dz_draw_line(int i, dz_color c, int x0, int y0, int x1, int y1, int width)
 
 int dz_draw_stroke(int i, dz_color c, int radius, float hardness, const int *xy, int npts)
 {
+	if (SPLATTING(i) && radius > 0 && npts >= 1) {
+		int bx0 = xy[0], by0 = xy[1], bx1 = xy[0], by1 = xy[1], rc;
+		int *q = malloc(sizeof(int) * 2 * (size_t)npts);
+
+		if (!q)
+			return -1;
+		for (int k = 1; k < npts; k++) {
+			bx0 = xy[2 * k] < bx0 ? xy[2 * k] : bx0;
+			bx1 = xy[2 * k] > bx1 ? xy[2 * k] : bx1;
+			by0 = xy[2 * k + 1] < by0 ? xy[2 * k + 1] : by0;
+			by1 = xy[2 * k + 1] > by1 ? xy[2 * k + 1] : by1;
+		}
+		{
+			int ox_, oy_;
+
+			rc = splat_begin(i, bx0 - radius - 1, by0 - radius - 1, bx1 + radius + 2,
+					 by1 + radius + 2, &ox_, &oy_);
+			if (rc == 0) {
+				for (int k = 0; k < npts; k++) {
+					q[2 * k] = xy[2 * k] - ox_;
+					q[2 * k + 1] = xy[2 * k + 1] - oy_;
+				}
+				rc = dz_draw_stroke(i, c, radius, hardness, q, npts);
+				splat_end();
+			} else if (rc == -1) {
+				rc = 0;
+			}
+		}
+		free(q);
+		return rc;
+	}
 	surf_t *s = get(i);
 	uint32_t v;
 
@@ -831,12 +1270,31 @@ uint32_t *dz_surf(int i, int *w, int *h)
 	return s->shadow;
 }
 
+/* one pixel. Callers run it per pixel (sprites, shapes), so the surface
+ * is looked up once per OSC message: get() checks the live state and reads
+ * the clock (a system call here), 2026-11-20: one bouncing sprite took 50 %
+ * of the pixel thread, a quarter of it in clock_gettime */
 void dz_surf_put(int i, uint32_t *p, uint32_t v, unsigned cov)
 {
-	surf_t *s = get(i);
+	static int c_i = -1, c_rd;
+	static unsigned c_job;
+	static surf_t *c_s;
+	static uint32_t *c_shadow;
+	surf_t *s;
 
-	if (s)
-		put(s, p, v, cov);
+	if (i == c_i && job == c_job && rd.on == c_rd && c_s && c_s->shadow == c_shadow && c_shadow) {
+		put(c_s, p, v, cov);
+		return;
+	}
+	s = get(i);
+	if (!s)
+		return;
+	c_i = i;
+	c_job = job;
+	c_rd = rd.on;
+	c_s = s;
+	c_shadow = s->shadow;
+	put(s, p, v, cov);
 }
 
 /* mix() of a whole span: d + (((v - d) * a) >> 8) per colour byte, alpha
@@ -1162,19 +1620,52 @@ const char *dz_draw_img_name(int i)
  * waited for a movie that kept running and debazd hung. */
 extern char **environ;
 
+/*
+ * debazd.service gives debazd OOMScoreAdjust=-800 (2026-11-19): the kernel
+ * kills a movie, not the daemon, when RAM runs out. Children inherit it,
+ * so the shell of every child sets its own value back to 0 first.
+ */
+static int own_oom_adj(void)
+{
+	static int v = 1;	/* 1 = not read yet */
+
+	if (v == 1) {
+		FILE *f = fopen("/proc/self/oom_score_adj", "r");
+
+		v = 0;
+		if (f) {
+			if (fscanf(f, "%d", &v) != 1)
+				v = 0;
+			fclose(f);
+		}
+	}
+	return v;
+}
+
 static pid_t spawn_sh(const char *cmd, int rt_prio, const char *out)
 {
 	posix_spawnattr_t at;
 	posix_spawn_file_actions_t fa;
+	static const char pre[] = "echo 0 > /proc/self/oom_score_adj 2>/dev/null; ";
+	char *full = NULL;
 	char *argv[] = { "sh", "-c", (char *)cmd, NULL };
+
+	if (own_oom_adj() < 0 && (full = malloc(sizeof(pre) + strlen(cmd)))) {
+		memcpy(full, pre, sizeof(pre) - 1);
+		strcpy(full + sizeof(pre) - 1, cmd);
+		argv[2] = full;
+	}
 	short fl = POSIX_SPAWN_SETSID;
 	pid_t pid = 0;
 	int rc;
 
-	if (posix_spawnattr_init(&at))
+	if (posix_spawnattr_init(&at)) {
+		free(full);
 		return 0;
+	}
 	if (posix_spawn_file_actions_init(&fa)) {
 		posix_spawnattr_destroy(&at);
+		free(full);
 		return 0;
 	}
 	if (rt_prio > 0) {	/* inherited by ffmpeg */
@@ -1197,6 +1688,7 @@ static pid_t spawn_sh(const char *cmd, int rt_prio, const char *out)
 	rc = posix_spawn(&pid, "/bin/sh", &fa, &at, argv, environ);
 	posix_spawn_file_actions_destroy(&fa);
 	posix_spawnattr_destroy(&at);
+	free(full);
 	return rc == 0 ? pid : 0;
 }
 
@@ -1265,9 +1757,16 @@ int dz_draw_movie_running(int i)
 	return 1;
 }
 
+void (*dz_draw_claim_hook)(int slot);
+
 int dz_draw_movie_stop(int i)
 {
 	surf_t *s = (i >= 0 && i < DZ_SLOTS) ? &surf[i] : NULL;
+
+	if (rd.on && i == rd.slot)	/* a splat: the writer keeps running */
+		return 0;
+	if (s && dz_draw_claim_hook)	/* another writer of the slot stops too */
+		dz_draw_claim_hook(i);
 
 	if (s && s->aplayer > 0) {
 		dz_kill_group(s->aplayer, SIGKILL);	/* at once: no ALSA buffer play-out */
@@ -1322,9 +1821,47 @@ int dz_draw_movie_play_fps(int i, const char *name, float fps)
  * Now the sound stays smooth; on an overloaded CPU the picture falls behind
  * instead. A file without audio: the shell checks for an audio stream
  * (ffprobe) and exits, so this call does not wait. */
+/*
+ * The surface of a movie slot WITHOUT a shadow (2026-11-19): fbfeed writes
+ * the slot itself, only the line pitch matters. Before, every movie slot
+ * allocated an 8.1 MB shadow it never used. A later draw adopts the slot
+ * (the movie frame).
+ */
+static surf_t *movie_surf(int i)
+{
+	surf_t *s;
+	int w, h;
+	size_t st;
+
+	if (i < 0 || i >= DZ_SLOTS)
+		return NULL;
+	s = &surf[i];
+	canvas_size(i, &w, &h, &st);
+	if (s->shadow && (s->w != w || s->h != h || s->stride != st))
+		surf_release(i);
+	if (!s->shadow) {
+		if (!s->evicted) {
+			s->alpha = 256;
+			s->blend = DZ_BLEND_NORMAL;
+			s->autoflush = 1;
+		}
+		s->w = w;
+		s->h = h;
+		s->stride = st;
+		s->evicted = 1;
+	}
+	s->used = mono_s();
+	return s;
+}
+
+/* a movie chain (ffmpeg copy + decoder + audio, dzmosh, fbfeed) takes ~20-25
+ * MB: free paint buffers for it, refuse when RAM stays short */
+#define MOVIE_WANT_KB	(40 * 1024)
+#define MOVIE_MIN_KB	(24 * 1024)
+
 int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 {
-	surf_t *s = get(i);
+	surf_t *s = movie_surf(i);
 	char cmd[3200], path[256], dst[96], cap[32] = "", aud[1200] = "", vf[210] = "";
 	char mname[100], fxo[80], geo[128];
 	static const int pcm_of[3] = { 0, 1, 3 };
@@ -1332,6 +1869,17 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 
 	if (!s || !name_ok(name))
 		return -1;
+	{
+		long kb = mem_avail_kb();
+
+		if (kb >= 0 && kb < MOVIE_WANT_KB)
+			kb = dz_draw_trim(MOVIE_WANT_KB, -1, 1.0, 0);
+		if (kb >= 0 && kb < MOVIE_MIN_KB) {
+			fprintf(stderr, "dz_draw: movie on slot %d refused: %ld kB free\n", i, kb);
+			surf_err = "no RAM for a movie: /surface/<s>/free paint buffers or stop a movie";
+			return -1;
+		}
+	}
 	snprintf(mname, sizeof(mname), "%s", name);	/* name may be s->mname */
 	dz_draw_movie_stop(i);
 	s->iname[0] = 0;
@@ -2050,55 +2598,81 @@ static int save_ppm(surf_t *s, const char *name)
 }
 
 /*
- * PNG: copy the shadow to a raw file in /tmp (fast), then a background
- * ffmpeg encodes it (about 1 s for 720p on the A9) to ".<name>.png" - hidden
- * from the media list while it grows - and renames it to "<name>.png". The
- * OSC loop does not wait. Double fork: no zombie, no SIGCHLD handler needed.
+ * Save (2026-11-19): PNG (default, lossless: the paint drafts) or JPEG
+ * (quality 92: smaller, faster to load in a cue), encoded here, written
+ * hidden and renamed. Was: a raw copy in /tmp (= RAM) + a background
+ * ffmpeg (~25 MB): that ran the board out of memory on 2026-11-18. A slot
+ * without a paint buffer saves its picture (adopted from the slot memory),
+ * not black.
  */
-static int save_png(surf_t *s, const char *base)
-{
-	static unsigned seq;
-	char raw[96], cmd[768];
-	FILE *fp;
-	size_t n = (size_t)s->w * s->h;
-
-	snprintf(raw, sizeof(raw), "/tmp/dz_save_%d_%u.raw", (int)getpid(), seq++);
-	fp = fopen(raw, "wb");
-	if (!fp)
-		return -1;
-	if (fwrite(s->shadow, 4, n, fp) != n) {	/* 0x..RRGGBB = bgr0 bytes */
-		fclose(fp);
-		unlink(raw);
-		return -1;
-	}
-	fclose(fp);
-	snprintf(cmd, sizeof(cmd),
-		 "ffmpeg -nostdin -hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr0 "
-		 "-s %dx%d -i '%s' -frames:v 1 -pix_fmt rgb24 '%s/.%s.png' && "
-		 "mv -f '%s/.%s.png' '%s/%s.png'; rm -f '%s'",
-		 s->w, s->h, raw, DZ_IMG_DIR, base, DZ_IMG_DIR, base, DZ_IMG_DIR, base, raw);
-	if (dz_spawn_detached(cmd, NULL) < 0) {
-		unlink(raw);
-		return -1;
-	}
-	return 0;
-}
-
 int dz_draw_save(int i, const char *name)
 {
-	surf_t *s = get(i);
-	char base[100];
+	surf_t *s;
+	char base[100], path[300], err[160] = "";
 	size_t l;
+	int jpg = 0, rc;
+	double t0 = mono_s();
 
-	if (!s || !name_ok(name))
+	if (i < 0 || i >= DZ_SLOTS || !name_ok(name))
+		return -1;
+	if (!surf[i].shadow && !surf[i].evicted) {	/* never drawn: the slot's picture */
+		size_t st;
+
+		canvas_size(i, &surf[i].w, &surf[i].h, &st);
+		surf[i].stride = st;
+		surf[i].alpha = 256;
+		surf[i].blend = DZ_BLEND_NORMAL;
+		surf[i].autoflush = 1;
+		surf[i].evicted = 1;
+	}
+	s = get(i);
+	if (!s)
 		return -1;
 	l = strlen(name);
 	if (l > 4 && !strcmp(name + l - 4, ".ppm"))
 		return save_ppm(s, name);
 	snprintf(base, sizeof(base), "%.96s", name);
-	if (l > 4 && !strcmp(base + l - 4, ".png"))
+	if (l > 4 && !strcasecmp(base + l - 4, ".png")) {
 		base[l - 4] = 0;
-	return save_png(s, base);
+	} else if (l > 4 && !strcasecmp(base + l - 4, ".jpg")) {
+		base[l - 4] = 0;
+		jpg = 1;
+	} else if (l > 5 && !strcasecmp(base + l - 5, ".jpeg")) {
+		base[l - 5] = 0;
+		jpg = 1;
+	}
+	snprintf(path, sizeof(path), "%s/%s.%s", DZ_IMG_DIR, base, jpg ? "jpg" : "png");
+	if (jpg)
+		rc = dz_img_save_jpeg(path, (const uint8_t *)s->shadow, (size_t)s->w * 4, s->w, s->h,
+				      92, err, sizeof(err));
+	else
+		rc = dz_img_save_png(path, (const uint8_t *)s->shadow, (size_t)s->w * 4, s->w, s->h,
+				     err, sizeof(err));
+	if (rc) {
+		fprintf(stderr, "dz_draw: save %s: %s\n", path, err);
+		surf_err = "save failed (see the log)";
+		return -1;
+	}
+	fprintf(stderr, "dz_draw: saved slot %d -> %s (%dx%d, %.0f ms)\n", i, path, s->w, s->h,
+		(mono_s() - t0) * 1000.0);
+	return 0;
+}
+
+long dz_draw_mem_avail_kb(void)
+{
+	return mem_avail_kb();
+}
+
+int dz_draw_buffers(int *n, long *kb)
+{
+	*n = 0;
+	*kb = 0;
+	for (int i = 0; i < DZ_SLOTS; i++)
+		if (surf[i].shadow) {
+			(*n)++;
+			*kb += (long)((size_t)surf[i].w * surf[i].h * 4 / 1024);
+		}
+	return *n;
 }
 
 /* ---- OSC ------------------------------------------------------------------- */
@@ -2363,11 +2937,28 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 				 * stays), the same image = nothing, else the slot black
 				 * and the image at its own size at the top left (a
 				 * playlist: no movie frame left around a small image) */
-				if (!a[0].s[0])
+				if (!a[0].s[0]) {
 					surf[i].iname[0] = 0;
-				else if (strcmp(surf[i].iname, a[0].s) &&
-					 (dz_draw_solid(i, DZ_RGB8(0, 0, 0), DZ_ALL) || dz_draw_image(i, a[0].s, DZ_ALL)))
-					fails++;
+				} else if (strcmp(surf[i].iname, a[0].s)) {
+					/* black + image in the paint buffer, then ONE copy
+					 * to the slot (2026-11-19): a shown slot never
+					 * flashes the black fill */
+					surf_t *s = get(i);
+					int rc = -1;
+
+					if (s) {
+						int af = s->autoflush;
+
+						s->autoflush = 0;
+						rc = dz_draw_solid(i, DZ_RGB8(0, 0, 0), DZ_ALL) ||
+						     dz_draw_image(i, a[0].s, DZ_ALL);
+						s->autoflush = af;
+						if (dz_draw_present(i) < 0)
+							rc = -1;
+					}
+					if (rc)
+						fails++;
+				}
 				hits++;
 			} else if ((mask & (1u << i)) && !strcmp(op, "load") && n >= 1 && a[0].type == 's') {
 				int rc = dz_draw_image(i, a[0].s, rect_at(a, n, 1));

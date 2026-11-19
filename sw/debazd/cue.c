@@ -52,6 +52,9 @@
  *   /scene/add | delete | rename | list
  *   /show/new <name>, /show/load <name>, /show/reload, /show/save [name]
  *                [force], /show/list, /show/baseline (the state now),
+ *   /show/import </tmp/dzweb-import-x.json> [name]   a bundle uploaded by
+ *                dzweb (PUT /shows/<name>.json) into the show folder; the
+ *                old folder is kept as <name>-bak-<date> (2026-11-19)
  *   /show/check -> /show/issue s:where s:what ..., /show/check/end i:count
  *
  * Files: DZ_SHOW_DIR/<show>/ ($DZ_SHOW_DIR, else /data/shows; simulation
@@ -71,6 +74,7 @@
 #include "dz_hw.h"
 #include "dz_map.h"
 #include "dz_osc.h"
+#include "dz_path.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -443,8 +447,92 @@ static int is_dip_field(const char *path)
 
 /* apply d (the targets that differ) with a transition; now = the state now
  * (where the ramps start) */
+/*
+ * Media gate (2026-11-19): a cue that loads media (an image, a movie: work
+ * of the pixel thread, PNG decode 100-500 ms) AND switches a display used
+ * to switch at the next vsync, while the slot still held its old picture or
+ * the black fill: a cut showed the old slot content, then black, then the
+ * image. Now the switches of such a cue (and all its other plain messages,
+ * so the cue lands as one) wait until the pixel thread ran the cue's media
+ * messages, at most GATE_MAX s; then they go out in one frame tick. Ramps
+ * (fade) start at once. A new go drops a waiting gate (its diff is made
+ * against the state as it is: the old switch).
+ */
+#define GATE_MAX	3.0
+static struct {
+	int           on;
+	unsigned long mark;		/* pix fence */
+	double        t;
+	st_list       pend;		/* messages in order */
+} gate;
+
+static int is_switch(const char *path)
+{
+	return !strncmp(path, "/disp/", 6) || !strncmp(path, "/anim/", 6);
+}
+
+/* does list d have media work AND a display switch? */
+static int needs_gate(const st_list *d)
+{
+	int media = 0, sw = 0;
+
+	for (int i = 0; i < d->n; i++) {
+		media |= pix_owns(d->t[i].key);
+		sw |= is_switch(d->t[i].key);
+	}
+	return media && sw;
+}
+
+/* the displays a waiting gate switches: their sequences hold (disp.c) */
+static void gate_hold(int on)
+{
+	for (int i = 0; i < gate.pend.n; i++) {
+		int d;
+
+		if (sscanf(gate.pend.t[i].key, "/disp/%d/", &d) == 1)
+			disp_seq_hold(d, on);
+	}
+}
+
+static void gate_flush(void)
+{
+	for (int i = 0; i < gate.pend.n; i++) {
+		dz_msg m;
+
+		if (dz_osc_parse(gate.pend.t[i].msg, gate.pend.t[i].len, &m) == 0)
+			dzd_handle_internal(&m);
+	}
+	gate_hold(0);
+	st_list_free(&gate.pend);
+	gate.on = 0;
+}
+
+/* after the media messages went out: wait for them, or flush at once */
+static void gate_arm(void)
+{
+	if (!gate.pend.n)
+		return;
+	gate.mark = pix_mark();
+	gate.t = 0;
+	gate.on = 1;
+	gate_hold(1);
+	if (pix_passed(gate.mark))
+		gate_flush();
+}
+
+/* one message of a cue: media now, the rest now or behind the gate */
+static void send_cue_msg(const st_list *d, int i, dz_msg *m, int gated)
+{
+	if (gated && !pix_owns(m->path))
+		st_list_put(&gate.pend, d->t[i].key, d->t[i].msg, d->t[i].len);
+	else
+		dzd_handle_internal(m);
+}
+
 static void apply_trans(const st_list *d, const st_list *now, int mode, double secs, int smooth)
 {
+	int gated;
+
 	if (mode == T_DIP && secs > 0) {
 		dip.on = 1;
 		dip.phase = 1;
@@ -461,6 +549,7 @@ static void apply_trans(const st_list *d, const st_list *now, int mode, double s
 		}
 		return;
 	}
+	gated = needs_gate(d);
 	for (int i = 0; i < d->n; i++) {
 		dz_msg m;
 		const dz_field *f;
@@ -483,8 +572,10 @@ static void apply_trans(const st_list *d, const st_list *now, int mode, double s
 				continue;
 			}
 		}
-		dzd_handle_internal(&m);		/* switches now */
+		send_cue_msg(d, i, &m, gated);		/* switches now (or at the gate) */
 	}
+	if (gated)
+		gate_arm();
 }
 
 static void follow_fire(void);
@@ -515,6 +606,14 @@ static int media_done(void)
 
 void cue_tick(double dt)
 {
+	if (gate.on) {
+		gate.t += dt;
+		if (pix_passed(gate.mark) || gate.t >= GATE_MAX) {
+			if (gate.t >= GATE_MAX)
+				dzd_log("cue: media not ready after %.0f s: switched anyway\n", GATE_MAX);
+			gate_flush();
+		}
+	}
 	if (fol.on) {
 		fol.t += dt;
 		if (fol.end && !fol.ended && media_done()) {
@@ -545,6 +644,8 @@ void cue_tick(double dt)
 	if (dip.phase == 1 && dip.t >= dip.half) {	/* the bottom: switch, then back up */
 		uint32_t to[NDIP];
 
+		int gated = needs_gate(&dip.pending);
+
 		for (size_t k = 0; k < NDIP; k++)
 			to[k] = dip.keep[k];
 		for (int i = 0; i < dip.pending.n; i++) {
@@ -561,8 +662,10 @@ void cue_tick(double dt)
 					field_raw(f, &m, &to[k]);
 				continue;
 			}
-			dzd_handle_internal(&m);
+			send_cue_msg(&dip.pending, i, &m, gated);
 		}
+		if (gated)
+			gate_arm();
 		for (size_t k = 0; k < NDIP; k++)
 			if (dip.have[k])
 				trans_field(dz_field_find(dip_fields[k]), to[k], dip.half, dip.smooth);
@@ -585,6 +688,9 @@ static void stop_all(void)
 	}
 	st_list_free(&dip.pending);
 	dip.on = 0;
+	gate_hold(0);
+	st_list_free(&gate.pend);	/* a new go: its diff includes the switch again */
+	gate.on = 0;
 }
 
 typedef struct {
@@ -850,7 +956,7 @@ static const char *show_dir(void)
 {
 	const char *e = getenv("DZ_SHOW_DIR");
 
-	return e && *e ? e : dz_map_simulating() ? "/tmp/dzshows" : "/data/shows";
+	return e && *e ? e : dz_map_simulating() ? "/tmp/dzshows" : DZ_SHOW_SUBDIR;
 }
 
 static int name_ok(const char *n)
@@ -1321,6 +1427,126 @@ static int read_json(const char *path, jv *root, char **buf, char *err, size_t e
 	return 0;
 }
 
+/*
+ * /show/import <bundle> [name] (2026-11-19): a show bundle (dzweb GET
+ * /shows/<name>.json: {"debaz_show_bundle":1,"show":..,"files":{"show.json":
+ * "<text>","baseline.json":..,"looks/<l>.json":..}}) back into the show
+ * folder. Only a file dzweb staged (/tmp/dzweb-import-*.json) is read. Every
+ * file must parse before anything is written; an existing folder of that
+ * name is kept as <name>-bak-<YYYYMMDD-HHMMSS>. The show is not loaded.
+ */
+static int show_import(const char *bundle, const char *want, char *out, size_t outcap,
+		       char *err, size_t errcap)
+{
+	char dir[200], bak[240], path[300], tmp[310], nm[48];
+	jv root;
+	char *buf;
+	const jv *files, *sn;
+	int nfiles = 0, rc = -1;
+
+	if (strncmp(bundle, "/tmp/dzweb-import-", 18) || strstr(bundle, "..") || strchr(bundle + 18, '/')) {
+		snprintf(err, errcap, "import reads only /tmp/dzweb-import-*.json (upload through dzweb)");
+		return -1;
+	}
+	if (read_json(bundle, &root, &buf, err, errcap) < 0)
+		return -1;
+	files = jget(&root, "files");
+	sn = jget(&root, "show");
+	snprintf(nm, sizeof(nm), "%s", want && *want ? want : sn && sn->type == J_STR ? sn->str : "");
+	if (!jget(&root, "debaz_show_bundle") || !files || files->type != J_OBJ) {
+		snprintf(err, errcap, "not a show bundle (no debaz_show_bundle / files)");
+		goto out;
+	}
+	if (!name_ok(nm)) {
+		snprintf(err, errcap, "show name: A-Z a-z 0-9 . _ -");
+		goto out;
+	}
+	/* check every file first: a known name, text that parses as an object */
+	for (int i = 0; i < files->n; i++) {
+		const char *k = files->key[i];
+		const jv *v = &files->kid[i];
+		jv t;
+
+		if (strcmp(k, "show.json") && strcmp(k, "baseline.json")) {
+			char ln[48];
+			size_t l = strlen(k);
+
+			if (strncmp(k, "looks/", 6) || l <= 11 || strcmp(k + l - 5, ".json") ||
+			    l - 11 >= sizeof(ln)) {
+				snprintf(err, errcap, "bundle: unexpected file %.60s", k);
+				goto out;
+			}
+			snprintf(ln, sizeof(ln), "%.*s", (int)(l - 11), k + 6);
+			if (!name_ok(ln)) {
+				snprintf(err, errcap, "bundle: bad look name %.60s", k);
+				goto out;
+			}
+		}
+		if (v->type != J_STR) {
+			snprintf(err, errcap, "bundle: %.60s is not a string", k);
+			goto out;
+		}
+		jp = v->str;
+		if (jparse(&t) < 0 || t.type != J_OBJ) {
+			if (t.type)
+				jfree(&t);
+			snprintf(err, errcap, "bundle: %.60s is not valid JSON", k);
+			goto out;
+		}
+		jfree(&t);
+		if (!strcmp(k, "show.json"))
+			nfiles |= 1;
+	}
+	if (!(nfiles & 1)) {
+		snprintf(err, errcap, "bundle: no show.json");
+		goto out;
+	}
+	snprintf(dir, sizeof(dir), "%s/%s", show_dir(), nm);
+	if (access(dir, F_OK) == 0) {			/* keep the old one */
+		time_t now = time(NULL);
+		struct tm tm;
+
+		localtime_r(&now, &tm);
+		snprintf(bak, sizeof(bak), "%s/%.40s-bak-%04d%02d%02d-%02d%02d%02d", show_dir(), nm,
+			 tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		if (rename(dir, bak) < 0) {
+			snprintf(err, errcap, "cannot keep the old show as %s: %s", bak, strerror(errno));
+			goto out;
+		}
+		dzd_log("cue: import: old %s kept as %s\n", nm, strrchr(bak, '/') + 1);
+	}
+	mkdir(show_dir(), 0755);
+	snprintf(path, sizeof(path), "%s/looks", dir);
+	if ((mkdir(dir, 0755) && errno != EEXIST) || (mkdir(path, 0755) && errno != EEXIST)) {
+		snprintf(err, errcap, "cannot make %s: %s", dir, strerror(errno));
+		goto out;
+	}
+	nfiles = 0;
+	for (int pass = 0; pass < 2; pass++)		/* show.json last, as a save */
+		for (int i = 0; i < files->n; i++) {
+			const char *k = files->key[i];
+			FILE *f;
+
+			if ((pass == 0) == !strcmp(k, "show.json"))
+				continue;
+			snprintf(path, sizeof(path), "%s/%s", dir, k);
+			if (!(f = wopen(path, tmp, sizeof(tmp))) || fputs(files->kid[i].str, f) < 0 ||
+			    wclose(f, tmp, path) < 0) {
+				snprintf(err, errcap, "cannot write %s: %s", path, strerror(errno));
+				goto out;
+			}
+			nfiles++;
+		}
+	dzd_log("cue: show %s imported (%d files)\n", nm, nfiles);
+	snprintf(out, outcap, "%s", nm);
+	rc = 0;
+out:
+	jfree(&root);
+	free(buf);
+	unlink(bundle);
+	return rc;
+}
+
 static int show_read(const char *name, char *err, size_t errcap)
 {
 	char dir[200], path[260];
@@ -1526,6 +1752,35 @@ static void check_show(void)
 }
 
 /* ---- OSC ---- */
+
+/* resume.c (2026-11-19): where the show is, and back there after a restart
+ * (the show read again, the position set, no go: the state comes from the
+ * autosave) */
+int cue_where(char *show, size_t showcap, char *scene, size_t scenecap, double *num)
+{
+	snprintf(show, showcap, "%s", show_name);
+	snprintf(scene, scenecap, "%s", cur_s >= 0 && cur_s < ns ? S[cur_s].name : "");
+	*num = cur_s >= 0 && cur_c >= 0 && cur_c < S[cur_s].n ? S[cur_s].c[cur_c].num : 0.0;
+	return cur_s >= 0 && cur_c >= 0;
+}
+
+int cue_resume(const char *show, const char *scene, double num)
+{
+	char err[200];
+
+	if (!name_ok(show) || show_read(show, err, sizeof(err)) < 0)
+		return -1;
+	for (int s = 0; s < ns; s++)
+		if (!strcmp(S[s].name, scene))
+			for (int i = 0; i < S[s].n; i++)
+				if (num_eq(S[s].c[i].num, num)) {
+					cur_s = s;
+					cur_c = i;
+				}
+	dzd_log("cue: resumed show %s, scene %s, cue %g\n", show, cur_s >= 0 ? S[cur_s].name : "-",
+		cur_s >= 0 && cur_c >= 0 ? S[cur_s].c[cur_c].num : 0.0);
+	return 0;
+}
 
 int cue_dispatch(const dz_msg *m)
 {
@@ -1913,6 +2168,15 @@ int cue_dispatch(const dz_msg *m)
 		}
 		dzd_log("cue: show %s loaded (%d scenes, %d looks)\n", show_name, ns, nl);
 		status();
+	} else if (!strcmp(p, "/show/import") && n >= 1 && a[0].type == 's') {
+		char nm[64] = "";
+
+		if (show_import(a[0].s, n >= 2 && a[1].type == 's' ? a[1].s : NULL, nm, sizeof(nm),
+				err, sizeof(err)) < 0) {
+			dzd_reply("/error", "ss", err, p);
+			return 1;
+		}
+		dzd_reply("/show/import", "s", nm);
 	} else if (!strcmp(p, "/show/check")) {
 		check_show();
 	} else if (!strcmp(p, "/show/list")) {

@@ -216,6 +216,12 @@ new package still needs one networked build (then back up again).
     `KillUserProcesses=no` (`sw/tools/image/debaz-logind.conf`): OpenSSH
     logins are logind sessions, and systemd 249 stopped every program a
     login started (also with setsid) at the logout.
+  - (2026-11-19, recipe debaz-sw) systemd units debazd.service (restart,
+    watchdog, OOM priority), debaz-video.service (hdmi2), dzweb.service
+    and `/usr/bin/dzrun.sh`; debaz.service (dzstart.sh) starts them. Only
+    debaz.service is enabled. The hardware watchdog drop-in
+    (`sw/tools/image/debaz-watchdog.conf`) is NOT in the image yet: test it
+    on a board first (sw/README.md "Services, restart and memory").
 
 Plan for the full SD card image (partitions, read-only root): ROADMAP.md
 section 10. Partitions and the first boot: done (debaz-firstboot); our

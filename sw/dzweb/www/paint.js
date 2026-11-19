@@ -8,6 +8,7 @@
 // undo / redo) until Send. Keys: B brush, L line, R rect, E ellipse, P shape,
 // G gradient, F fill, I pick, T text, [ ] size, X swap colours, Ctrl+Z undo,
 // Ctrl+Shift+Z / Ctrl+Y redo, Enter send (batch), Alt+click = pick a colour.
+import * as sprites from "./sprites.js";
 import * as net from "./net.js";
 import { h, card, row, hexToRgb, store, toast } from "./ui.js";
 import * as anim from "./anim.js";
@@ -15,6 +16,34 @@ import { colorPicker } from "./colorpick.js";
 
 const W = 1920, H = 1080; // a whole slot (sw/lib/dz_hw.h: 7680-byte lines)
 const SIZES = [[640, 480], [800, 600], [1024, 768], [1280, 720]]; // output modes (debazd disp.c video_modes)
+// text as the board draws it (lib/dz_text.c text_norm, 2026-11-19): "\n", a newline,
+// "\r\n", "\r" = a line break; "\t" or a tab = spaces to the next 4-column stop;
+// "\\" = a backslash; other control / invisible characters dropped; the pixel
+// font (ascii) draws one ? for a non-ASCII character
+function normText(t, ascii) {
+  let o = "", col = 0;
+  const tab = () => { do { o += " "; } while (++col % 4); };
+  for (let i = 0; i < t.length;) {
+    if (t[i] === "\\" && "nrt\\".includes(t[i + 1] || "x")) {
+      const e = t[i + 1];
+      i += 2;
+      if (e === "\\") { o += "\\"; col++; }
+      else if (e === "t") tab();
+      else { if (e === "r" && t[i] === "\\" && t[i + 1] === "n") i += 2; o += "\n"; col = 0; }
+      continue;
+    }
+    const c = t.codePointAt(i), ch = String.fromCodePoint(c);
+    i += ch.length;
+    if (c === 13 || c === 10 || c === 0x2028 || c === 0x2029) {
+      if (c === 13 && t[i] === "\n") i++;
+      o += "\n"; col = 0;
+    } else if (c === 9) tab();
+    else if (c < 0x20 || c === 0x7f || (c >= 0x80 && c < 0xa0) || c === 0xad || (c >= 0x200b && c <= 0x200f) || c === 0xfeff) continue;
+    else { o += ascii && c > 0x7e ? "?" : ch; col++; }
+  }
+  return o;
+}
+
 const MAXPTS = 13; // stroke: 5 fixed args + 13 points = 31 args (< 32)
 const DEF = { slot: 6, tool: "brush", color: "#ff9a3c", color2: "#2040ff", fill: true, size: 24, hard: 0.4,
   alpha: 1, blend: "normal", text: "DEBAZAROS", ttf: 64, scale: 2, sprite: 0, sscale: 1, angle: 0,
@@ -411,20 +440,24 @@ function down(e) {
     // (as the shapes); the click point stays the top-left of the unrotated text
     if (s.tool === "text")
       bmsg(`${D()}/text`, r, g, b, p[0], p[1], s.text, s.scale | 0, 16, net.float(s.angle));
+    else if (s.font)       // a string after the text = the font file (dz_draw.c)
+      bmsg(`${D()}/ttf`, r, g, b, p[0], p[1], s.ttf | 0, s.text, s.font, net.float(s.angle));
     else
       bmsg(`${D()}/ttf`, r, g, b, p[0], p[1], s.ttf | 0, s.text, net.float(s.angle));
     previewStyle();
     cx.fillStyle = s.color;
     cx.font = s.tool === "text" ? `${16 * s.scale}px monospace` : `${s.ttf}px sans-serif`;
     cx.textBaseline = "top";
-    const tw = cx.measureText(s.text).width, th = s.tool === "text" ? 16 * s.scale : s.ttf;
+    // the same rules as the board (lib/dz_text.c text_norm): line breaks, tabs, controls
+    const lines = normText(s.text, s.tool === "text").split("\n"), lh = s.tool === "text" ? 16 * s.scale : s.ttf;
+    const tw = Math.max(...lines.map((l) => cx.measureText(l).width)), th = lh * lines.length;
     cx.save();
     cx.translate(p[0] + tw / 2, p[1] + th / 2);
     cx.rotate(rad(s.angle));
-    cx.fillText(s.text, -tw / 2, -th / 2);
+    lines.forEach((l, k) => cx.fillText(l, -tw / 2, -th / 2 + k * lh));
     cx.restore();
   } else if (s.tool === "sprite") {
-    bmsg(`/sprite/${s.sprite}/draw`, s.slot, p[0], p[1], net.float(s.sscale), net.float(s.angle), net.float(s.alpha));
+    bmsg(`/sprite/${sprites.selected()}/draw`, s.slot, p[0], p[1], net.float(s.sscale), net.float(s.angle), net.float(s.alpha));
     cx.strokeStyle = s.color;
     cx.globalAlpha = 1;
     cx.globalCompositeOperation = "source-over";
@@ -502,6 +535,36 @@ function up(e) {
   endOp();
 }
 
+// the sprite the ◰ tool draws (the selected number, shared with the Media
+// tab's Sprites card): slider, preview, what it holds, and a file loader
+function spriteRow() {
+  const prev = h("div.spr-prev");
+  const desc = h("div.hint.spr-desc", {}, "");
+  const el = h("input", { type: "range", min: 0, max: sprites.N - 1, step: 1, value: sprites.selected(),
+    title: "sprite #: the sprite the ◰ tool draws (/sprite/<id>/draw); the same number as the Media tab's Sprites card",
+    oninput: () => sprites.select(el.value) });
+  const out = h("span.hint", {}, "");
+  const files = h("select", { title: "an image on the board (/media/debaz/img)", style: "max-width:160px" }, h("option", { value: "" }, "image…"));
+  const fill = async () => {
+    const names = await sprites.imageFiles();
+    files.replaceChildren(h("option", { value: "" }, names.length ? "image…" : "no images"), ...names.map((n) => h("option", { value: n }, n)));
+  };
+  files.addEventListener("focus", fill, { once: true });
+  const load = h("button", { title: "load the chosen image as this sprite\n/sprite/<id>/load \"<file>\"",
+    onclick: () => { if (files.value) sprites.loadFile(sprites.selected(), files.value); else { fill(); toast("choose an image first", true); } } }, "Load");
+  const show = () => {
+    const id = sprites.selected();
+    el.value = id;
+    out.textContent = `#${id}`;
+    prev.replaceChildren(sprites.thumb(id, 64));
+    desc.textContent = sprites.describe(id).replace(/^sprite #\d+: /, "");
+    s.sprite = id;
+  };
+  sprites.onChange(show);
+  show();
+  return h("div", {}, row("sprite #", el, out), h("div.row.spr-row", {}, prev, h("div", { style: "flex:1;min-width:0" }, desc, h("div.row", {}, files, load))));
+}
+
 function slider(key, min, max, step, label, onset) {
   const out = h("span.hint", {}, String(s[key]));
   const el = h("input", { type: "range", min, max, step, value: s[key], title: `${label}: a value of the draw message`,
@@ -552,8 +615,38 @@ export function init(root) {
   const prevAll = (fn) => { cx.globalAlpha = 1; cx.globalCompositeOperation = "source-over"; fn(); };
   const blend = h("select", { title: "/draw/<slot>/blend normal|add|lighten|multiply", onchange: () => { s.blend = blend.value; save(); if (!s.batch) net.msg(`${D()}/blend`, s.blend); } },
     ["normal", "add", "lighten", "multiply"].map((b) => h("option", { value: b, selected: b === s.blend }, b)));
-  const text = h("input", { type: "text", value: s.text, title: "the text of /draw/<slot>/text and /ttf (UTF-8 for ttf)",
-    oninput: () => { s.text = text.value; save(); } });
+  // a text area (2026-11-19): Enter = a new line; \n \t \\ typed also work
+  const text = h("textarea", { rows: 2, spellcheck: false, style: "width:100%;min-width:16em;resize:vertical;font-family:monospace",
+    title: "the text of /draw/<slot>/text and /ttf (UTF-8 for ttf)\n" +
+      "Enter or \\n = a new line, Tab or \\t = to the next 4-column stop, \\\\ = a backslash;\n" +
+      "other control and invisible characters are not drawn; the pixel font draws ? for a non-ASCII character",
+    oninput: () => { s.text = text.value; save(); },
+    onkeydown: (e) => {     // Tab inserts a tab here instead of leaving the box
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      const a = text.selectionStart, b = text.selectionEnd;
+      text.value = text.value.slice(0, a) + "\t" + text.value.slice(b);
+      text.selectionStart = text.selectionEnd = a + 1;
+      s.text = text.value; save();
+    } });
+  text.value = s.text;
+  // TrueType font of the Aa ttf tool (the board's fonts: /files fonts); the
+  // preview here stays sans-serif
+  const fontSel = h("select", { style: "max-width:14em",
+    title: "font of the Aa ttf tool (/usr/share/fonts on the board; default LiberationSans).\n" +
+      "A character the font lacks comes from DejaVuSans, FreeSerif or DroidSansFallbackFull.\n" +
+      "/draw/<slot>/ttf r g b x y size \"text\" \"<font>\" angle",
+    onchange: () => { s.font = fontSel.value; save(); } },
+    h("option", { value: "" }, "default font"));
+  const listFonts = async () => {
+    try {
+      const list = await net.collect(net.message("/files", "fonts"), "/file", "/file/end");
+      fontSel.replaceChildren(h("option", { value: "" }, "default font"),
+        ...list.map((a) => a[0]).sort().map((n) => h("option", { value: n }, n.replace(/\.(ttf|otf|ttc)$/i, ""))));
+      fontSel.value = s.font || "";
+    } catch { /* the default font still works */ }
+  };
+  listFonts();
   const fade = h("input", { type: "number", min: 0, max: 1, step: 0.05, value: 0.2, title: "/draw/<slot>/fade <amount 0..1>" });
   // hover text = the OSC message the button sends (<slot> = the target slot above)
   const ACT_TIP = { "Clear": "/draw/<slot>/clear r g b", "Clear black": "/draw/<slot>/clear 0 0 0",
@@ -561,22 +654,30 @@ export function init(root) {
     "Test bars": "/draw/<slot>/bars", "Radial": "/draw/<slot>/gradient/radial r1 g1 b1 r2 g2 b2",
     "Angle": "/draw/<slot>/gradient/angle <deg> r1 g1 b1 r2 g2 b2",
     "Corners": "/draw/<slot>/gradient/corners tl(3) tr(3) bl(3) br(3)",
-    "Save": "/surface/<slot>/save \"<name>\" (PNG in /media/debaz/img)", "Load": "/img/<slot>/load \"<name>\"",
+    "Save": "/surface/<slot>/save \"<name>.png|.jpg\" (in /media/debaz/img; PNG = lossless drafts, JPG = smaller, loads faster in a cue)", "Load": "/img/<slot>/load \"<name>\"",
     "Grab live input": "/surface/<slot>/grab 4 (the capture into the paint buffer)",
     "Show on display 0": "/disp/0/show <slot>", "Show on display 1": "/disp/1/show <slot>",
     "Quad": "/draw/<slot>/mirror quad", "↻": "dzweb HTTP GET /media" };
   // a button = one action (batch mode: undone as a whole)
   const act = (label, fn, title = ACT_TIP[label]) => h("button", { onclick: () => { beginOp(); fn(); endOp(); }, title }, label);
 
-  // save / recall: the slot's paint buffer as <name>.png in /media/debaz/img
-  // (debazd encodes it in the background, about 1 s), back with /img/<slot>/load
+  // save / recall: the slot as <name>.png (default: lossless, for drafts you
+  // load back to undo or try things) or <name>.jpg (quality 92: smaller and
+  // about 3x faster to load, for the image a cue loads) in /media/debaz/img.
+  // debazd encodes it itself (2026-11-19): PNG ~0.5 s for paint, several s
+  // for photo-like content; JPG ~0.13 s. Back with /img/<slot>/load.
   const pad = (n) => String(n).padStart(2, "0");
   const stamp = () => { const d = new Date();
     return `paint-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-` +
       `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
-  const clean = (n) => n.replace(/\.png$/i, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 92);
+  const clean = (n) => n.replace(/\.(png|jpe?g)$/i, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+/, "").slice(0, 92);
   const saveName = h("input", { type: "text", value: stamp(), style: "width:210px",
-    title: "file name: A-Z a-z 0-9 . _ - (.png is added)" });
+    title: "file name: A-Z a-z 0-9 . _ - (.png or .jpg is added)" });
+  const saveFmt = h("select", { title: "PNG = lossless (drafts: load it back to undo or try things)\n" +
+      "JPG = quality 92, smaller, loads about 3x faster (the image a cue loads)",
+    onchange: () => { s.saveFmt = saveFmt.value; save(); } },
+    h("option", { value: "png", selected: s.saveFmt !== "jpg" }, "PNG"),
+    h("option", { value: "jpg", selected: s.saveFmt === "jpg" }, "JPG"));
   const imgSel = h("select", { title: "images on the board (/media/debaz/img), newest first", style: "max-width:260px" });
   const listImages = async (pick) => {
     try {
@@ -589,10 +690,12 @@ export function init(root) {
     }
   };
   const saveImage = () => {
-    const n = clean(saveName.value) || stamp();
-    net.msg(`/surface/${s.slot}/save`, n);
-    toast(`saving slot ${s.slot} as ${n}.png`);
-    setTimeout(() => listImages(`${n}.png`), 2500); // the encode takes about 1 s
+    const n = clean(saveName.value) || stamp(), f = `${n}.${saveFmt.value}`;
+    net.msg(`/surface/${s.slot}/save`, f);
+    toast(`saving slot ${s.slot} as ${f}`);
+    // the encode: JPG ~0.1 s, PNG 0.5 s (paint) to several s (photo-like)
+    setTimeout(() => listImages(f), 1200);
+    setTimeout(() => listImages(f), 5000);
     saveName.value = stamp();
   };
   const loadImage = () => {
@@ -715,10 +818,10 @@ export function init(root) {
           "(Ctrl+Shift: 15° steps). Shape: n sides; star: n points, inner ratio; star polygon: n and k. " +
           "The fill (solid, linear, radial) is also the paint bucket's.")),
       card("Text and sprite",
-        row("text", text),
+        row("text", text, fontSel),
         slider("scale", 1, 8, 1, "pixel ×"),
         slider("ttf", 8, 300, 1, "ttf px"),
-        slider("sprite", 0, 63, 1, "sprite #"),
+        spriteRow(),
         slider("sscale", 0.05, 4, 0.05, "sprite ×"),
         slider("angle", -180, 180, 1, "angle")))));
   // board-side operations under the canvas, where there is room
@@ -736,7 +839,7 @@ export function init(root) {
         h("p.hint", {}, "Grab copies the live HDMI input into this slot: then paint on the frozen frame.")),
       anim.saveCard(() => s.slot),
       card("Image",
-        row("save as", saveName, act("Save", saveImage)),
+        row("save as", saveName, saveFmt, act("Save", saveImage)),
         row("recall", imgSel, act("Load", loadImage), act("↻", () => listImages(imgSel.value))),
         h("p.hint", {}, "Save writes this slot's paint buffer (what you drew, also a grab) as a PNG on the board; " +
           "Load draws a saved image back into the slot at its own size, at the top left (a larger one is made smaller). Images also show in Media.")),

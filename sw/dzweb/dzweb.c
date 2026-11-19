@@ -15,10 +15,11 @@
  *   GET /osc        WebSocket. Each binary message is one OSC packet (or
  *                   bundle). Every browser gets its own UDP socket to debazd,
  *                   so replies and /subscribe events come back to it.
- *   GET /media                     JSON: free bytes, files in img/, movies/, audio/
- *   GET    /media/<img|movies|audio>/<name>  download a file (?dl: as attachment)
- *   PUT    /media/<img|movies|audio>/<name>  upload (raw body, Content-Length)
- *   DELETE /media/<img|movies|audio>/<name>  delete
+ *   GET /media                     JSON: free bytes, files in img/, movies/, audio/, scripts/
+ *   GET    /media/<img|movies|audio|scripts>/<name>  download a file (?dl: as attachment)
+ *   PUT    /media/<img|movies|audio|scripts>/<name>  upload (raw body, Content-Length)
+ *   DELETE /media/<img|movies|audio|scripts>/<name>  delete
+ *          (scripts/ = LuaJIT scripts for debazd /lua, 2026-11-20)
  *   GET|PUT|DELETE /media/anim/<folder>/<name>  frames of an image sequence
  *                                      (debazd anim.c; PUT makes the folder)
  *     Media folders are <media>/img, movies and audio (-m, default
@@ -55,6 +56,7 @@
 #define HDR_MAX		8192
 #define WS_MAX		65536
 #define MEDIA_MAX	(4LL << 30)	/* largest upload */
+#define SHOW_MAX	(8LL << 20)	/* largest show bundle */
 #define DISK_KEEP	(64LL << 20)	/* never fill the root file system */
 
 static int  verbose;
@@ -251,6 +253,7 @@ static const char *mime(const char *p)
 	if (!strcasecmp(e, ".mkv")) return "video/x-matroska";
 	if (!strcasecmp(e, ".mov")) return "video/quicktime";
 	if (!strcmp(e, ".json") || !strcmp(e, ".webmanifest")) return "application/json";
+	if (!strcmp(e, ".lua") || !strcmp(e, ".txt")) return "text/plain; charset=utf-8";
 	return "application/octet-stream";
 }
 
@@ -377,11 +380,34 @@ static long long disk_free(void)
 	return statvfs(media, &v) < 0 ? -1 : (long long)v.f_bavail * (long long)v.f_frsize;
 }
 
+/* "/shows/<name>.json" (upload of a show bundle, 2026-11-19) -> the
+ * staging file /tmp/dzweb-import-<name>.json; debazd (root, owns the show
+ * folder) takes it with /show/import */
+static int show_stage_path(const char *url, char *out, size_t sz, char *part, size_t psz)
+{
+	char name[100];
+	const char *b = url + 7;
+	size_t l = strlen(b);
+
+	if (l <= 5 || l - 5 >= sizeof(name) || strcmp(b + l - 5, ".json"))
+		return -1;
+	snprintf(name, sizeof(name), "%.*s", (int)(l - 5), b);
+	if (!media_name_ok(name))
+		return -1;
+	snprintf(out, sz, "/tmp/dzweb-import-%s.json", name);
+	if (part)
+		snprintf(part, psz, "/tmp/.dzweb-import-%s.part", name);
+	return 0;
+}
+
 /* "/media/<kind>/<name>" -> full path; -1 if not a valid media path */
 static int media_path(const char *url, char *out, size_t sz, char *part, size_t psz)
 {
 	char kind[16], name[128];
 	const char *s = url + 7, *e = strchr(s, '/');
+
+	if (!strncmp(url, "/shows/", 7))
+		return show_stage_path(url, out, sz, part, psz);
 
 	if (!e || (size_t)(e - s) >= sizeof(kind))
 		return -1;
@@ -412,14 +438,20 @@ static int media_path(const char *url, char *out, size_t sz, char *part, size_t 
 		}
 		return 0;
 	}
-	if (strcmp(kind, "img") && strcmp(kind, "movies") && strcmp(kind, "audio"))
+	if (strcmp(kind, "img") && strcmp(kind, "movies") && strcmp(kind, "audio") &&
+	    strcmp(kind, "scripts"))
 		return -1;
 	snprintf(name, sizeof(name), "%s", e + 1);
 	if (!media_name_ok(name))
 		return -1;
-	snprintf(out, sz, "%.127s/%.6s/%.96s", media, kind, name);
-	if (part)
-		snprintf(part, psz, "%.127s/%.6s/.%.96s.part", media, kind, name);
+	snprintf(out, sz, "%.127s/%.7s/%.96s", media, kind, name);
+	if (part) {
+		char d[200];
+
+		snprintf(d, sizeof(d), "%.127s/%.7s", media, kind);
+		mkdir(d, 0755);			/* scripts/: new in 2026-11 */
+		snprintf(part, psz, "%.127s/%.7s/.%.96s.part", media, kind, name);
+	}
 	return 0;
 }
 
@@ -465,8 +497,143 @@ static void serve_media_list(client_t *c)
 	o += list_dir("movies", json + o, sizeof(json) - o - 64);
 	o += (size_t)snprintf(json + o, sizeof(json) - o, ",");
 	o += list_dir("audio", json + o, sizeof(json) - o - 64);
+	o += (size_t)snprintf(json + o, sizeof(json) - o, ",");
+	o += list_dir("scripts", json + o, sizeof(json) - o - 64);
 	o += (size_t)snprintf(json + o, sizeof(json) - o, "}\n");
 	http_reply(c, "200 OK", "application/json", json, o);
+}
+
+/* ---- show bundles (2026-11-19): one JSON file for a backup -------------------
+ * GET /shows/<name>.json -> {"debaz_show_bundle":1,"show":"<name>","files":
+ * {"show.json":"<text>","baseline.json":"<text>","looks/<l>.json":"<text>"}}
+ * (each file as a JSON string, so it comes back byte for byte). PUT stores
+ * an uploaded bundle for /show/import (debazd). */
+static const char *show_dir(void)
+{
+	const char *d = getenv("DZ_SHOW_DIR");
+
+	return d && *d ? d : DZ_SHOW_SUBDIR;
+}
+
+typedef struct { char *b; size_t n, cap; int bad; } sbuf;
+
+static void sb_put(sbuf *s, const char *p, size_t n)
+{
+	if (s->bad)
+		return;
+	if (s->n + n + 1 > s->cap) {
+		size_t cap = (s->cap ? s->cap : 4096);
+		char *b;
+
+		while (s->n + n + 1 > cap)
+			cap *= 2;
+		if (cap > (size_t)SHOW_MAX * 2 || !(b = realloc(s->b, cap))) {
+			s->bad = 1;
+			return;
+		}
+		s->b = b;
+		s->cap = cap;
+	}
+	memcpy(s->b + s->n, p, n);
+	s->n += n;
+	s->b[s->n] = 0;
+}
+
+static void sb_str(sbuf *s, const char *p) { sb_put(s, p, strlen(p)); }
+
+/* a file's text as a JSON string; 0 = done, -1 = no such file */
+static int sb_file(sbuf *s, const char *key, const char *path, int *first)
+{
+	FILE *f = fopen(path, "rb");
+	int ch;
+
+	if (!f)
+		return -1;
+	sb_str(s, *first ? "\"" : ",\n\"");
+	*first = 0;
+	sb_str(s, key);
+	sb_str(s, "\":\"");
+	while ((ch = fgetc(f)) != EOF) {
+		char e[8];
+
+		if (ch == '"' || ch == '\\') {
+			e[0] = '\\';
+			e[1] = (char)ch;
+			sb_put(s, e, 2);
+		} else if (ch == '\n') {
+			sb_put(s, "\\n", 2);
+		} else if (ch < 0x20) {
+			snprintf(e, sizeof(e), "\\u%04x", ch);
+			sb_put(s, e, 6);
+		} else {
+			e[0] = (char)ch;
+			sb_put(s, e, 1);
+		}
+	}
+	fclose(f);
+	sb_str(s, "\"");
+	return 0;
+}
+
+static void serve_show_bundle(client_t *c, const char *url, int attach)
+{
+	char name[100], dir[300], path[460], h[512], disp[200] = "";
+	const char *b = url + 7;
+	size_t l = strlen(b);
+	sbuf s = { 0 };
+	int first = 1, n;
+	DIR *d;
+	struct dirent *e;
+
+	if (l <= 5 || l - 5 >= sizeof(name) || strcmp(b + l - 5, ".json")) {
+		http_err(c, "404 Not Found", "use /shows/<name>.json\n");
+		return;
+	}
+	snprintf(name, sizeof(name), "%.*s", (int)(l - 5), b);
+	if (!media_name_ok(name)) {
+		http_err(c, "400 Bad Request", "bad show name\n");
+		return;
+	}
+	snprintf(dir, sizeof(dir), "%.190s/%.99s", show_dir(), name);
+	sb_str(&s, "{\"debaz_show_bundle\":1,\"show\":\"");
+	sb_str(&s, name);
+	sb_str(&s, "\",\"files\":{\n");
+	snprintf(path, sizeof(path), "%s/show.json", dir);
+	if (sb_file(&s, "show.json", path, &first) < 0) {
+		free(s.b);
+		http_err(c, "404 Not Found", "no such show\n");
+		return;
+	}
+	snprintf(path, sizeof(path), "%s/baseline.json", dir);
+	sb_file(&s, "baseline.json", path, &first);
+	snprintf(path, sizeof(path), "%s/looks", dir);
+	if ((d = opendir(path))) {
+		while ((e = readdir(d))) {
+			size_t el = strlen(e->d_name);
+			char key[160];
+
+			if (el <= 5 || strcmp(e->d_name + el - 5, ".json") || e->d_name[0] == '.')
+				continue;
+			snprintf(key, sizeof(key), "looks/%.140s", e->d_name);
+			snprintf(path, sizeof(path), "%s/looks/%.100s", dir, e->d_name);
+			sb_file(&s, key, path, &first);
+		}
+		closedir(d);
+	}
+	sb_str(&s, "}}\n");
+	if (s.bad) {
+		free(s.b);
+		http_err(c, "500 Error", "show too large\n");
+		return;
+	}
+	if (attach)
+		snprintf(disp, sizeof(disp), "Content-Disposition: attachment; filename=\"%s.json\"\r\n", name);
+	n = snprintf(h, sizeof(h), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+		     "Content-Length: %zu\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n%s"
+		     "Connection: close\r\n\r\n", s.n, disp);
+	send_all(c->fd, h, (size_t)n);
+	send_all(c->fd, s.b, s.n);
+	free(s.b);
 }
 
 /* returns 1: transfer started (keep the connection), 0: replied (close) */
@@ -569,7 +736,7 @@ static int media_put(client_t *c, const char *url, const char *hdr, const uint8_
 		http_err(c, "411 Length Required", "Content-Length needed\n");
 		return -1;
 	}
-	if (len > MEDIA_MAX) {
+	if (len > MEDIA_MAX || (!strncmp(url, "/shows/", 7) && len > SHOW_MAX)) {
 		http_err(c, "413 Payload Too Large", "file too large\n");
 		return -1;
 	}
@@ -754,6 +921,26 @@ static int on_tcp(client_t *c)
 		if ((q = strchr(path, '?'))) {
 			attach = !!strstr(q, "dl");
 			*q = 0;
+		}
+		if (!strncmp(path, "/shows/", 7)) {	/* show bundles (2026-11-19) */
+			url_decode(path);
+			if (!strcmp(method, "OPTIONS")) {
+				static const char pre[] = "HTTP/1.1 204 No Content\r\n"
+					"Access-Control-Allow-Origin: *\r\n"
+					"Access-Control-Allow-Methods: GET, PUT\r\n"
+					"Access-Control-Allow-Headers: Content-Type\r\n"
+					"Content-Length: 0\r\nConnection: close\r\n\r\n";
+				send_all(c->fd, pre, sizeof(pre) - 1);
+				return -1;
+			}
+			if (!strcmp(method, "PUT")) {
+				*hend = 0;
+				return media_put(c, path, (char *)c->in, c->in + hlen, c->n - hlen);
+			}
+			if (!strcmp(method, "GET")) {
+				serve_show_bundle(c, path, attach);
+				return -1;
+			}
 		}
 		if (!strncmp(path, "/media/", 7)) {
 			url_decode(path);

@@ -156,13 +156,15 @@ export function moshCard(slot) {
 }
 
 // the movie's load, once per second while the Media tab is open
-let statsSlot = null, asciiRun = false;
+let statsSlot = null, asciiRun = false, slitRun = false;
 setInterval(() => {
   const tab = document.getElementById("tab-media");
   if (statsSlot === null || document.hidden || !tab?.classList.contains("active") || !net.connected()) return;
   const sl = statsSlot();
-  net.send(asciiRun ? net.bundle(net.message(`/movie/${sl}/stats`), net.message(`/ascii/${sl}/status`))
-    : net.message(`/movie/${sl}/stats`));
+  const msgs = [net.message(`/movie/${sl}/stats`)];
+  if (asciiRun) msgs.push(net.message(`/ascii/${sl}/status`));
+  if (slitRun) msgs.push(net.message(`/slit/${sl}/status`));
+  net.send(msgs.length > 1 ? net.bundle(...msgs) : msgs[0]);
 }, 1000);
 
 export function moshRefresh(slot) {
@@ -249,6 +251,70 @@ export function asciiCard(slot, slotPicker) {
 }
 
 let fontSel = null;
+// ---- slit scan / sample-and-hold (2026-11-19, debazd slit.c) ----
+
+export function slitCard(slot, slotPicker) {
+  const p = () => `/slit/${slot()}`;
+  const send = (path, ...a) => net.msg(`${p()}/${path}`, ...a);
+  const src = slotPicker();
+  src.prepend(h("option", { value: "capture" }, "capture (live input)"));
+  src.value = "capture";
+  src.title = "the picture the slit reads: the live capture, a movie slot, a paint slot\n/slit/<d>/run <src>|capture";
+  const MODES = { row: "row slit (time runs down)", col: "column slit (time runs right)",
+    scan: "scanner bar (rows hold)", scanv: "scanner bar (columns hold)", tiles: "tile hold (glitch)" };
+  const mode = h("select", { title: "/slit/<d>/mode row|col|scan|scanv|tiles",
+    onchange: () => send("mode", mode.value) },
+    Object.entries(MODES).map(([k, t]) => h("option", { value: k }, t)));
+  const pos = h("input", { type: "range", min: 0, max: 1000, value: 500,
+    title: "the slit row / column in the source, as a part of its size\n/slit/<d>/pos 0..1 (float; an int = pixels)" });
+  pos.oninput = () => net.throttled(`${p()}/pos`, () => net.message(`${p()}/pos`, net.float(pos.value / 1000)));
+  const speed = h("input", { type: "number", step: 0.25, value: 1, style: "width:5em",
+    title: "rows / columns per frame; fractions and negative values work\n/slit/<d>/speed f",
+    onchange: () => send("speed", net.float(Number(speed.value) || 0)) });
+  const band = h("input", { type: "number", min: 1, max: 1080, value: 1, style: "width:5em",
+    title: "slit thickness, scanner band height / width, tile size (px)\n/slit/<d>/band n",
+    onchange: () => send("band", Number(band.value) | 0 || 1) });
+  const tiles = h("input", { type: "number", min: 0, max: 4096, value: 8, style: "width:5em",
+    title: "tiles per frame (tile hold)\n/slit/<d>/tiles n", onchange: () => send("tiles", Number(tiles.value) | 0) });
+  const every = h("input", { type: "number", min: 1, max: 600, value: 1, style: "width:4em",
+    title: "work every k-th frame (slower time)\n/slit/<d>/every k", onchange: () => send("every", Number(every.value) | 0 || 1) });
+  const scroll = h("input", { type: "checkbox",
+    title: "waterfall (row slit): the newest row at the bottom, the picture scrolls up.\n" +
+      "Uses the rows below the target too (part of the next slot); a display must show the target.\n/slit/<d>/scroll 0|1",
+    onchange: () => send("scroll", scroll.checked ? 1 : 0) });
+  const st = h("span.hint", { title: "/slit/<d>/status -> run src mode pos speed band tiles every scroll w ms" }, "");
+  const run = () => send("run", src.value === "capture" ? "capture" : Number(src.value));
+
+  net.on("/slit", (m) => {
+    const r = /^\/slit\/(\d+)\/status$/.exec(m.path);
+    if (!r || +r[1] !== +slot()) return;
+    const [on, s, md, ps, sp, bd, tl, ev, sc, w, ms] = m.args;
+    slitRun = !!on;
+    const put = (el, v, prop = "value") => { if (document.activeElement !== el) el[prop] = v; };
+    put(src, s === -2 ? "capture" : String(s)); put(mode, md); put(speed, sp); put(band, bd);
+    put(tiles, tl); put(every, ev); put(scroll, !!sc, "checked");
+    st.textContent = `${on ? "running" : "stopped"} · position ${w} · ${ms.toFixed(2)} ms per frame`;
+  });
+
+  return card("Slit scan / sample and hold (source → target slot)",
+    row("source", src, h("button.primary", { title: "/slit/<d>/run <src>|capture", onclick: run }, "Run"),
+      h("button", { title: "/slit/<d>/stop", onclick: () => send("stop") }, "Stop"),
+      h("button", { title: "the target black, the write position back to 0\n/slit/<d>/clear", onclick: () => send("clear") }, "Clear")),
+    row("mode", mode),
+    row("slit at", pos),
+    row("speed", speed, h("label", {}, "band"), band, h("label", {}, "tiles"), tiles),
+    row("every", every, h("label", {}, scroll, " waterfall")),
+    row(null, st),
+    h("p.hint", {}, "The target slot (above) is written directly, once per frame, from the source: a row or column " +
+      "slit stacks the source's slit over time; a scanner bar refreshes only a moving band and the rest holds; tile " +
+      "hold refreshes random squares. Show the target on a display (Wall tab). An LFO can move it: " +
+      "target \"/slit/6/pos $f0\" (0..1) or \"/slit/6/speed $f1\"."));
+}
+
+export function slitRefresh(slot) {
+  net.msg(`/slit/${slot}/status`);
+}
+
 export async function asciiRefresh(slot) {
   if (fontSel) {           // the board's font list (bare names, any subfolder)
     const list = await net.collect(net.message("/files", "fonts"), "/file", "/file/end");

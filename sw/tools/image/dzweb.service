@@ -1,0 +1,16 @@
+# dzweb.service (2026-11-19): the web app (port 8080) as ebaz, restarted
+# when it dies. Started by dzstart.sh (WEB=1). Log: journalctl -u dzweb.
+[Unit]
+Description=DEBAZAROS web app (dzweb)
+After=network.target
+
+[Service]
+Type=simple
+User=ebaz
+Group=ebaz
+WorkingDirectory=/home/ebaz
+Environment=HOME=/home/ebaz
+ExecStart=/bin/sh /usr/bin/dzrun.sh dzweb
+Restart=always
+RestartSec=2
+SyslogIdentifier=dzweb

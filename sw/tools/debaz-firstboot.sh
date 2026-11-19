@@ -85,6 +85,8 @@ mounts() {
 		add_fstab DEBAZDATA "LABEL=DEBAZDATA $DATA ext4 defaults,nofail,x-systemd.device-timeout=10 0 2"
 		mkdir -p "$DATA"
 		mountpoint -q "$DATA" || mount "$DATA" || log "mount $DATA failed"
+		# persistent settings + shows (sw/lib/dz_path.h)
+		mountpoint -q "$DATA" && mkdir -p "$DATA/debaz" "$DATA/shows"
 	fi
 	if blkid -L DEBAZMEDIA > /dev/null 2>&1; then
 		add_fstab DEBAZMEDIA "LABEL=DEBAZMEDIA $MEDIA exfat uid=$uid,gid=$gid,fmask=0133,dmask=0022,nofail,x-systemd.device-timeout=10 0 0"
@@ -96,6 +98,8 @@ mounts() {
 # ---- 3. media folders --------------------------------------------------------------
 folders() {
 	mkdir -p "$MEDIA"
+	mkdir -p "$MEDIA/scripts"		# LuaJIT scripts (debazd /lua), no old folder
+	mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA/scripts" 2>/dev/null
 	for k in img movies audio; do
 		mkdir -p "$MEDIA/$k"
 		mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA" "$MEDIA/$k" 2>/dev/null

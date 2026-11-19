@@ -1,0 +1,108 @@
+// luaapi.js - the dzlua script API as data (sw/dzlua/prelude.lua is the
+// truth: keep both in step). Used by the Lua panel: the reference list, the
+// help line at the cursor, the highlighter and the "unknown name" lint.
+// Entry: [name, signature, text]. A name with "." or ":" is a field/method.
+
+export const API = [
+  ["Script", [
+    ["frame", "function frame(n, t)", "you define it: called once per frame at fps; n = frame number from 0, t = seconds since start; the frame is shown after each call"],
+    ["setup", "function setup()", "you define it: called once before the first frame"],
+    ["onparam", "function onparam(k, v)", "you define it: called for each new param value (v is a number when it reads as one)"],
+    ["param", "param.key", "live values: /lua/<slot>/p/<key> v (Console param box, an LFO target, a cue). Kept per slot and sent again at the next start"],
+    ["fps", "fps = 30", "frames per second (default 30); the param \"fps\" sets it too"],
+    ["W", "W", "canvas width = the video mode width"],
+    ["H", "H", "canvas height = the video mode height"],
+    ["SLOT", "SLOT", "the target slot number"],
+    ["SCRIPT_NAME", "SCRIPT_NAME", "the script's file name"],
+    ["wait", "t = wait()", "own loop instead of frame(): show the frame, read params, sleep to the next frame; returns the time"],
+    ["time", "time()", "seconds since start"],
+    ["print", "print(...)", "to the log below (max 256 KB per run)"],
+  ]],
+  ["Colour", [
+    ["rgb", "rgb(r, g, b)", "colour from 0..255 values -> 0xRRGGBB"],
+    ["hsv", "hsv(h, [s], [v])", "colour from 0..1 values (h wraps; s, v default 1)"],
+    ["gray", "gray(v)", "grey from 0..255"],
+  ]],
+  ["Drawing", [
+    ["clear", "clear([c])", "the whole canvas (default black)"],
+    ["fade", "fade(k, [c])", "every pixel toward c (black) by k 0..1 (whole canvas: ~10-40 ms)"],
+    ["trails", "trails(k, [c])", "fade after every frame, fused with the copy to the slot: cheaper than fade() in frame(); trails(0) = off"],
+    ["pset", "pset(x, y, c)", "one pixel (blended, clipped; for many pixels use FB)"],
+    ["pget", "pget(x, y)", "the canvas pixel -> c"],
+    ["line", "line(x0, y0, x1, y1, [c], [w])", "anti-aliased line, w = width (1)"],
+    ["poly", "poly({x1, y1, x2, y2, ...}, [c], [w], [closed])", "connected lines"],
+    ["rect", "rect(x, y, w, h, [c], [fill])", "fill true = filled, else outline"],
+    ["circle", "circle(x, y, r, [c], [fill], [w])", "filled or an outline of width w"],
+    ["text", "text(x, y, str, [c], [scale])", "8 x 16 pixel font, \"\\n\" ok"],
+    ["scroll", "scroll(dx, dy)", "move the whole canvas (the whole frame goes to the slot)"],
+    ["blend", "blend(mode)", "\"normal\" \"add\" \"lighten\" \"sub\" for later drawing"],
+    ["alpha", "alpha(a)", "0..1 for later drawing"],
+    ["FB", "FB[y * W + x] = c", "the canvas as uint32_t[W * H] (FFI): the fastest pixel writes; then dirty()"],
+    ["dirty", "dirty([x, y, w, h])", "mark a changed area (no args = all): needed after FB writes"],
+    ["present", "present()", "copy the changed area to the slot now (one rectangle per frame: present() between far areas)"],
+    ["layer", "layer([on], [key])", "layer mode: only pixels brighter than key (8) reach the slot (black = transparent); layer() -> on?"],
+    ["LAYER", "LAYER", "layer mode at the start (debazd turns it on over a movie / the capture)"],
+    ["grab", "grab()", "the slot into the canvas (uncached reads: ~50 ms)"],
+  ]],
+  ["Turtle", [
+    ["turtle", "t = turtle([x], [y], [heading])", "a turtle at x, y (centre); heading 0 = up, clockwise; methods return the turtle"],
+    [":fd", "t:fd(d)", "forward d (a line if the pen is down)"],
+    [":bk", "t:bk(d)", "back d"],
+    [":rt", "t:rt(deg)", "turn right"],
+    [":lt", "t:lt(deg)", "turn left"],
+    [":pu", "t:pu()", "pen up"],
+    [":pd", "t:pd()", "pen down"],
+    [":color", "t:color(c)", "pen colour"],
+    [":width", "t:width(w)", "pen width"],
+    [":jump", "t:jump(x, y)", "move without a line"],
+    [":moveto", "t:moveto(x, y)", "move (a line if the pen is down)"],
+    [":heading", "t:heading(deg)", "set the heading"],
+    [":home", "t:home()", "centre, heading 0"],
+    [":push", "t:push()", "save x, y, heading"],
+    [":pop", "t:pop()", "restore them"],
+  ]],
+  ["Audio (debazd analysis)", [
+    ["audio", "audio", "the audio analysis, updated each frame; the first use turns it on (source: /audio/react/source; auto = movie audio, else HDMI_2)"],
+    ["audio.level", "audio.level", "RMS level 0..1 (a full-scale sine = 1)"],
+    ["audio.peak", "audio.peak", "max |sample| of the frame"],
+    ["audio.bass", "audio.bass", "< 250 Hz"],
+    ["audio.low", "audio.low", "250-500 Hz"],
+    ["audio.mid", "audio.mid", "500-2000 Hz"],
+    ["audio.high", "audio.high", "2-8 kHz"],
+    ["audio.air", "audio.air", "> 8 kHz"],
+    ["audio.flux", "audio.flux", "spectral flux (rise of the bands)"],
+    ["audio.beat", "audio.beat", "1 at an onset, else 0"],
+    ["audio.band", "audio.band[0..15]", "16 log-spaced bands (FFI array, from 0)"],
+    ["audio.n", "audio.n", "valid samples in M, L, R (up to 2048)"],
+    ["audio.M", "audio.M[i]", "the newest samples of (L+R)/2, oldest first, -1..1 (FFI array, i from 0)"],
+    ["audio.L", "audio.L[i]", "left channel samples"],
+    ["audio.R", "audio.R[i]", "right channel samples"],
+    ["audio.nbins", "audio.nbins", "spectrum bins (fft_n / 2 + 1; 0 = none)"],
+    ["audio.spec", "audio.spec[k]", "amplitude spectrum of the mix, k = 0..nbins-1"],
+    ["audio.hz", "audio.hz(k)", "bin -> Hz"],
+    ["audio.bin", "audio.bin(hz)", "Hz -> bin"],
+    ["audio.fft_n", "audio.fft_n", "FFT size (/audio/react/fft)"],
+    ["audio.running", "audio.running", "true while samples arrive"],
+    ["audio.source", "audio.source", "\"off\" \"capture\" \"peak\" \"movie\" \"none\""],
+    ["audio.age", "audio.age", "seconds since debazd wrote the data"],
+  ]],
+  ["OSC to debazd", [
+    ["osc", "osc(addr, ...)", "send a Console message (/lfo /dds /fx fields /disp /cue ...); whole numbers = int, strings, osc_f(v) = float. ~0.1 ms; what it sets stays after the script"],
+    ["osc_get", "r, addr = osc_get(addr, ...)", "send and wait 0.2 s for the reply: its args as a table (nil = no reply). ~1 ms"],
+    ["osc_f", "osc_f(v)", "send v as a float even when it is whole"],
+  ]],
+];
+
+// name -> [signature, text]
+export const LOOKUP = new Map();
+for (const [, list] of API) for (const [n, s, d] of list) LOOKUP.set(n, [s, d]);
+
+// globals a script may use without defining them: the API + LuaJIT
+export const KNOWN = new Set([
+  ...[...LOOKUP.keys()].filter((n) => !/[.:]/.test(n)),
+  "math", "string", "table", "os", "io", "bit", "jit", "coroutine", "debug", "package",
+  "require", "pairs", "ipairs", "next", "select", "type", "tostring", "tonumber", "unpack",
+  "pcall", "xpcall", "error", "assert", "setmetatable", "getmetatable", "rawget", "rawset",
+  "rawequal", "loadstring", "load", "dofile", "loadfile", "collectgarbage", "gcinfo",
+  "newproxy", "module", "setfenv", "getfenv", "_G", "_VERSION", "SCRIPT", "arg",
+]);

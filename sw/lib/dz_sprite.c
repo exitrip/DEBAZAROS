@@ -11,6 +11,7 @@
 #include "dz_text.h"
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 typedef struct {
 	int       w, h;
 	uint32_t *px;
+	char      src[160];	/* where it came from (dz_sprite_src) */
 } sprite_t;
 
 static sprite_t S[DZ_SPRITES];
@@ -50,6 +52,26 @@ int dz_sprite_set(int id, int w, int h, uint32_t *px)
 	s->h = h;
 	s->px = px;
 	return 0;
+}
+
+const char *dz_sprite_src(int id)
+{
+	sprite_t *s = sp(id);
+
+	return s && s->px ? s->src : NULL;
+}
+
+static void note(int id, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void note(int id, const char *fmt, ...)
+{
+	sprite_t *s = sp(id);
+	va_list ap;
+
+	if (!s || !s->px)
+		return;
+	va_start(ap, fmt);
+	vsnprintf(s->src, sizeof(s->src), fmt, ap);
+	va_end(ap);
 }
 
 int dz_sprite_size(int id, int *w, int *h)
@@ -168,9 +190,6 @@ int dz_sprite_draw(int id, int slot, float cx, float cy, float scale, float angl
 
 	if (!s || !s->px || scale <= 0.0f)
 		return -1;
-	dst = dz_surf(slot, &W, &H);
-	if (!dst)
-		return -1;
 	alpha = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha);
 	a8 = (unsigned)(alpha * 256.0f + 0.5f);
 	ca = cosf(angle * (float)M_PI / 180.0f);
@@ -179,6 +198,11 @@ int dz_sprite_draw(int id, int slot, float cx, float cy, float scale, float angl
 	hh = s->h * scale * 0.5f;
 	ex = fabsf(hw * ca) + fabsf(hh * sa);	/* half extent of the rotated box */
 	ey = fabsf(hw * sa) + fabsf(hh * ca);
+	/* on a live slot only the box is read (splat, the writer keeps running) */
+	dst = dz_surf_splat_area(slot, &W, &H, (int)floorf(cx - ex) - 1, (int)floorf(cy - ey) - 1,
+				 (int)ceilf(cx + ex) + 2, (int)ceilf(cy + ey) + 2);
+	if (!dst)
+		return -1;
 	x0 = (int)floorf(cx - ex); x1 = (int)ceilf(cx + ex);
 	y0 = (int)floorf(cy - ey); y1 = (int)ceilf(cy + ey);
 	x0 = x0 < 0 ? 0 : x0; y0 = y0 < 0 ? 0 : y0;
@@ -257,6 +281,20 @@ int dz_sprite_dispatch(const dz_msg *m, int verbose)
 		return 0;
 	if (rc < 0)
 		dz_surf_fail();
+	else if (!strcmp(op, "load"))	/* the source, for /sprite/<id> and /sprite/list */
+		note(id, "file:%s", a[0].s);
+	else if (!strcmp(op, "grab"))
+		note(id, "grab:%d %d %d %d %d", a[0].i, a[1].i, a[2].i, a[3].i, a[4].i);
+	else if (!strcmp(op, "text"))
+		note(id, "text:#%02x%02x%02x:%s", c8(&a[0]), c8(&a[1]), c8(&a[2]), a[3].s);
+	else if (!strcmp(op, "ttf"))
+		note(id, "ttf:#%02x%02x%02x:%s", c8(&a[0]), c8(&a[1]), c8(&a[2]), a[4].s);
+	else if (!strcmp(op, "key")) {
+		sprite_t *t = sp(id);
+
+		if (t && !strstr(t->src, " +key"))
+			strncat(t->src, " +key", sizeof(t->src) - strlen(t->src) - 1);
+	}
 	if (verbose)
 		fprintf(stderr, "dz_sprite: %d %s%s\n", id, op, rc < 0 ? " FAILED" : "");
 	return 1;

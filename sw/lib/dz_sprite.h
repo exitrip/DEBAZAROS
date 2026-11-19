@@ -14,7 +14,11 @@
  *                      centred at x,y; angle in degrees; nearest-neighbour;
  *                      uses the target surface's blend mode (/draw/<s>/blend)
  *   /sprite/<id>/free
- *   /sprite/<id>                           -> /sprite/<id> i:w i:h (debazd)
+ *   /sprite/<id>                           -> /sprite/<id> i:w i:h s:src (debazd)
+ *   /sprite/list                           -> /sprite/<id> i:w i:h s:src for each
+ *                                             loaded sprite, then /sprite/list i:n
+ *   src (2026-11-20): "file:<name>", "grab:<slot> x y w h", "text:#rrggbb:<text>",
+ *   "ttf:#rrggbb:<text>"; " +key" after a key
  */
 #ifndef DZ_SPRITE_H
 #define DZ_SPRITE_H
@@ -33,6 +37,7 @@ int  dz_sprite_key(int id, uint8_t r, uint8_t g, uint8_t b, int tol);
 int  dz_sprite_draw(int id, int slot, float cx, float cy, float scale, float angle,
 		    float alpha);
 int  dz_sprite_size(int id, int *w, int *h);
+const char *dz_sprite_src(int id);	/* NULL = not loaded */
 void dz_sprite_free(int id);
 
 /* /sprite/... except the query. Returns operations done, 0 = not ours. */

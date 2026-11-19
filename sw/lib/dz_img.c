@@ -265,8 +265,9 @@ static int jpeg_header(const char *path, unsigned char **buf, unsigned long *len
 	return 0;
 }
 
-/* PNG into the scratch picture, alpha composited onto black */
-static uint32_t *png_read(const char *path, int *w, int *h, char *err, size_t errlen)
+/* PNG into the scratch picture (alloc = 0) or a new malloc buffer (alloc =
+ * 1: no second 8 MB copy, 2026-11-19), alpha composited onto black */
+static uint32_t *png_read(const char *path, int *w, int *h, char *err, size_t errlen, int alloc)
 {
 	png_image im;
 	uint32_t *pic;
@@ -282,9 +283,11 @@ static uint32_t *png_read(const char *path, int *w, int *h, char *err, size_t er
 		return NULL;
 	}
 	im.format = PNG_FORMAT_BGRA;
-	pic = scratch((size_t)im.width * im.height);
+	pic = alloc ? malloc((size_t)im.width * im.height * 4) : scratch((size_t)im.width * im.height);
 	if (!pic || !png_finish(&im, NULL, pic, 0, NULL)) {
 		fail(err, errlen, "PNG: %s", pic ? im.message : "out of memory");
+		if (alloc)
+			free(pic);
 		png_free_img(&im);
 		return NULL;
 	}
@@ -343,7 +346,7 @@ int dz_img_fit(const char *path, uint8_t *dst, size_t stride, int dw, int dh,
 		return 0;
 	}
 	if (kind == DZ_IMG_PNG) {
-		uint32_t *pic = png_read(path, &w, &h, err, errlen);
+		uint32_t *pic = png_read(path, &w, &h, err, errlen, 0);
 
 		if (!pic)
 			return -1;
@@ -357,7 +360,7 @@ uint32_t *dz_img_load(const char *path, int minw, int minh, int *w, int *h,
 		      char *err, size_t errlen)
 {
 	int kind = dz_img_kind(path), iw, ih;
-	uint32_t *out, *pic;
+	uint32_t *out;
 
 	if (kind == DZ_IMG_JPEG) {
 		unsigned char *buf;
@@ -382,15 +385,9 @@ uint32_t *dz_img_load(const char *path, int minw, int minh, int *w, int *h,
 		return out;
 	}
 	if (kind == DZ_IMG_PNG) {
-		pic = png_read(path, &iw, &ih, err, errlen);
-		if (!pic)
+		out = png_read(path, &iw, &ih, err, errlen, 1);
+		if (!out)
 			return NULL;
-		out = malloc((size_t)iw * ih * 4);
-		if (!out) {
-			fail(err, errlen, "out of memory");
-			return NULL;
-		}
-		memcpy(out, pic, (size_t)iw * ih * 4);
 		*w = iw;
 		*h = ih;
 		return out;
@@ -459,4 +456,63 @@ int dz_img_save_jpeg(const char *path, const uint8_t *src, size_t stride, int w,
 		return fail(err, errlen, "cannot write %s", path);
 	}
 	return 0;
+}
+
+/* ---- PNG encoder (2026-11-19): libpng simplified write, in process ----
+ * was: a raw copy in /tmp (tmpfs = RAM, 8 MB) + a background ffmpeg (~25
+ * MB, ~1 s): that pushed the board out of memory on 2026-11-18. */
+#define PNG_IMAGE_FLAG_FAST	0x02
+static pthread_once_t once_w = PTHREAD_ONCE_INIT;
+static int (*png_write_file)(png_image *, const char *, int, const void *, int32_t, const void *);
+
+static void load_png_write(void)
+{
+	void *p = dlopen("libpng16.so.16", RTLD_NOW);
+
+	if (p)
+		png_write_file = (int (*)(png_image *, const char *, int, const void *, int32_t,
+					  const void *))dlsym(p, "png_image_write_to_file");
+}
+
+int dz_img_save_png(const char *path, const uint8_t *src, size_t stride, int w, int h,
+		    char *err, size_t errlen)
+{
+	char part[400];
+	png_image im;
+	const char *slash = strrchr(path, '/');
+
+	pthread_once(&once_w, load_png_write);
+	if (!png_write_file)
+		return fail(err, errlen, "no libpng16.so.16 (png_image_write_to_file)");
+	/* hidden while it grows (the media list skips dot files) */
+	if (slash)
+		snprintf(part, sizeof(part), "%.*s/.%s.part", (int)(slash - path), path, slash + 1);
+	else
+		snprintf(part, sizeof(part), ".%s.part", path);
+	memset(&im, 0, sizeof(im));
+	im.version = PNG_IMAGE_VERSION;
+	im.width = (uint32_t)w;
+	im.height = (uint32_t)h;
+	im.format = PNG_FORMAT_BGRA;		/* a8r8g8b8 words: B G R A bytes */
+	im.flags = PNG_IMAGE_FLAG_FAST;
+	if (!png_write_file(&im, part, 0, src, (int32_t)(stride / 1), NULL)) {
+		unlink(part);
+		return fail(err, errlen, "PNG write: %s", im.message);
+	}
+	if (rename(part, path)) {
+		unlink(part);
+		return fail(err, errlen, "cannot write %s", path);
+	}
+	return 0;
+}
+
+/* give back this thread's cached buffers (file + scratch picture) */
+void dz_img_trim(void)
+{
+	free(th_pic);
+	th_pic = NULL;
+	th_pic_cap = 0;
+	free(th_file);
+	th_file = NULL;
+	th_file_cap = 0;
 }

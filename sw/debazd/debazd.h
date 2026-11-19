@@ -102,6 +102,8 @@ void pix_sync(void);			/* main: wait until the messages posted so far ran */
 void pix_lock(void);			/* main: no pixel job runs until pix_unlock */
 void pix_unlock(void);
 int  pix_queued(void);
+unsigned long pix_mark(void);		/* main: fence = the messages posted so far */
+int  pix_passed(unsigned long mark);	/* 1 = all messages up to the fence ran */
 /* debazd.c: run one message of the pixel domain with this reply context */
 void dzd_pix_run(const uint8_t *msg, size_t len, const struct sockaddr_in *from, int internal);
 
@@ -139,6 +141,20 @@ void st_list_apply(const st_list *l);		/* dispatch in order (internal) */
 void st_list_diff(const st_list *want, const st_list *now, st_list *out);
 void st_reply_target(const char *path, const char *key, const dz_msg *m);
 int  cue_dispatch(const dz_msg *m);	/* /show, /scene, /cue (cue.c) */
+void disp_seq_hold(int d, int on);	/* cue media gate: freeze a sequence */
+void disp_slot_scroll(int slot, int rows);	/* slit.c waterfall: displays showing slot */
+int  slit_dispatch(const dz_msg *m);	/* /slit/<d>/... (slit.c) */
+void slit_tick(void);			/* once per frame (pixel thread) */
+void slit_state(state_cb cb, void *ctx);
+int  lua_dispatch(const dz_msg *m);	/* /lua/<s>/... dzlua scripts (lua.c) */
+void lua_poll(void);			/* once a second (pixel thread): ended scripts */
+void lua_state(state_cb cb, void *ctx);
+int  cue_where(char *show, size_t showcap, char *scene, size_t scenecap, double *num);
+int  cue_resume(const char *show, const char *scene, double num);
+/* resume.c (2026-11-19): state autosave + resume after a debazd restart */
+void resume_init(void);			/* at start, after disp/pix init */
+void resume_tick(void);			/* main loop: autosave every 5 s if changed */
+int  pix_busy(void);			/* 1 = the pixel thread works or has messages */
 int  state_dispatch(const dz_msg *m);	/* /state, /state/snap|recall|diff */
 void disp_state(state_cb cb, void *ctx);
 void lfo_state(state_cb cb, void *ctx);

@@ -61,7 +61,7 @@ static void bm_font(int font, const uint8_t **data, int *w, int *h, int *stride)
 	}
 }
 
-/* size of a text block in pixels; "\n" or the two characters \ n break lines */
+/* size of a text block in pixels (normalised text: text_norm) */
 static void bm_measure(const char *s, int scale, int font, int *tw, int *th)
 {
 	const uint8_t *d;
@@ -69,9 +69,7 @@ static void bm_measure(const char *s, int scale, int font, int *tw, int *th)
 
 	bm_font(font, &d, &gw, &gh, &st);
 	for (const char *p = s; *p; p++) {
-		if (*p == '\n' || (p[0] == '\\' && p[1] == 'n')) {
-			if (*p == '\\')
-				p++;
+		if (*p == '\n') {
 			lines++;
 			col = 0;
 			continue;
@@ -97,9 +95,7 @@ static void bm_render(sink_t *k, uint32_t *base, int x, int y, const char *s, in
 		const uint8_t *g;
 		int bpr = (gw + 7) / 8;
 
-		if (c == '\n' || (p[0] == '\\' && p[1] == 'n')) {
-			if (c == '\\')
-				p++;
+		if (c == '\n') {
 			cx = x;
 			cy += gh * scale;
 			continue;
@@ -275,7 +271,74 @@ static uint32_t utf8_next(const char **pp)
 /* code point after p (for kerning), 0 at the end or at a new line */
 static uint32_t utf8_peek(const char *p)
 {
-	return *p && *p != '\n' && !(p[0] == '\\' && p[1] == 'n') ? utf8_next(&p) : 0;
+	return *p && *p != '\n' ? utf8_next(&p) : 0;
+}
+
+/*
+ * Text as typed (OSC, the web page) -> what the renderers draw (2026-11-19):
+ *   "\n" (backslash n, the web text box has one line), a real newline,
+ *   "\r\n", "\r", "\r" typed           -> a line break
+ *   "\t" typed or a real tab            -> spaces to the next stop (4 columns)
+ *   "\\"                                -> one backslash ("\\n" = the text \n)
+ *   other control and invisible characters (C0, DEL, C1, zero width
+ *   U+200B-U+200F, U+2028/9 = line breaks, U+FEFF, soft hyphen U+00AD)
+ *                                       -> dropped (were '?' or a box)
+ *   ascii (the pixel font): every other non-ASCII character -> ONE '?'
+ *   (was one '?' per UTF-8 byte)
+ * The result lives in a per-thread buffer until the next call.
+ */
+#define TAB_COLS	4
+static const char *text_norm(const char *s, int ascii)
+{
+	static __thread char out[8192];
+	size_t o = 0;
+	int col = 0;
+
+	for (const char *p = s; *p && o < sizeof(out) - 8;) {
+		const char *start = p;
+		uint32_t c;
+
+		if (p[0] == '\\' && (p[1] == 'n' || p[1] == 'r' || p[1] == 't' || p[1] == '\\')) {
+			char e = p[1];
+
+			p += 2;
+			if (e == '\\') {
+				out[o++] = '\\';
+				col++;
+			} else if (e == 't') {
+				do out[o++] = ' '; while (++col % TAB_COLS && o < sizeof(out) - 8);
+			} else {		/* \n, \r: one break (\r\n typed = one) */
+				if (e == 'r' && p[0] == '\\' && p[1] == 'n')
+					p += 2;
+				out[o++] = '\n';
+				col = 0;
+			}
+			continue;
+		}
+		c = utf8_next(&p);
+		if (c == '\r' || c == '\n' || c == 0x2028 || c == 0x2029) {
+			if (c == '\r' && *p == '\n')
+				p++;
+			out[o++] = '\n';
+			col = 0;
+		} else if (c == '\t') {
+			do out[o++] = ' '; while (++col % TAB_COLS && o < sizeof(out) - 8);
+		} else if (c < 0x20 || c == 0x7F || (c >= 0x80 && c < 0xA0) || c == 0xAD ||
+			   (c >= 0x200B && c <= 0x200F) || c == 0xFEFF) {
+			continue;		/* not printed */
+		} else if (ascii && c > 0x7E) {
+			out[o++] = '?';
+			col++;
+		} else {
+			size_t n = (size_t)(p - start);
+
+			memcpy(out + o, start, n);
+			o += n;
+			col++;
+		}
+	}
+	out[o] = 0;
+	return out;
 }
 
 static void ttf_measure(const char *font, float px, const char *s, int *tw, int *th)
@@ -290,8 +353,8 @@ static void ttf_measure(const char *font, float px, const char *s, int *tw, int 
 	for (const char *p = s; *p;) {
 		int adv, lsb;
 
-		if (*p == '\n' || (p[0] == '\\' && p[1] == 'n')) {
-			p += *p == '\\' ? 2 : 1;
+		if (*p == '\n') {
+			p++;
 			lines++;
 			x = 0;
 			continue;
@@ -327,8 +390,8 @@ static void ttf_render(sink_t *k, uint32_t *base, const char *font, int x, int y
 		int adv, lsb, x0, y0, gw, gh;
 		unsigned char *bm;
 
-		if (*p == '\n' || (p[0] == '\\' && p[1] == 'n')) {
-			p += *p == '\\' ? 2 : 1;
+		if (*p == '\n') {
+			p++;
 			cx = (float)x;
 			base_y += (int)lh;
 			continue;
@@ -364,10 +427,11 @@ static uint32_t argb(dz_color c)
 	return 0xFF000000u | ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
 }
 
-static int surf_sink(sink_t *k, int slot, dz_color c, uint32_t **base)
+/* x0..x1, y0..y1 = the area the text covers (a live slot reads only that) */
+static int surf_sink(sink_t *k, int slot, dz_color c, uint32_t **base, int x0, int y0, int x1, int y1)
 {
 	memset(k, 0, sizeof(*k));
-	*base = dz_surf(slot, &k->w, &k->h);
+	*base = dz_surf_splat_area(slot, &k->w, &k->h, x0, y0, x1, y1);	/* splats on a live slot */
 	if (!*base)
 		return -1;
 	k->slot = slot;
@@ -388,8 +452,18 @@ int dz_text_draw(int slot, dz_color c, int x, int y, const char *s, int scale, i
 	sink_t k;
 	uint32_t *base;
 
-	if (!s || surf_sink(&k, slot, c, &base) < 0)
+	if (s)
+		s = text_norm(s, 1);	/* \n, tabs, controls */
+
+	if (!s)
 		return -1;
+	{
+		int tw, th;
+
+		bm_measure(s, scale < 1 ? 1 : scale, font, &tw, &th);
+		if (surf_sink(&k, slot, c, &base, x - 2, y - 2, x + tw + 2, y + th + 2) < 0)
+			return -1;
+	}
 	bm_render(&k, base, x, y, s, scale, font);
 	surf_done(&k);
 	return 0;
@@ -402,9 +476,18 @@ int dz_ttf_draw(int slot, dz_color c, int x, int y, float px, const char *s,
 	sink_t k;
 	uint32_t *base;
 
-	if (line_metrics(font, px, &asc, &lh) < 0 || !s || px < 2.0f || px > 1000.0f ||
-	    surf_sink(&k, slot, c, &base) < 0)
+	if (s)
+		s = text_norm(s, 0);	/* \n, tabs, controls */
+
+	if (line_metrics(font, px, &asc, &lh) < 0 || !s || px < 2.0f || px > 1000.0f)
 		return -1;
+	{
+		int tw, th, m = (int)px;	/* margin: overhangs, fallback glyphs */
+
+		ttf_measure(font, px, s, &tw, &th);
+		if (surf_sink(&k, slot, c, &base, x - m, y - m, x + tw + m, y + th + m) < 0)
+			return -1;
+	}
 	ttf_render(&k, base, font, x, y, px, s);
 	surf_done(&k);
 	return 0;
@@ -426,7 +509,8 @@ static int put_rotated(int slot, dz_color c, const uint32_t *src, int w, int h, 
 	/* the rotated box: half extents */
 	const double ex = (fabs(ca) * w + fabs(sa) * h) / 2.0 + 1, ey = (fabs(sa) * w + fabs(ca) * h) / 2.0 + 1;
 
-	if (surf_sink(&k, slot, c, &base) < 0)
+	if (surf_sink(&k, slot, c, &base, (int)floor(cx - ex) - 1, (int)floor(cy - ey) - 1,
+		      (int)ceil(cx + ex) + 2, (int)ceil(cy + ey) + 2) < 0)
 		return -1;
 	int y0 = (int)floor(cy - ey), y1 = (int)ceil(cy + ey), x0 = (int)floor(cx - ex), x1 = (int)ceil(cx + ex);
 	for (int py = y0; py <= y1; py++) {
@@ -463,8 +547,12 @@ int dz_text_draw_rot(int slot, dz_color c, int x, int y, const char *s, int scal
 	sink_t k;
 	int w, h, rc;
 
+	const char *raw = s;	/* angle 0: the plain call normalises it once */
+
 	if (fmodf(angle, 360.0f) == 0.0f)
-		return dz_text_draw(slot, c, x, y, s, scale, font);
+		return dz_text_draw(slot, c, x, y, raw, scale, font);
+	if (s)
+		s = text_norm(s, 1);	/* \n, tabs, controls */
 	if (!s || !*s)
 		return -1;
 	scale = scale < 1 ? 1 : scale;
@@ -484,8 +572,12 @@ int dz_ttf_draw_rot(int slot, dz_color c, int x, int y, float px, const char *s,
 	sink_t k;
 	int w, h, rc;
 
+	const char *raw = s;	/* angle 0: the plain call normalises it once */
+
 	if (fmodf(angle, 360.0f) == 0.0f)
-		return dz_ttf_draw(slot, c, x, y, px, s, font);
+		return dz_ttf_draw(slot, c, x, y, px, raw, font);
+	if (s)
+		s = text_norm(s, 0);	/* \n, tabs, controls */
 	if (line_metrics(font, px, &asc, &lh) < 0 || !s || !*s || px < 2.0f || px > 1000.0f)
 		return -1;
 	ttf_measure(font, px, s, &w, &h);
@@ -519,6 +611,9 @@ int dz_text_sprite(int id, dz_color c, const char *s, int scale, int font)
 	sink_t k;
 	int w, h;
 
+	if (s)
+		s = text_norm(s, 1);	/* \n, tabs, controls */
+
 	if (!s || !*s)
 		return -1;
 	scale = scale < 1 ? 1 : scale;
@@ -534,6 +629,9 @@ int dz_ttf_sprite(int id, dz_color c, float px, const char *s, const char *font)
 	float asc, lh;
 	sink_t k;
 	int w, h;
+
+	if (s)
+		s = text_norm(s, 0);	/* \n, tabs, controls */
 
 	if (line_metrics(font, px, &asc, &lh) < 0 || !s || !*s || px < 2.0f || px > 1000.0f)
 		return -1;

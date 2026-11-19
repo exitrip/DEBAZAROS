@@ -106,9 +106,16 @@
  *                                     the file's rate) (debazd, 2026-11-02)
  *   /surface/<s>/present
  *   /surface/<s>/auto          0|1
- *   /surface/<s>/save          "name"     (the shadow as name.png in DZ_IMG_DIR,
- *                                         ready about 1 s later; "x.ppm" = PPM
- *                                         at once). Load it back: /img/<s>/load
+ *   /surface/<s>/save          "name"     the slot as name.png in DZ_IMG_DIR
+ *                                         (lossless; "name.jpg" = JPEG q 92,
+ *                                         smaller + faster to load; "x.ppm" =
+ *                                         PPM). Encoded in debazd, ready when
+ *                                         the reply comes (2026-11-19; was a
+ *                                         background ffmpeg). A slot without a
+ *                                         paint buffer saves its picture.
+ *                                         Load it back: /img/<s>/load
+ *   /surface/mem               -> /surface/mem i:buffers i:kB i:kB_free
+ *   /surface/trim              free all clean paint buffers now (debazd)
  *   /surface/<s>/grab          [src]      copy slot src (default s) into the
  *                                         painting buffer: freeze the capture
  *                                         or a movie frame, then paint on it
@@ -129,9 +136,13 @@
  *                                         s:full|mode i:w i:h i:kB_in_use
  *                                         i:kB_free (debazd)
  *   /surface/<s>/free                     give the RAM copy back (the slot
- *                                         keeps its picture). A new surface
- *                                         is refused when less than 24 MB of
- *                                         RAM would stay free.
+ *                                         keeps its picture; a movie on the
+ *                                         slot stops). A new surface first
+ *                                         frees clean idle buffers, then is
+ *                                         refused when less than 24 MB of
+ *                                         RAM would stay free. Clean buffers
+ *                                         also go after 60 s idle or when RAM
+ *                                         is low, and come back from the slot.
  *
  * Colours: float 0..1 or int 0..255. No rectangle = whole surface.
  * Movies and images without a rectangle keep their own size at the top left
@@ -222,6 +233,19 @@ int  dz_draw_movie_play(int s, const char *name);
 int  dz_draw_movie_play_fps(int s, const char *name, float fps);	/* 0 = no cap */
 int  dz_draw_movie_play_av(int s, const char *name, float fps, int audio);	/* + audio to DEBAZ */
 int  dz_draw_movie_stop(int s);
+/* called by dz_draw_movie_stop(slot), i.e. whenever a draw, an image, a
+ * movie or a slit effect takes the slot: another program that writes the
+ * slot (debazd lua.c: a dzlua script) stops (2026-11-20) */
+extern void (*dz_draw_claim_hook)(int slot);
+/* shared slots (2026-11-20, ROADMAP.md section 19): a slot is live while
+ * another writer refreshes it (a movie, the capture slot, or what this
+ * hook says: debazd lua.c, a running script). Draws on a live slot splat
+ * into the slot instead of stopping the writer (see dz_draw.c). */
+extern int (*dz_draw_live_hook)(int slot);
+int  dz_draw_live(int slot);
+/* after each OSC message on the pixel thread: frees the buffers read from
+ * live slots during the message */
+void dz_draw_job_end(void);
 int  dz_draw_movie_running(int s);	/* reaps a finished player */
 int  dz_draw_movie_ctl(int s, const char *line);	/* to its dzmosh; -1 = none */
 int  dz_draw_movie_pause(int s, int on);
@@ -265,6 +289,22 @@ const char *dz_draw_take_err(void);	/* the reason of the last refusal, or NULL *
 int  dz_draw_canvas(int s, int mode);	/* 0 = full slot, 1 = mode size */
 int  dz_draw_canvas_get(int s, int *w, int *h, size_t *bytes);	/* -> mode */
 void dz_draw_free(int s);
+/*
+ * Memory (2026-11-19): a paint buffer with nothing left to copy is a copy
+ * of the slot; it is freed when RAM is low or after 60 s idle and rebuilt
+ * from the slot on its next use (the slot's movie keeps playing).
+ * dz_draw_trim: free until want_kb are available (not `keep`, not used in
+ * the last idle_s s; deep = also scratch buffers, only between jobs), the
+ * kB available after. dz_draw_mem_tick: pixel thread, between jobs (it
+ * runs once a second). dz_draw_adopt_all: after a restart, the first draw
+ * on a slot continues on its picture.
+ */
+long dz_draw_trim(long want_kb, int keep, double idle_s, int deep);
+void dz_draw_mem_tick(void);
+void dz_draw_adopt_all(void);
+void dz_draw_adopt(int s);		/* slot written directly elsewhere (slit.c) */
+long dz_draw_mem_avail_kb(void);
+int  dz_draw_buffers(int *n, long *kb);	/* paint buffers now: count, kB */
 int  dz_draw_movie_pos(int s, int x, int y);	/* for the next play / now */
 int  dz_draw_movie_pos_get(int s, int *x, int *y);
 const char *dz_draw_img_name(int s);	/* /img/<s>/file */

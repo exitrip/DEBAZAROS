@@ -155,6 +155,40 @@ export function init(el) {
   const sceneName = h("input", { type: "text", placeholder: "scene name", style: "width:8em", title: "/scene/add <name>, /scene/rename <scene> <name>" });
   const lookName = h("input", { type: "text", placeholder: "look name", style: "width:9em", title: "/look/save <name>" });
 
+  // backup (2026-11-19): download = the saved show as one bundle file;
+  // upload = a bundle back (debazd checks it, keeps an old show of that name)
+  const download = () => {
+    const n = showSel.value;
+    if (!n) return toast("no show selected");
+    const a = h("a", { href: `${net.httpBase()}/shows/${encodeURIComponent(n)}.json?dl`, download: `${n}.json` });
+    document.body.append(a); a.click(); a.remove();
+  };
+  const upFile = h("input", { type: "file", accept: ".json,application/json", style: "display:none",
+    onchange: async () => {
+      const f = upFile.files[0];
+      upFile.value = "";
+      if (!f) return;
+      let b;
+      try { b = JSON.parse(await f.text()); } catch { return toast(`${f.name}: not JSON`); }
+      if (!b.debaz_show_bundle || !b.files || !b.files["show.json"]) return toast(`${f.name}: not a downloaded show`);
+      const n = (prompt("Show name on the board (an existing show of that name is kept as <name>-bak-<date>):", b.show || "") || "")
+        .trim();
+      if (!n) return;
+      if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,45}$/.test(n)) return toast("show name: A-Z a-z 0-9 . _ -");
+      try {
+        const r = await fetch(`${net.httpBase()}/shows/${encodeURIComponent(n)}.json`, { method: "PUT", body: f });
+        if (!r.ok) return toast(`upload: ${(await r.text()).trim()}`);
+      } catch (e) { return toast(`upload: ${e.message}`); }
+      send("/show/import", `/tmp/dzweb-import-${n}.json`, n);
+    } });
+  net.on("/show/import", (m) => {
+    const n = m.args[0];
+    later(loadShows);
+    if (confirm(`Show ${n} is on the board. Load it now? (unsaved changes of the loaded show are lost)`)) {
+      send("/show/load", n); later(refreshAll, 400);
+    }
+  });
+
   root.append(h("div.grid", {},
     card("Show",
       row(null, showSel,
@@ -169,6 +203,11 @@ export function init(el) {
         h("button", { title: "/show/check: unknown addresses, argument types, missing files and looks", onclick: check }, "Check"),
         h("button", { title: "Save over files that changed on disk\n/show/save force", onclick: () => {
           if (confirm("Overwrite the files on disk, also hand edits made since loading?")) send("/show/save", "force"); } }, "Save force")),
+      row(null, h("button", { title: "the saved files of the selected show as ONE .json file on this computer " +
+          "(a backup: Save first, unsaved edits are not in it)\nGET /shows/<name>.json (dzweb)", onclick: download }, "⇩ Download"),
+        h("button", { title: "a downloaded show file back onto the board: the files are checked, a show of the same name " +
+          "is kept as <name>-bak-<date>, then Load it\nPUT /shows/<name>.json (dzweb) + /show/import", onclick: () => upFile.click() }, "⇧ Upload"),
+        upFile),
       checkEl,
       h("p.hint", {}, "Files: /data/shows/<show>/show.json (scenes, cues), baseline.json, looks/*.json - JSON you can " +
         "edit by hand; 1 is an int, 1.0 a float.")),

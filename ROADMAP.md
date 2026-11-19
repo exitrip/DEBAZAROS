@@ -106,6 +106,10 @@ wedge (avoid: CLAUDE.md).
 | 21 | HDMI_1: align its own video and the feedback copy of HDMI_0 (~6 px apart since mixer rev 26; one sync delay cannot align both) (section 17) | 22 | TODO: the fix (pix_delay before colorGainFeedback1/Din0 + a 4-bit sync delay, branch capture-reset 17062880) does not place yet |
 | 22 | Room in the PL: a real saving before new logic (slices 100 %) (section 14) | — | TODO: candidates in section 14 (dz_osc2 / hdmi_audio_regs control sets, ...). NOT the mixer word-only write patch (failed 4 times, user 2026-11-02) |
 | 23 | Fleet: 2-12+ units on a LAN, network control, time sync (Fleet, FLEET.md) | 6, 11 | TODO: design only |
+| 24 | Slit scan and sample-and-hold effects (section 18) | 6 | DOING: analysis + measurements 2026-11-19; the cheap set (debazd slit.c: row / column slit, waterfall, scanner bands, tile hold) built; open: banded time displacement, capture-DMA tests with a live input |
+| 25 | LuaJIT scripts into a slot: between the C effects and the OSC API (sw/dzlua, debazd lua.c, web Console tab Lua) | 6 | DONE on .236 2026-11-20: turtle / lines / circles / text / raw FB, live params, cue state, claim by other writers, log + errors in the web; + osc()/osc_get() from scripts, MIDI by FFI raw MIDI, `audio` (features, spectrum, samples: debazd shared memory /dev/shm/dzreact), 12 templates incl. an oscilloscope, web editor with highlighting + luaparse lint + API reference (sw/README.md); open: not in an image yet, fluidsynth + a soundfont in the image (MIDI out to a softsynth), a vsync-locked frame clock (now a timer: may tear), a faster fade (DDR bound) |
+| 26 | Shared slots: paint, scripts, movies and the capture write one slot together (section 19) | 25 | DOING: steps 1-2 DONE on .236 2026-11-20 (splat on live slots, dzlua layer mode + grab, measured); NEXT on the build machine: the cached-slot experiment (u-dma-buf, section 19 step 5); step 4 only as a cheap toggle |
+| 27 | Crops outside the slot: negative / large `/disp/<d>/crop` x, y (2026-11-20) | - | DONE on .236 2026-11-20 (disp.c at(): reserved-memory clamp at every switch; Wall tab "outside the slot" + Centre; sw/README.md "Video mode and video wall"). Design notes: The VDMA start = slot base + y x 7680 + x x 4 and the 12 slots are one strip of 1080-row slots: y < 0 shows the bottom of slot n-1, y past the bottom the top of slot n+1 (real neighbour bleed; an LFO on crop/y scrolls the stack like a film strip). x < 0 is NOT the left neighbour: each line starts with the end of the row above in the same slot (x past 1920 - w wraps the same way), so a small movie at the top left can be centred (crop x = -(w_mode - w_movie)/2) when the slot's right margin is black. Rules: the VDMA only reads (no corruption), but clamp the start address and the last line to the reserved memory (else Linux RAM is shown); x stays even; VSIZE recommit + fsync as now (frame exact). Work: disp.c clamp, the capture slot size rule, Wall tab ranges, check state / cues / LFO targets with negative ints, docs (x vs y differ). Side-by-side neighbours would need another slot layout (wider pitch): not part of it |
 | | **Done** | | |
 | 0 | **URGENT: reserved memory** (`PetaLinux/dtb/README.md`): 16 MB was too small; 128 MB is rejected by the kernel; 96 MB DTB installed | reboot | DONE, verified 2026-10-24: iomem hole, /dev/fb0, 6 usable slots, capture in slot 4, movie into slot 3 without corruption |
 | 1 | HDMI input hot-plug: find the cause (section 1) | hardware | DONE (2026-10-19) |
@@ -578,6 +582,17 @@ keys, machine-id, `/etc/hostname`, network). Gain: a power cut cannot
 damage the system; a unit is "power off = safe". Media stay on their own
 FAT partition (writable). Software updates then need a remount
 (`mount -o remount,rw /`) or a new image.
+
+Done for it (2026-11-19, `sw/lib/dz_path.h`): changing files of our own go
+to `/data` (DEBAZDATA): `/data/shows`, `/data/debaz/dzstart.conf` (the old
+`/home/ebaz/dzstart.conf` is still read and copied there once); run-time
+state in `/run/debaz` (autosave, video mode), logs in the volatile journal.
+Still written to `/` today (inventory for the switch): dev installs
+`/home/ebaz/{bin,www}` (`make install`: remount rw, or move to `/data/opt`),
+`/usr/share/fonts/debaz` (pushfonts.sh: put the fonts in the image), units
+copied by hand to `/etc/systemd/system` (the image has them), ssh host keys
+(`/etc/ssh`), `/etc/machine-id`, the hostname (debaz-firstboot), ALSA mixer
+state (`alsactl store`), `/boot/uEnv.txt` (first boot only, FAT).
 
 ### Decisions (user, 2026-10-25)
 
@@ -2172,3 +2187,180 @@ Vivado), so a stopping input alone does not issue half bursts.
   (org.gnome.Mutter.DisplayConfig PowerSaveMode <0>), hold it with
   `gnome-session-inhibit --inhibit idle sleep N` (xrandr cannot change
   outputs on this Wayland session).
+
+## 18. Slit scan and sample-and-hold (analysis 2026-11-19)
+
+Goal: slit-scan and sub-frame sample-and-hold effects on the live capture
+(HDMI_2) and on the playback slots. Question: is it easier to steer the
+capture DMA (S2MM) than to rework the memory the outputs read?
+
+### Measured (debazd load: a movie + two slot sequences, both cores busy)
+
+720p unless noted, frame slots via the uncached /dev/mem mapping:
+
+| Building block | Cost |
+|---|---|
+| 1 row slot -> slot (1280 px) | 0.08 ms (read 0.05, write 0.012) |
+| 1 column (720 px): read / write | 0.17 / 0.06 ms |
+| full frame slot -> slot | 53 ms (1080p 94 ms) |
+| full frame in cached RAM (memcpy) | 35 ms |
+| CPU read of a slot | ~105 MB/s |
+
+Under load the cached copy is barely faster than the uncached one: the
+shared DDR and the busy cores are the limit, not the missing cache (a
+cached kernel buffer with cache maintenance would gain little).
+
+### Limits
+
+- A live input cannot be paused line by line: the only buffer in front of
+  S2MM (v_vid_in_axi4s FIFO) holds ~6 lines (~0.13 ms). Every time shift is
+  storage, and storage is frames in DDR.
+- Time displacement (each output row from another past moment): with one
+  frame per row the live data is H/2 frames at best, but every layout that
+  a DMA can read or write linearly needs H frames (720p: 720 x 3.7 MB =
+  2.6 GB). Bands (one past frame per band of h rows) cannot be built by a
+  DMA at all: one start address and one stride per frame make it linear in
+  the row; the algebra works only for h = 1 (worked through for both the
+  S2MM write side and the MM2S read side).
+- The fabric is full (slices 100 %), and the PL has no memory for frames.
+- The reserved memory (96 MB, 12 slots of 8.3 MB) holds ~6 history frames
+  at 720p in the free slots (8.3 MB pitch), ~13 packed at 3.7 MB.
+
+### Plan
+
+1. Cheap set, CPU in debazd (BUILT and tested on the board 2026-11-19,
+   `sw/debazd/slit.c`, `/slit/<dst>/...`, web Media tab card, sw/README.md
+   "Slit scan"; measured per frame: row 0.13-0.23 ms, column 1.2 ms, scan
+   0.33 ms, tiles 0.77 ms; waterfall start address checked frame by frame),
+   any source slot (the capture, a movie, a paint slot), < 1 ms per frame:
+   row slit (a source row per frame into the next row of the target),
+   column slit, waterfall (the row slit scrolls: each row written twice
+   into a double-height buffer, the display start address moves one row
+   per frame: no copy), scanner band (h rows or columns move over the
+   picture, the rest holds), random tile hold.
+2. Free with the DMAs (register writes only, NOT yet tried): frame hold /
+   stutter (the capture writes a store no display shows), shear / slant
+   (display line stride + 4 bytes = 1 px per row), per-frame start-address
+   scroll.
+3. Banded time displacement (rolling-shutter look): a history ring of N
+   capture frames (re-point the 3 S2MM frame stores each frame, frame
+   synced) + CPU composition of the bands: 35-53 ms per 720p frame =
+   15-25 fps on one core; offer a smaller region and a capture of every
+   k-th frame (more time span per band).
+4. Gateware only if needed (fabric full): an AXIS shim that moves the S2MM
+   start-of-frame to line ys would let the capture DMA write the slit or
+   the scanner band itself (no CPU); the CPU versions cost < 1 ms, so not
+   needed now. Columns can never come from the S2MM (one line = HSIZE).
+
+To test with someone at the board (live input = capture wedge risk): S2MM
+with VSIZE < the input height (band of the top lines; latched EOL/SOF
+errors are non-fatal with c_flush_on_fsync), S2MM address re-point rate,
+the display stride shear through the UVC dongle.
+
+## 19. Shared slots and one set of buffers (analysis 2026-11-20)
+
+Goal (user, 2026-11-20): a script can draw into a slot where a movie
+plays, a manual paint can splat into a slot that a script (or a movie,
+or the capture) writes, and the private RAM copies become one set of
+buffers.
+
+### The model today (read from the code, 2026-11-20)
+
+Every slot is 8.3 MB of reserved DDR, mapped UNCACHED (`/dev/mem` on a
+no-map region; `/dev/fb0` write-combined covers slot 0 only). Writes are
+fast (370-660 MB/s with memcpy), reads are slow (~105 MB/s), a
+read-modify-write in place is very slow. That is the only reason for the
+private copies:
+
+| Writer | Thread / process | How |
+|---|---|---|
+| debazd paint (draw ops, text, shapes, sprites, image load) | pixel thread | private full shadow (8.3 MB) + dirty-rectangle copy |
+| transforms (dz_xform) | pixel thread | second full buffer, swapped; rows to the slot |
+| ASCII | pixel thread | reads the source slot, writes the target's shadow, changed cells |
+| movie (fbfeed) | own process | YUV -> slot directly, the whole movie rectangle every frame |
+| image sequence (anim.c) | pixel thread | JPEG decode straight into ring slots |
+| slit | pixel thread | rows / columns slot to slot directly |
+| dzlua | own process | private canvas + dirty-rectangle copy |
+| capture | PL (VDMA S2MM) | slot 4, every input frame |
+
+Exclusivity: every paint op and `dz_surf()` call `dz_draw_movie_stop()`
+(also the dzlua claim hook): the shadow is right only because nobody
+else writes the slot. Exceptions: slit drops the shadow each frame, and
+the capture is never stopped (so paint on slot 4 "worked": a stroke
+lives until the next input frame).
+
+### Rules (agreed 2026-11-20)
+
+A slot is LIVE while another writer refreshes it: a movie plays there,
+it is the capture slot, or a script runs there. On a live slot the slot
+memory is the picture; a RAM copy is valid only for the op that made it.
+
+| On a live slot | Behaviour |
+|---|---|
+| brush, stroke, line, rect, ellipse, solid / gradient with a rectangle | splat: read the op's rectangle from the slot, draw, write it back (no stop) |
+| text, ttf, polygon / star shapes, sprite draw | splat: the full canvas is read once per OSC message, the buffer is dropped after it |
+| clear, unbounded solid / gradient / bars, image load, /img/file, grab, transforms, fade, ASCII target, slit, flood, a movie start | take over: stop the other writer, as before |
+| a script start | runs over a movie or the capture (layer mode), stops another script |
+
+Costs (uncached read ~105 MB/s): a 40 x 40 brush stamp 6 KB = ~0.06 ms;
+a full 1920 x 1080 read ~80 ms (one-shot ops only). A splat on a movie
+lasts one movie frame (fbfeed rewrites the whole rectangle): the strobe
+look of painting on the capture. With auto-present off, a splat on a
+live slot presents what is pending first.
+
+dzlua LAYER mode: present writes only pixels brighter than a key level
+(black = transparent: trails dissolve into the movie), as runs of
+memcpy, no reads. Only right where another writer refreshes the slot
+every frame (on a still slot old pixels would stay): debazd starts a
+script in layer mode when the slot is live, `layer()` in the script or
+`/lua/<s>/layer` override. `grab()` pulls the slot into the canvas
+(~50 ms) for scripts that want to keep the splats.
+
+### Steps
+
+1. debazd splat on live slots (dz_draw.c: live(), rectangle redirect
+   with an origin; text / shapes / sprites read only their box). DONE on
+   .236 2026-11-20: a movie keeps playing through brush, stroke, rect and
+   text splats (1-30 ms each next to the movie, text 5-7 ms: it read the
+   whole slot first, 165-204 ms); clear takes over; slot 6 kept no paint
+   buffer after the splats (job end). Costs in sw/README.md "Shared slots".
+2. dzlua layer mode + grab(); debazd passes the live state (/lua/<s>/layer
+   auto|0|1, web select). DONE on .236: layer over a solid slot correct;
+   frame cost +10 ms at 1280 x 1024 (NEON scan). Seen: a script over a
+   playing movie shows only between movie frames (the movie rewrites its
+   rectangle) - persistent = step 4.
+3. Memory: no persistent full shadow for a live slot (step 1 already
+   frees the per-op buffers; check the paint tab's batch path).
+4. Only if wanted: persistent splats on a moving movie = compositing in
+   fbfeed (a shared overlay in /dev/shm, written by debazd paint and
+   dzlua, blended into each converted frame: a few ms NEON per frame).
+   Conditions (user, 2026-11-20): only as a TOGGLE with low overhead.
+   Off = today's write path unchanged and at least as fast (no extra
+   test per pixel or row: choose the path once per frame on a flag);
+   on = must not slow the playback or the CPU use much (blend only the
+   overlay's dirty rows / tiles, skip empty ones; measure fps and fbfeed
+   CPU on vs off before it is kept).
+5. EXPERIMENT (next, on the build machine, user 2026-11-20): CACHED slots.
+   Every private copy exists because the slots are uncached. A kernel
+   module that maps the reserved region cached with explicit cache
+   maintenance would let every writer draw straight into the slot:
+   - candidate: u-dma-buf (ikwzm, out-of-tree, Yocto recipe exists):
+     a device node per buffer, `memory-region` = a reserved-memory node,
+     mmap cached unless O_SYNC, sync_for_device / sync_for_cpu through
+     sysfs or ioctl over a range (dma_sync_single_* = L1 + PL310 L2).
+   - the A9 L1/L2 are physically tagged: debazd, fbfeed and dzlua that map
+     the same physical slot share one cache, so CPU writers see each other
+     without maintenance. Only the DMA side needs it: flush (clean) a
+     written range before the VDMA scans it (= the present), invalidate
+     before the CPU reads what the capture VDMA wrote.
+   - questions to answer: does u-dma-buf accept our no-map 96 MB region
+     (it may want a shared-dma-pool / CMA region: a DT change, and the
+     simplefb fb0 must stay inside); cached read and write MB/s on this
+     board vs uncached (105 / 370-660); cost of a clean by range for a
+     full 1920 x 1080 slot (one flush per frame per writer); tearing
+     (a writer flushes per frame, the VDMA may scan half-cleaned lines:
+     same as today's dirty-rectangle copy).
+   - if it works: shadows go away (debazd draws into the slot + flushes
+     the dirty rectangle), dzlua's canvas = the slot, saves / ASCII /
+     slit / grab read at cached speed, memory frees ~8 MB per painted slot.
+

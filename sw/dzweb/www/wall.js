@@ -25,12 +25,17 @@ const save = () => store.set("wall", cfg);
 // the source display d crops from: the input when it shows the capture, else a 1920 x 1080 slot
 const srcW = (d = 0) => (geom.live[d] && geom.iw) || 1920, srcH = (d = 0) => (geom.live[d] && geom.ih) || 1080;
 const maxX = (d = 0) => Math.max(0, srcW(d) - geom.mw), maxY = (d = 0) => Math.max(0, srcH(d) - geom.mh);
+// slider range: inside the source, or with "outside" (2026-11-20) one source either way: y < 0 = the bottom
+// of the slot before, y past the end = the next slot; x < 0 / past the end = the slot's own lines wrapped
+const loX = (d = 0) => (cfg.outside ? -(srcW(d) - 2) : 0), hiX = (d = 0) => (cfg.outside ? srcW(d) - 2 : maxX(d));
+const loY = (d = 0) => (cfg.outside ? -srcH(d) : 0), hiY = (d = 0) => (cfg.outside ? srcH(d) : maxY(d));
+const even = (v) => (v < 0 ? -((-v + 1) & ~1) : v & ~1);
 const MODES = ["640x480", "800x600", "1024x768", "1280x1024", "1280x720", "1280x720x50Hz", "1280x720x45Hz",
   "1280x720x30Hz", "1280x720x25Hz", "1920x1080x25Hz", "1920x1080x30Hz", "1920x1080x60Hz"]; // fallback for /video/modes
 
 function setCrop(d, x, y, send = true) {
-  x = Math.max(0, Math.min(maxX(d), Math.round(x))) & ~1;
-  y = Math.max(0, Math.min(maxY(d), Math.round(y)));
+  x = even(Math.max(loX(d), Math.min(hiX(d), Math.round(x))));
+  y = Math.max(loY(d), Math.min(hiY(d), Math.round(y)));
   crop[d] = [x, y];
   if (send) {
     localT[d] = Date.now();
@@ -81,13 +86,15 @@ function showGeom() {
   ui.in.textContent = geom.iw ? `${geom.iw}×${geom.ih}` : "no signal";
   if (ui.mode && geom.name && !ui.mode.dataset.busy) ui.mode.value = geom.name;
   for (const d of [0, 1]) {
-    ui.src[d].textContent = `${geom.live[d] ? "input" : "slot"} ${srcW(d)}×${srcH(d)}, x 0…${maxX(d)}, y 0…${maxY(d)}`;
-    ui.sl[d].x.max = maxX(d);
-    ui.sl[d].y.max = maxY(d);
-    ui.sl[d].x.disabled = !maxX(d);
-    ui.sl[d].y.disabled = !maxY(d);
+    ui.src[d].textContent = `${geom.live[d] ? "input" : "slot"} ${srcW(d)}×${srcH(d)}, x ${loX(d)}…${hiX(d)}, y ${loY(d)}…${hiY(d)}`;
+    ui.sl[d].x.min = loX(d);
+    ui.sl[d].x.max = hiX(d);
+    ui.sl[d].y.min = loY(d);
+    ui.sl[d].y.max = hiY(d);
+    ui.sl[d].x.disabled = hiX(d) === loX(d);
+    ui.sl[d].y.disabled = hiY(d) === loY(d);
   }
-  const tight = [0, 1].some((d) => !maxX(d) && !maxY(d));
+  const tight = !cfg.outside && [0, 1].some((d) => !maxX(d) && !maxY(d));
   ui.warn.textContent = tight ? "A source is not larger than the output: that display has no crop range. " +
     "Choose a smaller output mode (e.g. 640x480) to cut windows out of it." : "";
   drawMap();
@@ -119,13 +126,33 @@ async function loadModes() {
 }
 
 // ---- the map: source, tiles, the two windows ----
+// scale k and the source's origin on the canvas; "outside": the slot before above, the next below, half a
+// slot of margin left and right (where wrapped lines show)
+function mapView() {
+  const cv = ui.map, ew = cfg.outside ? 2 : 1, eh = cfg.outside ? 3 : 1;
+  const k = Math.min(cv.width / (srcW() * ew), cv.height / (srcH() * eh));
+  return { k, ox: cfg.outside ? srcW() * 0.5 * k : 0, oy: cfg.outside ? srcH() * k : 0 };
+}
+
 function drawMap() {
   const cv = ui.map;
   if (!cv) return;
-  const W = cv.width, H = cv.height, k = Math.min(W / srcW(), H / srcH());
+  const W = cv.width, H = cv.height, { k, ox, oy } = mapView();
   const cx = cv.getContext("2d");
   const css = (v) => getComputedStyle(document.body).getPropertyValue(v);
+  cx.setTransform(1, 0, 0, 1, 0, 0);
   cx.clearRect(0, 0, W, H);
+  cx.translate(ox, oy);
+  if (cfg.outside) {			// the neighbour slots in memory
+    cx.fillStyle = css("--dim");
+    cx.font = "11px sans-serif";
+    cx.globalAlpha = 0.18;
+    cx.fillRect(0, -srcH() * k, srcW() * k, srcH() * k);
+    cx.fillRect(0, srcH() * k, srcW() * k, srcH() * k);
+    cx.globalAlpha = 1;
+    cx.fillText("slot before", 4, -srcH() * k + 13);
+    cx.fillText("next slot", 4, srcH() * k + 13);
+  }
   cx.fillStyle = css("--panel2");
   cx.fillRect(0, 0, srcW() * k, srcH() * k);
   cx.strokeStyle = css("--line");
@@ -230,8 +257,10 @@ export function init(el) {
   ui.map = h("canvas", { width: 480, height: 280, title: "click: display 0 to that tile (shift: display 1)\n/disp/<d>/crop <x> <y>",
     style: "width:100%;max-width:480px;height:auto;border:1px solid var(--line);border-radius:8px;cursor:pointer",
     onclick: (e) => {
-      const r = ui.map.getBoundingClientRect(), k = Math.min(ui.map.width / srcW(), ui.map.height / srcH());
-      const sx = ((e.clientX - r.left) / r.width) * ui.map.width / k, sy = ((e.clientY - r.top) / r.height) * ui.map.height / k;
+      const r = ui.map.getBoundingClientRect(), { k, ox, oy } = mapView();
+      const sx = (((e.clientX - r.left) / r.width) * ui.map.width - ox) / k;
+      const sy = (((e.clientY - r.top) / r.height) * ui.map.height - oy) / k;
+      if (sx < 0 || sy < 0 || sx >= srcW() || sy >= srcH()) return;	// tiles are inside the slot
       const t = Math.min(cfg.cols - 1, Math.floor(sx / (srcW() / cfg.cols))) +
         cfg.cols * Math.min(cfg.rows - 1, Math.floor(sy / (srcH() / cfg.rows)));
       const d = e.shiftKey ? 1 : 0;
@@ -245,6 +274,14 @@ export function init(el) {
       oninput: () => setCrop(d, crop[d][0], Number(y.value)) });
     return { x, y, out };
   });
+  const outside = h("input", { type: "checkbox", checked: !!cfg.outside, onchange: () => {
+    cfg.outside = outside.checked ? 1 : 0;
+    save();
+    showGeom();
+    if (!cfg.outside) for (const d of [0, 1]) setCrop(d, crop[d][0], crop[d][1]);	// back inside
+  } });
+  const cw = h("input", { type: "number", value: 640, min: 2, max: 1920, step: 2, style: "width:80px", title: "picture width (px)" });
+  const ch = h("input", { type: "number", value: 480, min: 1, max: 1080, step: 1, style: "width:80px", title: "picture height (px)" });
   const mode = h("select", { title: "how the exerciser moves the crops (/disp/<d>/crop x y)", onchange: () => { cfg.mode = mode.value; save(); } },
     [["pan", "pan sweep (around the range)"], ["hop", "tile hop (every N frames)"],
       ["random", "random (every N frames)"], ["stress", "stress (random, every frame)"]]
@@ -259,7 +296,7 @@ export function init(el) {
       row("Input", ui.in),
       row("Mode", ui.mode, ui.apply),
       h("p.hint", {}, "Output = both displays (one pixel clock), input = HDMI 2. A new mode restarts hdmi2 on the board (a second or two of black); movies stop " +
-        "and the crops go back to 0, 0. The boot mode is HDMI2_ARGS in /home/ebaz/dzstart.conf.")),
+        "and the crops go back to 0, 0. The boot mode is HDMI2_ARGS in /data/debaz/dzstart.conf.")),
     card("Source",
       row(null, h("button", { onclick: () => { [0, 1].forEach((d) => net.msg(`/disp/${d}/capture`)); setTimeout(loadGeom, 300); },
         title: "/disp/0/capture, /disp/1/capture" }, "Live input on both"),
@@ -283,7 +320,17 @@ export function init(el) {
         "display 0 (orange) starts its window there; shift-click: display 1 (green). Windows clamp at the edge.")),
     card("Manual",
       ...[0, 1].map((d) => row(`D${d}`, ui.sl[d].x, ui.sl[d].y, ui.sl[d].out)),
-      h("p.hint", {}, "x, y = the top-left of the window in the display's source; the range is source − output.")),
+      row("", h("label", { title: "let the sliders leave the slot: y < 0 shows the bottom of the slot before, y past the end the top of the next slot;\n" +
+        "x < 0 or past the end wraps the slot's own lines (each line starts with the end of the line above)" }, outside, " outside the slot")),
+      row("Centre", cw, "×", ch, ...[0, 1].map((d) => h("button", {
+        title: `/disp/${d}/crop -(output w - w)/2 -(output h - h)/2: a w × h picture at the top left of the slot in the middle of display ${d}\n` +
+          "(black around it when the slot's right margin and the slot before's bottom are black)",
+        onclick: () => {
+          if (!cfg.outside) { cfg.outside = 1; outside.checked = true; save(); showGeom(); }
+          setCrop(d, -Math.round((geom.mw - Number(cw.value)) / 2), -Math.round((geom.mh - Number(ch.value)) / 2));
+        } }, `D${d}`))),
+      h("p.hint", {}, "x, y = the top-left of the window in the display's source; the range is source − output " +
+        "(outside: one source either way; the board keeps every address inside the reserved slot memory).")),
     card("Exerciser",
       row("Mode", mode),
       row("Speed", numIn("speed", { min: 1, max: 100, step: 1 }, "pan: pixels per frame"),

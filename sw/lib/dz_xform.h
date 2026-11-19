@@ -19,6 +19,7 @@
 #ifndef DZ_XFORM_H
 #define DZ_XFORM_H
 
+void dz_xform_trim(void);	/* free the back buffer (between operations) */
 int dz_xform_affine(int dst, int src, const float m[6]);
 int dz_xform_rotozoom(int dst, int src, float angle, float zoom, float cx, float cy);
 int dz_xform_scroll(int dst, int src, int dx, int dy);

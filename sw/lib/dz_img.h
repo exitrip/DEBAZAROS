@@ -57,6 +57,16 @@ uint32_t *dz_img_load(const char *path, int minw, int minh, int *w, int *h,
 int dz_img_save_jpeg(const char *path, const uint8_t *src, size_t stride, int w, int h,
 		     int quality, char *err, size_t errlen);
 
+/*
+ * Encode as PNG (libpng, fast setting, RGBA with the alpha of the words:
+ * give opaque pixels). Written as .name.part next to it, then renamed.
+ */
+int dz_img_save_png(const char *path, const uint8_t *src, size_t stride, int w, int h,
+		    char *err, size_t errlen);
+
+/* free the calling thread's cached decode buffers (memory trim) */
+void dz_img_trim(void);
+
 /* bilinear resize of a w x h picture into dst (dw x dh, dst_stride bytes) */
 void dz_img_resize(const uint32_t *src, int w, int h, uint32_t *dst,
 		   size_t dst_stride, int dw, int dh);

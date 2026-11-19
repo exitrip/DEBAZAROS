@@ -32,6 +32,7 @@
 #define QMAX		1024		/* messages waiting */
 #define FRAME_WAIT_MS	8.0		/* messages first, but a frame waits at most this */
 #define POLL_MS		20.0		/* movie end check (was the monitor interval) */
+#define MSG_SHARE_MAX	100.0		/* after a long frame, messages get its length, at most this */
 
 typedef struct {
 	struct sockaddr_in from;
@@ -48,13 +49,14 @@ static job_t *q[QMAX];
 static int qh, qn, frame_due, run;
 static unsigned long posted, done;
 static double frame_t0;
+static double msg_until;		/* waiting messages run before the next frame until then */
 static pthread_t thr;
 static __thread int in_pix;
 
 int pix_owns(const char *path)
 {
 	static const char *const pre[] = { "/draw/", "/img/", "/movie/", "/surface/",
-					   "/sprite/", "/ascii/", "/media/info" };	/* ffprobe: slow */
+					   "/sprite/", "/ascii/", "/slit/", "/lua/", "/media/info" };	/* ffprobe: slow */
 
 	for (size_t k = 0; k < sizeof(pre) / sizeof(pre[0]); k++)
 		if (!strncmp(path, pre[k], strlen(pre[k])))
@@ -125,13 +127,17 @@ int pix_post(const dz_msg *m, const struct sockaddr_in *from, int internal)
 static void frame_work(void)
 {
 	ascii_tick();
+	slit_tick();
 	dz_draw_movie_tick();
+	dz_draw_job_end();
 }
 
 static void poll_work(void)
 {
 	for (int s = 0; s < DZ_SLOTS; s++)
 		dz_draw_movie_running(s);
+	lua_poll();			/* scripts that ended */
+	dz_draw_mem_tick();		/* memory trim, once a second (between jobs) */
 }
 
 void pix_frame(void)
@@ -167,6 +173,49 @@ void pix_sync(void)
 	pthread_mutex_unlock(&qmu);
 }
 
+/* a fence for the main thread (2026-11-19, cues): pix_mark() = the messages
+ * posted so far, pix_passed(mark) = 1 when they all ran. Without the thread
+ * everything ran inline: always passed. */
+unsigned long pix_mark(void)
+{
+	unsigned long v;
+
+	if (!run)
+		return 0;
+	pthread_mutex_lock(&qmu);
+	v = posted;
+	pthread_mutex_unlock(&qmu);
+	return v;
+}
+
+int pix_passed(unsigned long mark)
+{
+	int r;
+
+	if (!run)
+		return 1;
+	pthread_mutex_lock(&qmu);
+	r = done >= mark;
+	pthread_mutex_unlock(&qmu);
+	return r;
+}
+
+int pix_busy(void)
+{
+	int busy;
+
+	if (!run)
+		return 0;
+	pthread_mutex_lock(&qmu);
+	busy = qn > 0;
+	pthread_mutex_unlock(&qmu);
+	if (!busy && pthread_mutex_trylock(&pmu) == 0)
+		pthread_mutex_unlock(&pmu);
+	else
+		busy = 1;
+	return busy;
+}
+
 void pix_lock(void)
 {
 	if (!in_pix)
@@ -189,15 +238,24 @@ static void *pix_main(void *arg)
 	while (run) {
 		double t = stats_now(), t0;
 
-		if (frame_due && (!qn || t - frame_t0 >= FRAME_WAIT_MS)) {
+		/* a frame waits for the messages at most FRAME_WAIT_MS, and after
+		 * a long frame the messages first get as long as it took (2026-11-20:
+		 * a slit at speed 250 took ~400 ms a frame; frame_due was set again
+		 * during it, so frames ran back to back and /slit/<d>/stop waited
+		 * for ever in the queue) */
+		if (frame_due && (!qn || (t - frame_t0 >= FRAME_WAIT_MS && t >= msg_until))) {
+			double ft;
+
 			frame_due = 0;
 			pthread_mutex_unlock(&qmu);
 			pthread_mutex_lock(&pmu);
 			t0 = stats_now();
 			frame_work();
-			stats_pix(stats_now() - t0);
+			ft = stats_now() - t0;
+			stats_pix(ft);
 			pthread_mutex_unlock(&pmu);
 			pthread_mutex_lock(&qmu);
+			msg_until = ft > FRAME_WAIT_MS ? stats_now() + (ft < MSG_SHARE_MAX ? ft : MSG_SHARE_MAX) : 0;
 		} else if (qn) {
 			job_t *j = q[qh];
 

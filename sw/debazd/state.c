@@ -10,6 +10,8 @@
  *              and file players (key /audio/out/<n>/file: play or stop)
  *   displays   /disp/<d>/show or seq, blank, crop/x, crop/y   (disp.c)
  *   ascii      /ascii/<d>/... settings, then run <src> or run -1 (ascii.c)
+ *   slit       /slit/<d>/... settings, then run <src>|capture|-1 (slit.c)
+ *   lua        /lua/<s>/p/<key> parameters, then run "name"|"" (lua.c)
  *   dds        the step tables and the AWG, if debazd wrote them (dds.c)
  *   lfo        /lfo/<n>/... settings, then on                 (lfo.c)
  *   pwm        /fan/<n>/pwm hz duty invert, or 0 (also the software PWM)
@@ -232,6 +234,8 @@ void state_dump(state_cb cb, void *ctx)
 	disp_state(cb, ctx);
 	anim_state(cb, ctx);
 	ascii_state(cb, ctx);
+	slit_state(cb, ctx);
+	lua_state(cb, ctx);
 	pix_unlock();
 	dds_state(cb, ctx);
 	react_state(cb, ctx);
@@ -390,6 +394,8 @@ static int rank_of(const char *a)
 		{ "/disp/", "", 30 }, { "/anim/", "/play", 32 }, { "/anim/", "/pause", 33 },
 		{ "/anim/", "", 31 },
 		{ "/ascii/", "/chars", 40 }, { "/ascii/", "/run", 42 }, { "/ascii/", "", 41 },
+		{ "/slit/", "/run", 44 }, { "/slit/", "", 43 },
+		{ "/lua/", "/run", 46 }, { "/lua/", "", 45 },
 		{ "/dds/", "", 50 }, { "/audio/react/", "", 55 },
 		{ "/lfo/", "/rate", 60 }, { "/lfo/", "/frames", 61 }, { "/lfo/", "/on", 63 },
 		{ "/lfo/", "", 62 },

@@ -12,6 +12,7 @@ no BSP.
 | `lib/` | `libdz`: register mapping (`dz_map`), named register fields (`dz_fields`), display routing and capture status (`dz_vdma`), OSC wire format (`dz_osc`), drawing and movies (`dz_draw`), text (`dz_text`), program lookup (`dz_path`). |
 | `hdmi2/` | Display bring-up (video mode, VDMAs, VTC, dynclk; capture only when debazd does not run). Moved from the old Vitis workspace (jerkspace). |
 | `fbfeed/` | Copies raw frames from stdin into a frame slot (movies; NEON yuv420p -> RGB, trails, ghost). |
+| `dzlua/` | LuaJIT scripts that draw into one frame slot (`dzlua.c` = drawing in C + LuaJIT by dlopen, `prelude.lua` = the script API, built in). debazd starts it (`/lua/<s>/...`, `debazd/lua.c`). See "Lua scripts" below. |
 | `dzmosh/` | Live datamosh in the movie pipe (MPEG-4 Part 2 only): drops key frames, repeats P frames, flips bits, pauses; sets the frame pace. Commands on `/tmp/dzmosh.<slot>` (debazd `/movie/<s>/mosh\|bloom\|corrupt\|pause`). |
 | `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). Must match the bitstream that runs. |
 | `tools/` | Board scripts (`dzstart.sh`, `plreload.sh`, `dzsetup.sh`, `capstat.sh`, ...), laptop scripts (`mkmedia.sh`, `pushfonts.sh`), `selftest.sh`, `image/` (the image's systemd unit and default config), `vscode/` (debug setup). |
@@ -55,12 +56,89 @@ it at boot (`debaz.service`, log: `journalctl -u debaz`); by hand:
 3. dzweb as user ebaz (port 8080).
 4. Checks: processes, `/ping`, VDMA status, capture.
 
-Config: `/home/ebaz/dzstart.conf` (per card), else `/etc/debaz/dzstart.conf`
-(image): `BITSTREAM=`, `HDMI2_ARGS="-r 1280x720"`, `WEB=1`.
+Config: `/data/debaz/dzstart.conf` (per card, on the data partition;
+2026-11-19), else the old `/home/ebaz/dzstart.conf` (dzstart copies it to
+/data/debaz once), else `/etc/debaz/dzstart.conf` (image): `BITSTREAM=`, `HDMI2_ARGS="-r 1280x720"`, `WEB=1`, `SHOW=` +
+`CUE=` (the boot show, below).
 The video mode can change later without a reboot: `/video/mode 800x600`.
 
 Only one debazd runs at a time (`/tmp/debazd.lock`). hdmi2 does not touch
 the capture while debazd holds that lock.
+
+With the systemd units installed (2026-11-19, next section) the steps are
+the same, but dzstart / plreload start units instead of background
+processes, and the logs are in the journal.
+
+## Persistent files (2026-11-19)
+
+Everything that must survive a reboot and changes goes to `/data`
+(DEBAZDATA, ext4, 256 MB, made at first boot): `/data/shows/<show>/` and
+`/data/debaz/dzstart.conf`. Media: `/media/debaz` (exFAT). Run-time state:
+`/run/debaz` (RAM: autosave, video mode, fresh marker). The root file system
+becomes read-only later (ROADMAP.md section 10 lists what still writes to
+it). Paths: `lib/dz_path.h` (`DZ_DATA_DIR`).
+
+## Services, restart and memory (2026-11-19)
+
+Units (`tools/image/*.service`, `tools/dzrun.sh` = the command of each;
+programs from /home/ebaz/bin, else /usr/bin):
+
+| Unit | Program | Policy |
+|---|---|---|
+| `debaz.service` (enabled) | `dzstart.sh` at boot | oneshot: PL load if configured, then starts the units below |
+| `debaz-video.service` | hdmi2.elf (`HDMI2_ARGS`, or `/run/debaz/video.args` from `/video/mode`) | no restart (the displays keep running without it) |
+| `debazd.service` | debazd -v | `Restart=always` (1 s), `WatchdogSec=15`, `OOMScoreAdjust=-800`, stop = the whole group (movies, players, arecord) |
+| `dzweb.service` | dzweb as ebaz | `Restart=always` |
+
+- Logs: `journalctl -u debazd -f` (also `-u debaz-video`, `-u dzweb`,
+  `-u debaz`). The image caps the journal at 4 MB of RAM
+  (`journald.conf.d/debaz.conf`). Without the units, the old `/tmp/*.log`
+  files grew without a limit (debazd -v: ~0.5 MB/h with a movie).
+- **Resume** (`debazd/resume.c`): every 5 s debazd writes its whole state
+  + show/scene/cue to `/run/debaz/autosave.bin` (only on a change, only
+  when the pixel thread is idle). A restart (crash, `systemctl restart
+  debazd`, watchdog) reads the show again, sets the cue position (no go)
+  and applies the state: movies, images, displays, LFOs, fields. Measured:
+  `kill -9` -> back on the same cue with 698 targets in 1.5 s. Unsaved show
+  edits are NOT in the autosave: save the show.
+- **Fresh start**: dzstart / plreload write `/run/debaz/fresh` when the PL
+  is at reset (PL load, or the displays were off). debazd then does not
+  resume, and the unit's ExecStartPost runs `dzsetup.sh` once (mixer boot
+  setup) and removes the file. A plain restart never runs dzsetup (it
+  would undo the state).
+- **Watchdog**: debazd sends `WATCHDOG=1` every 2 s from its main loop. A
+  main loop blocked for 15 s (a hang, not a crash) gets SIGABRT and a
+  restart. Tested with SIGSTOP: restart + resume after 14 s.
+- **Boot show**: `SHOW=flyer1204` + `CUE="main 1"` in dzstart.conf = after
+  a fresh start dzstart loads that show and goes to that cue.
+- **Hardware watchdog** (prepared, NOT installed): `tools/image/
+  debaz-watchdog.conf` -> `/etc/systemd/system.conf.d/`, then `systemctl
+  daemon-reexec`: systemd feeds the Zynq watchdog (cdns-wdt, in the kernel),
+  and a hung kernel resets the board after 30 s (then the boot show). Test
+  it once with someone at the board before it goes into the image.
+- Movie children set their own `oom_score_adj` back to 0 (lib/dz_draw.c
+  spawn_sh), so the kernel picks a movie, not debazd, when RAM runs out.
+
+**Memory** (Linux has ~144 MB; a full paint buffer is 8.1 MB). On
+2026-11-18 seven paint buffers + a movie + a PNG save (raw copy in /tmp +
+ffmpeg) ran the board out of memory and the kernel killed debazd. Now:
+- a paint buffer with nothing left to copy is a copy of its slot: it is
+  freed after 60 s idle, or at once when RAM is low (< 48 MB), and comes
+  back from the slot memory on its next use (~60 ms). A new buffer first
+  frees idle ones before it is refused. `/surface/mem` -> buffers, kB,
+  kB free; `/surface/trim` frees all clean ones now.
+- a movie no longer allocates a paint buffer (fbfeed writes the slot), and
+  a movie start is refused when less than 24 MB would stay free.
+- `/surface/<s>/save name[.png|.jpg]` encodes in debazd (libpng, fast
+  setting / TurboJPEG q 92): no /tmp copy, no ffmpeg. Measured 1920x1080:
+  PNG of paint 0.46 s, PNG of a live capture 3.2 s (5 MB: photo-like content
+  compresses badly), JPEG 0.13 s. A slot without a paint buffer saves its
+  picture (it saved black before). The encode runs on the pixel thread:
+  movies and ASCII wait during it.
+- the PNG loader decodes straight into its buffer (one 8 MB copy less) and
+  the decode / transform scratch buffers are freed when idle.
+- after the boot of 2026-11-19 with the show loaded: debazd 66 MB -> 27 MB,
+  free 23 MB -> 85 MB.
 
 ## OSC interface (summary)
 
@@ -208,12 +286,23 @@ Full list in `lib/dz_draw.h`. Painting operations (Oct 2026):
 | `/draw/<s>/flood` | r g b x y [tol 0-255, default 32] — paint bucket: the connected area of similar colour, filled with the slot's `/fill` (solid, linear across the area, radial from the click) |
 | `/surface/<s>/grab` | [src slot] — copy the real slot content (live capture = 4, a playing movie) into the painting buffer: freeze it, then paint on it |
 | `/surface/<s>/peek` | x y — reply `/pixel s x y r g b` |
-| `/surface/<s>/save` | name — the painting buffer as `name.png` in `/home/ebaz/img`, encoded by a background ffmpeg (ready about 1 s later; `x.ppm` = PPM at once) |
+| `/surface/<s>/save` | name[.png\|.jpg] — the slot as `name.png` (lossless, default) or `name.jpg` (q 92, smaller, ~3x faster to load in a cue) in `/media/debaz/img`, encoded in debazd (2026-11-19; was a background ffmpeg); `x.ppm` = PPM |
 | `/img/<s>/load` | name [x y w h] — draw an image file back (scaled; whole frame by default) |
 
 The web app's Paint page has these as the **Image** card: "save as" (a time
-stamp name by default) and "recall" (the board's images, newest first; Load
-also updates the browser preview). Saved images show in Media too.
+stamp name by default, PNG or JPG: PNG for drafts you load back to undo or
+try things, JPG for the image a cue loads) and "recall" (the board's images,
+newest first; Load also updates the browser preview). Saved images show in
+Media too. The text row has a font picker for the Aa ttf tool (the board's
+fonts, `/files fonts`) and a two-line text area.
+
+Text rules (2026-11-19, `lib/dz_text.c` text_norm, the same in the Paint
+preview): Enter, `\n`, `\r\n` = a new line; Tab or `\t` = spaces to the next
+4-column stop; `\\` = a backslash (`\\n` prints `\n`); other control and
+invisible characters (C0, DEL, C1, zero width, BOM, soft hyphen) are not
+drawn (they were `?` or boxes); the pixel font draws ONE `?` for each
+non-ASCII character (it drew one per UTF-8 byte). Applies to
+`/draw/<s>/text|ttf` (also rotated) and text sprites.
 
 Plus the older fills, gradients, images and movies (`lib/dz_draw.h`).
 Every operation stops a movie that plays into the same slot.
@@ -394,6 +483,23 @@ slot is 1920 x 1080; the capture: its real size), applied at vsync, so it
 can move every frame. A small output mode over a large input gives the
 zoom (640x480 quarters of a 1280x960 input). The Wall tab has all of it.
 
+Crops outside the slot (2026-11-20): x -1918..1918 and y beyond the slot
+work too. The slots are one strip of 1080-row slots in memory, so **y < 0
+shows the bottom of the slot before and y past the bottom the top of the
+next slot** (neighbour bleed; an LFO on `/disp/<d>/crop/y` scrolls through
+the stack). **x < 0 is not the slot to the left:** every line starts with
+the end of the line above in the same slot (x past 1920 - w wraps the same
+way). With a black right margin that centres a small movie: crop x =
+-(output w - movie w) / 2 (Wall tab: Centre w x h). debazd keeps the start
+address and the last line inside the reserved slot memory at every
+switch (show, seq, image sequence): the VDMA only reads, but outside it
+would show Linux RAM. So y < 0 on slot 0 stops at slot 0's top, a large y
+on slot 11 at its bottom; the reply and `/state` keep the asked values.
+Verified on .236 (720p): the VDMA start addresses for bleed, negative x,
+both clamps and a sequence step that clamps; 0 video events. Wall tab:
+"outside the slot" widens the sliders to one slot either way (the map
+shows the slot before and the next slot).
+
 Slots, not modes (2026-11-04): every slot is a 1920 x 1080 picture in every
 output mode, and each source keeps its own size in it, so a display (any
 mode) shows a window of whatever is there: a 720p movie fills 1280 x 720 of
@@ -436,6 +542,192 @@ one ffmpeg. `/movie/<s>/vf|af "preset|chain"` (checked filter chains, the
 movie restarts), live options `/movie/<s>/vf/<filter>/<option> v` (ffmpeg's
 runtime commands, queued every 110 ms), `/movie/<s>/trails d` and `ghost k`
 (in fbfeed). `debazd/ascii.c`: `/ascii/<d>/run <src>` draws a slot as text.
+
+## Slit scan and sample-and-hold (2026-11-19)
+
+`debazd/slit.c` (ROADMAP.md section 18), one effect per target slot `d`,
+the source is any slot (a movie, a paint slot) or the live capture. It runs
+on the pixel thread once per frame and writes the target slot directly.
+
+| Mode | What | Cost per frame (720p-1024 lines, measured) |
+|---|---|---|
+| `row` | source row `pos` (`band` rows thick) into the next target row: time runs down | 0.13-0.23 ms |
+| `col` | source column `pos` into the next target column: time runs right | 1.2 ms (band 2) |
+| `scan` | the band of `band` rows at a moving position is refreshed from the source, the rest holds (scanner bar) | 0.33 ms (band 6) |
+| `scanv` | the same with columns | |
+| `tiles` | `tiles` random squares of `band` px refreshed per frame (glitch hold) | 0.77 ms (6 x 48 px) |
+
+`/slit/<d>/run <src>|capture` (`-1` = stop), `/stop`, `/mode`, `/pos`
+(int = pixels, float = 0..1 of the size: an LFO target "/slit/6/pos $f0"),
+`/speed` (rows or columns per frame, fractional or negative), `/band`,
+`/tiles`, `/every k`, `/scroll 0|1`, `/clear`, `/status`. The settings are
+in `/state` (cues, resume).
+
+Waterfall (`scroll 1`, row mode): each row is written twice (at w and
+w + H) and every display that shows the target starts w + 1 rows down
+(`disp_slot_scroll`), so the newest row is at the bottom and the picture
+scrolls up with no copy (checked: the display start address moves 7680
+bytes per frame). It uses rows H..2H-1, part of the NEXT slot: refused
+when that is the black slot 11 or the slot the capture writes; the next
+slot's image is forgotten (a cue loads it again).
+
+The target's paint buffer is dropped every frame (a save or a draw starts
+from the slot picture), and a movie started on the target stops the
+effect. Web: Media tab card "Slit scan / sample and hold" (the target =
+the tab's slot).
+
+High speeds (fixed 2026-11-20): at speed 250 in col mode every step read
+the source column again from uncached memory (250 x 720 reads), ~400 ms a
+frame, and `/slit/<d>/stop` waited for ever (frames ran back to back on
+the pixel thread). Now the steps fill a map "target line -> band line"
+(the last write wins, the same picture), the band is read once per frame
+and each target line written once; columns are built per row in RAM and
+copied as runs. Measured at 720p next to a playing movie: col speed 250
+band 1 1.2 ms, band 16 1.7 ms, speed 2000 (full width each frame) 9.3 ms,
+row 250 1.1 ms, row 2000 band 8 3.4 ms; stop answers in 0.4 s. pix.c:
+after a frame longer than 8 ms the waiting messages first get as long as
+it took (max 100 ms), so no frame effect can starve the messages again.
+
+Sprites (2026-11-20): dz_surf_put (one call per sprite / shape pixel) did
+a full get() each time: the live check and a clock_gettime system call per
+pixel. One bouncing 150 px sprite at 30 fps = 50 % of the pixel thread,
+now 13 % (the surface is looked up once per OSC message).
+
+Sprites in the web app (2026-11-20, `www/sprites.js`): ONE selected sprite
+number for the Media and Paint tabs (kept in the browser). Media tab:
+Sprites card = a palette of thumbnails (each loaded sprite, the selected
+number, a few empty ones; click = select; from `/sprite/list`), the
+selected number and what it holds, text / TrueType / key / free on it;
+every image row's button says `→ sprite #N`. Paint tab, Text and sprite
+card: the sprite # slider has a preview, what the sprite holds, and an
+image picker + Load (no trip to the Media tab).
+
+## Lua scripts into a slot (2026-11-20)
+
+Between the compiled effects and the OSC API: a curve of 10,000 segments
+is one script line, not 10,000 OSC messages. `dzlua` (one process per
+slot) runs a LuaJIT script that draws into a RAM canvas at the video
+mode's size; each frame copies the changed rectangle to the slot. debazd
+starts and stops it like a movie: a draw, an image, a movie or a slit
+effect on the slot stops the script, and the picture stays. A crash, an
+error or an endless loop stops only the script. (Since the shared slots,
+2026-11-20: brush, lines, shapes and text splat into a script's slot and
+the script keeps running; a script runs over a movie in layer mode. See
+"Shared slots" below.)
+
+Web: Console tab, **Lua** (editor, examples, Run = save + start,
+Ctrl+Enter, Ctrl+S, the log with print() output and errors: a click on
+an error line selects that line). Scripts are files in
+`/media/debaz/scripts/<name>.lua` (dzweb `/media/scripts/...`, as the
+other media).
+
+| OSC | |
+|---|---|
+| `/lua/<s>/start "name"` | (re)start `scripts/name.lua` on slot s |
+| `/lua/<s>/run "name"\|""` | the state model (cues): start unless it runs or ended without an error already; `""` = stop |
+| `/lua/<s>/stop` | stop (the picture stays) |
+| `/lua/<s>/p/<key> v` | `param.key` in the script, live (int, float, text; also an LFO target `/lua/5/p/angle $f0`); kept for the next start; `fps` sets the frame rate; no value = forget |
+| `/lua/<s>/status` | `i:running s:name i:exit f:fps f:ms i:frames` (exit -1 runs, 0 ended, 1 error, 128+n signal) |
+| `/lua/<s>/log [bytes]` | the end of `/tmp/dzlua.<s>.log` |
+
+The script API (full list at the top of `dzlua/prelude.lua`):
+`frame(n, t)` once per frame at `fps` (no `frame()` = draw once and end),
+`setup()`, `param`, `onparam(k, v)`; `rgb hsv gray`, `clear fade trails
+pset pget line poly rect circle text scroll blend alpha`, `FB[y*W+x]` +
+`dirty()` (the canvas as a raw `uint32_t*` for pixel loops; LuaJIT
+compiles them), `present wait time`, `turtle()` with `fd bk rt lt pu pd
+color width jump moveto heading home push pop`, `print`. Colours are
+0xRRGGBB (true RGB). Lines are anti-aliased (thin: Wu, thick: capsules).
+
+Measured on the board at 1280 x 1024 (2026-11-20; the displays scan out
+at the same time): an empty frame is nothing, a full-frame copy to the
+slot 14 ms, `fade()` + copy 42 ms, `trails()` (the fade fused with the
+copy, row by row) 35 ms, the turtle flower (120 lines, add blend) with
+trails 41 ms = 24 fps. Pixel work is DDR bound: draw small areas, or
+use `trails()` instead of `fade()`. 720p is about 0.7 x these times.
+
+**OSC and MIDI from a script (2026-11-20):** `osc(addr, ...)` sends any
+Console message to debazd (UDP 127.0.0.1:9000, from the prelude: FFI
+socket + an OSC encoder in Lua, no C): `/lfo`, `/dds`, fields, `/disp`,
+`/cue/go` ... Whole numbers go as int, `osc_f(v)` forces a float.
+`osc_get(addr, ...)` waits 0.2 s for the reply and returns its args
+(the first message of the reply bundle). Measured at 720p: `osc()` 0.09
+ms, `osc_get()` 0.8 ms. What a script sets stays after it stops (debazd
+state). MIDI: a script opens an ALSA raw MIDI device with the FFI
+(`open/read/write`, O_NONBLOCK) - the image has the sequencer, VirMIDI
+(card 1, clients 20-23) and aconnect/amidi/aseqdump; tested in and out
+through VirMIDI 1-0 (template `midi-io`).
+
+**Audio in a script (2026-11-20):** `audio` = debazd's analysis (react.c)
+through shared memory `/dev/shm/dzreact` (`lib/dz_react_shm.h`, version
+1): `audio.level peak bass low mid high air flux beat`, `band[0..15]`,
+the amplitude spectrum `spec[k]` (`nbins`, `hz(k)`, `bin(hz)`), the newest
+2048 samples `M[i] L[i] R[i]` (mix, left, right; `n` valid, oldest
+first), `running`, `source`, `age`. The first use of `audio` turns the
+feed on: dzlua pokes the block each frame, debazd counts that as a sink
+(source auto starts movie / HDMI_2 audio as for an audio LFO) and writes
+the block each frame while poked in the last 5 s (seqlock; dzlua copies
+it in C with barriers, ~26 KB). Measured on .236 with a movie playing its
+audio: debazd 8.7 % with a reader, 5.3 % 6 s after (the analysis stops
+too). Templates `audio-scope` (triggered wave L/R, X/Y, log spectrum in
+dB; param gain: movie / laptop audio is quiet) and `audio-react`. An LFO
+with shape audio is still the way to move debazd things without a script.
+
+**The editor (2026-11-20):** highlighting (a coloured `<pre>` under the
+transparent textarea, `www/luahl.js`), a lint after each pause in typing
+(`www/luaparse.js` = luaparse 0.3.1, MIT, vendored, LuaJIT syntax: the
+error line is marked, Run asks before it starts a script with a syntax
+error; global names that are neither in the API nor assigned in the
+script get a wavy line: typos), a help line for the word or call at the
+cursor, and the API reference (`www/luaapi.js`, search, a click inserts
+the entry). ⚠️ `luaapi.js` and the `dz_react_shm` cdef in
+`dzlua/prelude.lua` repeat the prelude / the C header: change them
+together.
+
+**Templates (web Lua panel, examples list):** skeleton (all hooks,
+smoothed params), draw-once, own-loop (scenes with wait()),
+layer-overlay, osc-control (an LFO + DDS from a script, with undo),
+audio-scope, audio-react, midi-io, sprite-bounce (a debazd sprite bounces across display 0 and on across display 1 and back: the script is only a controller, osc() /draw rect to erase + /sprite/draw per frame; run it on a third slot), and the quirks: dirty-fast (one changed rectangle
+per frame: two far circles 8.5 ms with one present(), 0.4 ms with a
+present() each), fb-plasma (FB loops; one computed row + ffi.copy, short
+nested loops are ~3x slower), grab-mosaic (grab() reads uncached memory,
+then the canvas is fast), ticker (scroll() = whole frame; redraw a strip
+instead). At 720p with nothing else running all hold 30 fps (work 0-34
+ms per frame); next to a playing movie the heavy ones drop to 11-22 fps.
+⚠️ The params of a slot are kept and sent to the NEXT script on that
+slot too (`/lua/<s>/p/<key>` without a value forgets one).
+
+## Shared slots: paint, scripts, movies and the capture on one slot (2026-11-20)
+
+ROADMAP.md section 19. A slot is LIVE while another writer refreshes it:
+a movie plays there, it is the capture slot (4), or a script runs there.
+On a live slot the slot memory is the picture (the paint buffer is only
+a work area for one OSC message):
+
+- **Splat** (the other writer keeps running): brush, stroke, line, rect,
+  ellipse, solid / gradient / corners WITH a rectangle (the op's
+  rectangle is read from the slot, drawn, written back), text, ttf,
+  polygon / star shapes, sprites (only their box is read).
+- **Take over** (stops the other writer, as before): clear, solid /
+  gradient / bars without a rectangle, radial gradient, flood, image load,
+  `/img/file`, grab, fade, transforms, ASCII target, slit, a movie start.
+- A splat on a movie lasts until the movie's next frame (fbfeed rewrites
+  its whole rectangle): the strobe look of painting on the capture.
+- Scripts: `/lua/<s>/layer auto|0|1` (auto = on when a movie or the
+  capture writes the slot; web: Console, Lua, layer select). In layer
+  mode only pixels brighter than `layer(on, key)` (8) reach the slot:
+  black is transparent. `grab()` pulls the slot into the canvas.
+
+Measured on .236 (1280 x 1024, 2026-11-20), op cost on the pixel thread
+(round trip minus /surface/mem): on a still slot brush r20 0.8 ms, r60
+2.1, stroke 10.5, filled rect 300x200 3.0, text 3.1; on a playing movie
+(decode on both cores) brush r20 1-2 ms, r60 5-10, stroke 26-30, rect
+6-12, text 5-7 (it was 165-204 ms before the text read only its box).
+Script frame (turtle flower, trails, 1280 x 1024): opaque 41 ms, layer
+51 ms (NEON scan; scalar was 59), next to a movie 71 / 121 ms. A script
+over a movie is seen only between the movie's frames: persistent drawing
+over a movie = ROADMAP section 19 step 4 (fbfeed overlay, only as a
+cheap toggle).
 
 ## Image sequences (stop motion, drawn animation)
 
@@ -494,7 +786,8 @@ first again, for a follow and for `/cue/next` (repeat forever).
 `/cue/put <scene> <n> keyframe|delta [name]` + `/cue/add <scene> <n>
 <address> args...` build a cue from targets, without recording.
 `/img/<s>/file name` is a state target (slot black, then the image at its
-own size; "" = forget). `/media/info movies|audio|img <file>` -> seconds
+own size, drawn in the paint buffer and copied once: a shown slot never
+flashes the black fill; "" = forget). `/media/info movies|audio|img <file>` -> seconds
 (0 = a still), w, h (ffprobe on the pixel thread, cached). The Media tab's
 **Playlist → scene** card: pick files (boxes, in click order; shift = a
 range) -> Generate = an editable sheet (`movie|image|audio|black <hold>
@@ -505,6 +798,35 @@ media of its slot, output and displays, so delta cues ("keep the look")
 work. Then edit it in the Cues tab (follow column, repeat box): a card over
 a black cue, looks, fades. A movie that decodes slower than real time
 (above 720p) is cut at its file duration.
+
+Cut flashes, fixed 2026-11-19 (measured with a UVC dongle on HDMI1 and a
+VDMA register sampler):
+- `/disp/<d>/source show|capture` (what a cue sends) now ENDS a running
+  sequence. Before, a cue after a "seq" cue (cue 12 of flyer1204) only
+  moved the front slot under the running sequence: the displays kept
+  cycling through the sequence's slots in every later cue, and the state
+  dump reported the show slot, so no cue sent a stop. A plain
+  `/disp/<d>/show` still only moves the front slot.
+- media gate: a cue that loads media (`/img`, `/movie`: pixel thread, a
+  1080p PNG takes ~0.4 s) AND switches a display holds the switch (and its
+  other plain messages) until the pixel thread has run the media messages,
+  at most 3 s; the display's sequence holds its step meanwhile. Before, the
+  display showed the slot's old picture, then the black fill, then the
+  image. Now one change, ~0.4 s after the go for a PNG (JPEG loads ~3x
+  faster). Ramps of a fade start at once.
+- open: a black band at the top of every second frame on HDMI1 while a PNG
+  decodes, with no VDMA underflow or lock event (also seen before the
+  changes); not a slot flash.
+
+Backup (2026-11-19): Cues tab **⇩ Download** = the saved files of the
+selected show as one bundle file (dzweb `GET /shows/<name>.json`:
+`{"debaz_show_bundle":1,"show":..,"files":{"show.json":"<text>",...}}`,
+each file byte for byte). **⇧ Upload** = a bundle back: dzweb `PUT
+/shows/<name>.json` stages it in `/tmp/dzweb-import-<name>.json`, then
+`/show/import <that file> [name]` (debazd: reads only that staging name,
+checks that every file parses, keeps an existing show as
+`<name>-bak-<YYYYMMDD-HHMMSS>`, deletes the staging file; it does not load
+the show).
 
 ## Colour FX: hue, colour map, colour key
 
@@ -740,6 +1062,8 @@ dzctl /io/press/2 "/lfo/3/trigger"                # button 2 fires an envelope
 | `/sprite/<id>/ttf` | r g b size "text" ["font file"] — anti-aliased |
 | `/sprite/<id>/key` | r g b [tolerance] — colour → transparent |
 | `/sprite/<id>/draw` | slot x y [scale] [angle] [alpha] — centred at x,y |
+| `/sprite/<id>` | -> `/sprite/<id> w h "src"` (src since 2026-11-20: `file:<name>`, `grab:<slot> x y w h`, `text:#rrggbb:<text>`, `ttf:#rrggbb:<text>`, ` +key` after a key) |
+| `/sprite/list` | -> `/sprite/<id> w h "src"` for each loaded sprite, then `/sprite/list n` |
 | `/draw/<s>/text` | r g b x y "text" [scale] [16\|32] |
 | `/draw/<s>/ttf` | r g b x y size "text" ["font file"] |
 | `/draw/<s>/rotozoom` | angle zoom [cx cy] [src] — on itself = feedback tunnel |

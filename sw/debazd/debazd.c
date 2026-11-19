@@ -551,10 +551,32 @@ static void handle(dz_msg *m, void *ctx)
 }
 
 /* the pixel domain (pix_owns): on the pixel thread, or inline without it */
+static void handle_pix_msg(dz_msg *m);
+
+/* one pixel-domain message; then the buffers read from live slots go
+ * (shared slots, ROADMAP.md section 19) */
 static void handle_pix(dz_msg *m)
+{
+	handle_pix_msg(m);
+	dz_draw_job_end();
+}
+
+static void handle_pix_msg(dz_msg *m)
 {
 	int hits = 0;
 
+	/* /surface/mem -> i:buffers i:kB_in_buffers i:kB_free; /surface/trim =
+	 * free every clean paint buffer now (2026-11-19, memory) */
+	if (!strcmp(m->path, "/surface/mem") || !strcmp(m->path, "/surface/trim")) {
+		int nb;
+		long kb;
+
+		if (m->path[9] == 't')
+			dz_draw_trim(1L << 30, -1, 0.0, 1);
+		dz_draw_buffers(&nb, &kb);
+		reply("/surface/mem", "iii", nb, (int)kb, (int)dz_draw_mem_avail_kb());
+		return;
+	}
 	/* /surface/<s>/peek x y -> /pixel s x y r g b (needs a reply) */
 	{
 		int sl, n0 = 0;
@@ -572,14 +594,31 @@ static void handle_pix(dz_msg *m)
 	}
 	if (ascii_dispatch(m))
 		return;
-	{	/* /sprite/<id> query -> /sprite/<id> i:w i:h */
+	if (slit_dispatch(m))
+		return;
+	if (lua_dispatch(m))
+		return;
+	{	/* /sprite/<id> query -> /sprite/<id> i:w i:h s:src; /sprite/list */
 		int id, n0 = 0, w = 0, h = 0;
 
 		if (sscanf(m->path, "/sprite/%d%n", &id, &n0) == 1 && !m->path[n0]) {
 			if (dz_sprite_size(id, &w, &h) == 0)
-				reply(m->path, "ii", w, h);
+				reply(m->path, "iis", w, h, dz_sprite_src(id));
 			else
 				reply("/error", "ss", "no such sprite", m->path);
+			return;
+		}
+		if (!strcmp(m->path, "/sprite/list")) {
+			char p[24];
+			int cnt = 0;
+
+			for (id = 0; id < DZ_SPRITES; id++)
+				if (dz_sprite_size(id, &w, &h) == 0) {
+					snprintf(p, sizeof(p), "/sprite/%d", id);
+					reply(p, "iis", w, h, dz_sprite_src(id));
+					cnt++;
+				}
+			reply("/sprite/list", "i", cnt);
 			return;
 		}
 	}
@@ -1042,6 +1081,7 @@ int main(int argc, char **argv)
 	pwm_init();
 	if (pix_init() < 0)
 		fprintf(stderr, "debazd: no pixel thread: pixel work runs in the main loop\n");
+	resume_init();			/* after a restart: the show + state back (resume.c) */
 
 	next = now_ms();
 	{
@@ -1071,6 +1111,7 @@ int main(int argc, char **argv)
 				lfo_tick((t - last_tick) / 1000.0);
 				anim_tick();
 				pix_frame();	/* ASCII, movie ticks: the pixel thread */
+				resume_tick();	/* state autosave, 5 s, on change */
 				stats_tick(stats_now() - t0);
 				last_tick = t;
 				next_tick = t + 50;	/* fallback if vsync stops */
@@ -1086,6 +1127,7 @@ int main(int argc, char **argv)
 			lfo_tick((t - last_tick) / 1000.0);
 			anim_tick();
 			pix_frame();
+			resume_tick();
 			stats_tick(stats_now() - t0);
 			last_tick = t;
 			next_tick = t + (disp_vsync_ok() ? 50 : 16);

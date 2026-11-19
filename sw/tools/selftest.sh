@@ -216,6 +216,8 @@ check ttf-draw     ""                             q /surface/7/peek 0 0
 # --- sprites ---
 q /sprite/1/text 255 0 0 AB 1 16 >/dev/null
 check sprite-size  "/sprite/1 16 16"              q /sprite/1
+check sprite-src   '/sprite/1 16 16 "text:#ff0000:AB"' q /sprite/1
+check sprite-list  "/sprite/list 1"                q /sprite/list
 q /draw/8/clear 0 0 0 >/dev/null
 q /sprite/1/draw 8 200 200 >/dev/null
 check sprite-draw  "/pixel 8 194 194 255 0 0"     q /surface/8/peek 194 194
@@ -327,11 +329,14 @@ q /lfo/3/on 0 > /dev/null
 sleep 5.5
 check react-auto-off "auto: idle"                  q /audio/react
 q /audio/react/source off > /dev/null; q /lfo/reset > /dev/null
-# crop windows (disp.c): 720p window in a 1920x1080 slot, x even, clamped
+# crop windows (disp.c): x even; since 2026-11-20 also outside the slot
+# (x -1918..1918, y within the 12-slot memory = +-12960 lines at 7680 B)
 check crop-set     "/disp/0/crop 100 50"           q /disp/0/crop 100 50
 check crop-odd     "/disp/0/crop 100 51"           q /disp/0/crop 101 51
-check crop-clamp   "/disp/0/crop 640 360"          q /disp/0/crop 1000 999
-check crop-query   "/disp/0/crop 640 360"          q /disp/0/crop
+check crop-outside "/disp/0/crop 1000 999"         q /disp/0/crop 1000 999
+check crop-neg     "/disp/0/crop -322 -5"          q /disp/0/crop -321 -5
+check crop-clamp   "/disp/0/crop 1918 -12960"      q /disp/0/crop 5000 -99999
+check crop-query   "/disp/0/crop 1918 -12960"      q /disp/0/crop
 check crop-off     "/disp/0/crop 0 0"              q /disp/0/crop/off
 check capture-auto "/capture/auto 1"               q /capture/auto
 

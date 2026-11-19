@@ -10,6 +10,20 @@
 #ifndef DZ_PATH_H
 #define DZ_PATH_H
 
+/*
+ * Persistent, changing files (2026-11-19) go to the data partition
+ * (DEBAZDATA, ext4, LABEL mount on /data; debaz-firstboot makes it), never
+ * to the root file system, which becomes read-only later (ROADMAP.md
+ * section 10):
+ *   /data/shows/<show>/       shows (cue.c; $DZ_SHOW_DIR = another place)
+ *   /data/debaz/dzstart.conf  per-card bring-up settings (dzstart.sh,
+ *                             dzrun.sh; the old /home/ebaz/dzstart.conf is
+ *                             copied there once)
+ * Media: /media/debaz (DEBAZMEDIA, exFAT). Run-time state: /run/debaz (RAM).
+ */
+#define DZ_DATA_DIR	"/data"
+#define DZ_SHOW_SUBDIR	DZ_DATA_DIR "/shows"
+
 #define DZ_DEV_BIN	"/home/ebaz/bin"
 #define DZ_IMG_BIN	"/usr/bin"
 #define DZ_DEV_WWW	"/home/ebaz/www"

@@ -45,7 +45,11 @@ do_install() {
 	done
 }
 
+# debaz.service is enabled (boot: dzstart.sh); dzstart starts the others
+# (2026-11-19: debaz-video = hdmi2, debazd with Restart=always, dzweb)
 FILES:${PN} += "${datadir}/debaz ${sysconfdir}/debaz ${systemd_system_unitdir}/debaz.service \
+                ${systemd_system_unitdir}/debazd.service ${systemd_system_unitdir}/debaz-video.service \
+                ${systemd_system_unitdir}/dzweb.service \
                 ${nonarch_base_libdir}/firmware ${sysconfdir}/udev/rules.d/99-debaz-hw.rules \
                 ${sysconfdir}/systemd/logind.conf.d/debaz.conf ${sysconfdir}/sysctl.d/debaz.conf"
 CONFFILES:${PN} = "${sysconfdir}/debaz/dzstart.conf"
@@ -62,6 +66,9 @@ RDEPENDS:${PN} += "ffmpeg alsa-utils-aplay alsa-utils-amixer alsa-utils-alsactl 
 # see them: name them here. Both were already in the 2026-11-01 sandbox
 # image (libpng only through freetype).
 RDEPENDS:${PN} += "libturbojpeg libpng"
+# dzlua (LuaJIT scripts into a slot, 2026-11-20) opens libluajit-5.1 with
+# dlopen too (CONFIG_luajit=y in rootfs_config already)
+RDEPENDS:${PN} += "luajit"
 
 # bitstreams are data, not ELF for this machine
 INSANE_SKIP:${PN} += "arch"

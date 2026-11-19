@@ -1,7 +1,8 @@
 // media.js - images, movies, audio files and sprites on the board. File transfer (upload,
 // download, delete) uses dzweb's HTTP /media; drawing and playback use OSC.
+import * as sprites from "./sprites.js";
 import * as net from "./net.js";
-import { h, card, row, hexToRgb, toast } from "./ui.js";
+import { h, card, row, hexToRgb, toast, store } from "./ui.js";
 import * as movfx from "./movfx.js";
 import * as anim from "./anim.js";
 import { playlistCard } from "./playlist.js";
@@ -11,7 +12,7 @@ const KINDS = {
   movies: { title: "Movies", dir: "/media/debaz/movies", accept: "video/*,.mkv,.ts" },
   audio: { title: "Audio", dir: "/media/debaz/audio", accept: "audio/*,.wav,.mp3,.flac,.ogg,.mkv" },
 };
-let lists = {}, uploads = {}, freeEl, spriteId, slotSel, info, movieAudio, audioOut, movX, movY;
+let lists = {}, uploads = {}, freeEl, slotSel, movieAudio, audioOut, movX, movY;
 let state = { free: -1, keep: 0, max: 0, img: [], movies: [], audio: [] };
 let queue = Promise.resolve(); // one upload at a time: the SD card is slow
 
@@ -65,10 +66,8 @@ async function refresh() {
 function actions(kind, name) {
   if (kind === "img")
     return [
-      h("button", { title: "load as the sprite number below\n/sprite/<id>/load \"<file>\"", onclick: () => {
-        net.msg(`/sprite/${spriteId.value}/load`, name);
-        setTimeout(() => net.msg(`/sprite/${spriteId.value}`), 1500);
-      } }, "→ sprite"),
+      h("button.to-sprite", { title: "load it as the selected sprite (Sprites card: click a number there)\n/sprite/<id>/load \"<file>\"",
+        onclick: () => toSprite(name) }, `→ sprite #${sprites.selected()}`),
       h("button", { title: "draw into the target slot\n/img/<slot>/load \"<file>\"", onclick: () => net.msg(`/img/${slotSel.value}/load`, name) }, "draw"),
     ];
   if (kind === "audio")
@@ -76,6 +75,17 @@ function actions(kind, name) {
       onclick: () => net.msg("/audio/play", parseInt(audioOut.value), name, 0) }, "play")];
   return [h("button.primary", { title: "play into the target slot\n/movie/<slot>/play \"<file>\" 0 <audio>  (0 = the file's rate)",
     onclick: () => net.msg(`/movie/${slotSel.value}/play`, name, 0, parseInt(movieAudio.value)) }, "play")];
+}
+
+// "→ sprite": into the selected number, then (advance) on to the next empty one
+function toSprite(name) {
+  const id = sprites.selected();
+  sprites.loadFile(id, name);
+  toast(`${name} → sprite #${id}`);
+  if (store.get("sprite.advance", false)) {
+    const next = sprites.nextFree(id + 1);
+    if (next >= 0 && next !== id) sprites.select(next);
+  }
 }
 
 function draw(kind) {
@@ -163,7 +173,6 @@ export function init(root) {
     uploads[kind] = h("div");
   }
   freeEl = h("span.hint", {}, "");
-  spriteId = h("input", { type: "number", min: 0, max: 63, value: 0, title: "/sprite/<id>/...: the sprite number 0..63" });
   slotSel = slotPicker();
   movX = h("input", { type: "number", min: 0, max: 1918, step: 2, value: 0, style: "width:76px", title: "x (even) of /movie/<slot>/pos x y" });
   movY = h("input", { type: "number", min: 0, max: 1079, step: 1, value: 0, style: "width:76px", title: "y of /movie/<slot>/pos x y" });
@@ -173,7 +182,6 @@ export function init(root) {
   };
   slotSel.addEventListener("change", posLoad);
   slotSel.addEventListener("change", fxRefresh);
-  info = h("span.hint", {}, "");
   movieAudio = h("select", { title: "where the movie's own audio track plays\n" +
       "the <audio> of /movie/<s>/play \"<file>\" <fps> <audio>: bits 1 HDMI 0, 2 HDMI 1, 4 I2S" },
     h("option", { value: 0 }, "no audio"), h("option", { value: 1 }, "HDMI 0"),
@@ -190,10 +198,11 @@ export function init(root) {
 
   root.append(
     h("div.row", {}, h("label", {}, "target slot"), slotSel,
-      h("label", {}, "sprite #"), spriteId,
       h("button", { title: "dzweb HTTP GET /media (file lists, free space)", onclick: refresh }, "Refresh lists"), freeEl),
     h("div.grid", {},
-      card(`${KINDS.img.title} (${KINDS.img.dir})`, dropZone("img"), uploads.img, lists.img),
+      card(`${KINDS.img.title} (${KINDS.img.dir})`, dropZone("img"), uploads.img, lists.img,
+        h("p.hint", {}, "→ sprite loads the image as the sprite selected in the Sprites card (PNG transparency kept).")),
+      spriteCard({ color, text, size, scale, key, tol }),
       card(`${KINDS.movies.title} (${KINDS.movies.dir})`, dropZone("movies"), uploads.movies, lists.movies,
         row("movie audio", movieAudio),
         row(null, h("button", { title: "/movie/<slot>/stop", onclick: () => net.msg(`/movie/${slotSel.value}/stop`) }, "Stop movie in slot")),
@@ -208,37 +217,54 @@ export function init(root) {
       anim.playerCard(),
       movfx.moshCard(() => slotSel.value),
       movfx.asciiCard(() => slotSel.value, slotPicker),
+      movfx.slitCard(() => slotSel.value, slotPicker),
       card(`${KINDS.audio.title} (${KINDS.audio.dir})`, dropZone("audio"), uploads.audio, lists.audio,
         row("play on", audioOut, h("button", { title: "/audio/stop", onclick: () => net.msg("/audio/stop") }, "Stop all")),
         h("p.hint", {}, "Recordings from the Audio tab land here. HDMI 0 + 1 for a movie = the same " +
           "audio on both outputs; the Audio tab's sources choose what each output plays.")),
       playlistCard(() => picked, () => { picked = []; lastPick = null; for (const k of Object.keys(KINDS)) draw(k); },
-        () => parseInt(movieAudio.value), () => parseInt(audioOut.value)),
-      card("Sprites",
-        row("colour", color, text),
-        row(null,
-          h("button", { title: "/sprite/<id>/ttf r g b <size> \"text\"", onclick: () => { const [r, g, b] = hexToRgb(color.value);
-            net.msg(`/sprite/${spriteId.value}/ttf`, r, g, b, parseInt(size.value), text.value);
-            setTimeout(() => net.msg(`/sprite/${spriteId.value}`), 300); } }, "TrueType → sprite"), size),
-        row(null,
-          h("button", { title: "/sprite/<id>/text r g b \"text\" <scale> 16", onclick: () => { const [r, g, b] = hexToRgb(color.value);
-            net.msg(`/sprite/${spriteId.value}/text`, r, g, b, text.value, parseInt(scale.value), 16);
-            setTimeout(() => net.msg(`/sprite/${spriteId.value}`), 300); } }, "Pixel text → sprite"), scale),
-        row("key out", key, tol, h("button", { title: "/sprite/<id>/key r g b <tol>", onclick: () => { const [r, g, b] = hexToRgb(key.value);
-          net.msg(`/sprite/${spriteId.value}/key`, r, g, b, parseInt(tol.value)); toast("colour keyed"); } }, "Key")),
-        row(null,
-          h("button", { title: "/sprite/<id>  -> /sprite/<id> w h", onclick: () => net.msg(`/sprite/${spriteId.value}`) }, "Size?"),
-          h("button.danger", { title: "/sprite/<id>/free", onclick: () => net.msg(`/sprite/${spriteId.value}/free`) }, "Free"), info),
-        h("p.hint", {}, "Place sprites with the Paint tab's sprite tool, or animate them with an LFO " +
-          "target like /sprite/0/draw 6 640 360 1 $f2."))));
-  net.on("/sprite", (m) => {
-    if (/^\/sprite\/\d+$/.test(m.path)) info.textContent = `${m.path}: ${m.args[0]} × ${m.args[1]} px`;
+        () => parseInt(movieAudio.value), () => parseInt(audioOut.value))));
+  sprites.onChange(() => {			// the image rows name the target number
+    for (const b of lists.img.querySelectorAll("button.to-sprite")) b.textContent = `→ sprite #${sprites.selected()}`;
   });
+}
+
+// the Sprites card: the palette (what each number holds; click = select),
+// then everything that acts on the selected number
+function spriteCard({ color, text, size, scale, key, tol }) {
+  const cur = h("div.hint", {}, "");
+  const num = h("input", { type: "number", min: 0, max: sprites.N - 1, value: sprites.selected(), style: "width:70px",
+    title: "the selected sprite number (0-63): any number, also an empty one", onchange: () => sprites.select(num.value) });
+  const adv = h("input", { type: "checkbox", checked: store.get("sprite.advance", false),
+    onchange: () => store.set("sprite.advance", adv.checked) });
+  const sel = () => sprites.selected();
+  const show = () => { num.value = sel(); cur.textContent = sprites.describe(sel()); };
+  sprites.onChange(show);
+  show();
+  return card("Sprites",
+    h("p.hint", {}, "1. click a number below (or type one)  2. → sprite on an image in the Images card, or make text here  " +
+      "3. draw it: Paint tab ◰ sprite tool (the same selected number), an LFO target, or a Lua script."),
+    sprites.palette(),
+    row("selected", num, cur),
+    row(null, h("label", { title: "after → sprite, select the next empty number (load several images in a row)" }, adv, " then the next empty number"),
+      h("button.ghost", { title: "/sprite/list: what every number holds", onclick: sprites.refresh }, "Refresh")),
+    row("text", color, text),
+    row(null,
+      h("button", { title: "/sprite/<id>/ttf r g b <size> \"text\"", onclick: () => { const [r, g, b] = hexToRgb(color.value);
+        sprites.op(sel(), "ttf", r, g, b, parseInt(size.value), text.value); } }, "TrueType → sprite"), size,
+      h("button", { title: "/sprite/<id>/text r g b \"text\" <scale> 16", onclick: () => { const [r, g, b] = hexToRgb(color.value);
+        sprites.op(sel(), "text", r, g, b, text.value, parseInt(scale.value), 16); } }, "Pixel text → sprite"), scale),
+    row("key out", key, tol, h("button", { title: "/sprite/<id>/key r g b <tol>: that colour becomes transparent",
+      onclick: () => { const [r, g, b] = hexToRgb(key.value); sprites.op(sel(), "key", r, g, b, parseInt(tol.value)); toast("colour keyed"); } }, "Key"),
+      h("button.danger", { title: "/sprite/<id>/free", onclick: () => sprites.op(sel(), "free") }, "Free")),
+    h("p.hint", {}, "An LFO target moves a sprite: /sprite/0/draw 6 640 360 1 $f2 (slot x y scale angle alpha). " +
+      "Lua: the sprite-bounce example."));
 }
 
 function fxRefresh() {
   movfx.moshRefresh(slotSel.value);
   movfx.asciiRefresh(slotSel.value);
+  movfx.slitRefresh(slotSel.value);
 }
 
 export function connected() {
