@@ -47,7 +47,8 @@ export function tokens(s) {
       let cls = "";
       if (KW.has(w) && prev !== ".") cls = "kw";
       else if (prev === ":" && LOOKUP.has(":" + w)) cls = "api";
-      else if (prev === "." && /audio\.$/.test(s.slice(Math.max(0, i - 6), i)) && LOOKUP.has("audio." + w)) cls = "api";
+      else if (prev === "." && (/(\w+)\.$/.exec(s.slice(Math.max(0, i - 24), i)) || [])[1] &&
+               LOOKUP.has(/(\w+)\.$/.exec(s.slice(Math.max(0, i - 24), i))[1] + "." + w)) cls = "api";
       else if (prev !== "." && prev !== ":" && LOOKUP.has(w)) cls = "api";
       else if (prev !== "." && prev !== ":" && KNOWN.has(w)) cls = "lib";
       out.push([i, i + w.length, cls]); i += w.length; continue;
@@ -131,7 +132,7 @@ export function helpAt(s, pos) {
   const p = pos - ls;
   const look = (w, pre) => {
     if (pre === ":" && LOOKUP.has(":" + w)) return ":" + w;
-    if (pre === "audio." && LOOKUP.has("audio." + w)) return "audio." + w;
+    if (pre.endsWith(".") && LOOKUP.has(pre + w)) return pre + w;
     return LOOKUP.has(w) ? w : null;
   };
   const wordAt = (q) => {
@@ -139,7 +140,8 @@ export function helpAt(s, pos) {
     while (a > 0 && /\w/.test(line[a - 1])) a--;
     while (b < line.length && /\w/.test(line[b])) b++;
     if (a === b) return null;
-    const pre = line[a - 1] === ":" ? ":" : /audio\.$/.test(line.slice(0, a)) ? "audio." : "";
+    const tb = /(\w+)\.$/.exec(line.slice(0, a));
+    const pre = line[a - 1] === ":" ? ":" : tb ? tb[1] + "." : "";
     return look(line.slice(a, b), pre);
   };
   let k = wordAt(p);

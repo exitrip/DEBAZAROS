@@ -27,6 +27,8 @@
  *                       128 + n = signal n)
  *   /lua/<s>/log [bytes]  -> /lua/<s>/log s:text (the end of the log:
  *                       print() output and errors; default 2000 bytes)
+ *   /lua/list                 -> /lua/<s>/status for every running script,
+ *                             then /lua/list i:n (2026-11-20, the web panel)
  *   (state: /lua/<s>/p/<key> ..., then /lua/<s>/run)
  *
  * Files per slot: /tmp/dzlua.<s>.log, .stat (dzlua -t), .ctl (FIFO).
@@ -379,6 +381,18 @@ int lua_dispatch(const dz_msg *m)
 	int s, off = 0;
 	const char *op, *str;
 
+	if (!strcmp(m->path, "/lua/list")) {	/* every running script, then /lua/list n */
+		int n = 0;
+
+		lua_poll();
+		for (int k = 0; k < DZ_SLOTS; k++)
+			if (LS[k].pid > 0) {
+				status(k);
+				n++;
+			}
+		dzd_reply("/lua/list", "i", n);
+		return 1;
+	}
 	if (sscanf(m->path, "/lua/%d/%n", &s, &off) != 1 || !off)
 		return 0;
 	{

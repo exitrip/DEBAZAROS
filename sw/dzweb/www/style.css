@@ -276,3 +276,8 @@ textarea.code { width: 100%; box-sizing: border-box; font: 13px/1.45 var(--mono)
 .spal-cell.on .spal-id { color: var(--accent); font-weight: 600; }
 .spr-row { align-items: flex-start; gap: 10px; flex-wrap: nowrap; }
 .spr-desc { margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lua-running { gap: 6px; margin: 2px 0 6px; }
+.lua-run { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 1px; }
+.lua-run.on { border-color: var(--accent); }
+.lua-run button { min-height: 28px; padding: 3px 8px; font-size: 12px; }

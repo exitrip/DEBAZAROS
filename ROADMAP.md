@@ -50,6 +50,20 @@ Done / settled on 2026-11-20 (user):
 - Fan ports / PL_KEY function select / events: DEFERRED (user), see the
   gateware group below.
 
+Retest after the sprite / pixel-path changes, PASSED on .236 2026-11-20
+(saved slots + pixel reads): solid / rect / outline / ellipse fills, slot
+alpha 0.5, blend add + multiply (exact pixel values), bars; rotated ttf,
+pixel text, star + polygon with a linear fill, rotated ellipse; ASCII into a
+slot at alpha 0.5; splats on a playing movie (the movie keeps playing);
+movie stop clean-up (ffmpeg, FIFOs, stats files gone), live vf option (hue
+h); sprites at scale 1 .. 0.15 (smaller copies), 5 angles, alpha 0.4, a slot
+with blend add, text / ttf / grab+key sprites, a sprite splat on a movie, a
+sprite on an LFO target; cues + show save / load with sprite targets (go 6-7
+ms); 300 brush strokes in a burst next to ASCII (30 fps held) and a movie (19
+-> 16 fps during it); osc-control (osc_get, undo exact); slit scan / scanv /
+tiles / waterfall. Not tried: a movie with loop 0 that ends by itself (stale
+"load" line?).
+
 Built 2026-11-19/20, tested only by readback, host tests or briefly:
 - [ ] Crops outside the slot (task 27): only VDMA addresses were checked.
   Look at a monitor: crop y -360 (the slot before bleeds in), Wall tab
@@ -131,7 +145,7 @@ wedge (avoid: CLAUDE.md).
 | 22 | Room in the PL: a real saving before new logic (slices 100 %) (section 14) | — | TODO: candidates in section 14 (dz_osc2 / hdmi_audio_regs control sets, ...). NOT the mixer word-only write patch (failed 4 times, user 2026-11-02) |
 | 23 | Fleet: 2-12+ units on a LAN, network control, time sync (Fleet, FLEET.md) | 6, 11 | TODO: design only |
 | 24 | Slit scan and sample-and-hold effects (section 18) | 6 | DOING: analysis + measurements 2026-11-19; the cheap set (debazd slit.c: row / column slit, waterfall, scanner bands, tile hold) built; open: banded time displacement, capture-DMA tests with a live input |
-| 25 | LuaJIT scripts into a slot: between the C effects and the OSC API (sw/dzlua, debazd lua.c, web Console tab Lua) | 6 | DONE on .236 2026-11-20: turtle / lines / circles / text / raw FB, live params, cue state, claim by other writers, log + errors in the web; + osc()/osc_get() from scripts, MIDI by FFI raw MIDI, `audio` (features, spectrum, samples: debazd shared memory /dev/shm/dzreact), 12 templates incl. an oscilloscope, web editor with highlighting + luaparse lint + API reference (sw/README.md); open: not in an image yet, fluidsynth + a soundfont in the image (MIDI out to a softsynth), a vsync-locked frame clock (now a timer: may tear), a faster fade (DDR bound) |
+| 25 | LuaJIT scripts into a slot: between the C effects and the OSC API (sw/dzlua, debazd lua.c, web Console tab Lua) | 6 | DONE on .236 2026-11-20: turtle / lines / circles / text / raw FB, live params, cue state, claim by other writers, log + errors in the web; + osc()/osc_get() from scripts, MIDI by FFI raw MIDI, `audio` (features, spectrum, samples: debazd shared memory /dev/shm/dzreact), 12 templates incl. an oscilloscope, web editor with highlighting + luaparse lint + API reference (sw/README.md); fluidsynth + TimGM6mb soundfont in the image recipe (2026-11-20, pushed to .236 with tools/pkgpush.sh, dzsynth.sh, template midi-arp); open: not in an image yet, a vsync-locked frame clock (now a timer: may tear), a faster fade (DDR bound) |
 | 26 | Shared slots: paint, scripts, movies and the capture write one slot together (section 19) | 25 | DOING: steps 1-2 DONE on .236 2026-11-20 (splat on live slots, dzlua layer mode + grab, measured); NEXT on the build machine: the cached-slot experiment (u-dma-buf, section 19 step 5); step 4 only as a cheap toggle |
 | 27 | Crops outside the slot: negative / large `/disp/<d>/crop` x, y (2026-11-20) | - | DONE on .236 2026-11-20 (disp.c at(): reserved-memory clamp at every switch; Wall tab "outside the slot" + Centre; sw/README.md "Video mode and video wall"). Design notes: The VDMA start = slot base + y x 7680 + x x 4 and the 12 slots are one strip of 1080-row slots: y < 0 shows the bottom of slot n-1, y past the bottom the top of slot n+1 (real neighbour bleed; an LFO on crop/y scrolls the stack like a film strip). x < 0 is NOT the left neighbour: each line starts with the end of the row above in the same slot (x past 1920 - w wraps the same way), so a small movie at the top left can be centred (crop x = -(w_mode - w_movie)/2) when the slot's right margin is black. Rules: the VDMA only reads (no corruption), but clamp the start address and the last line to the reserved memory (else Linux RAM is shown); x stays even; VSIZE recommit + fsync as now (frame exact). Work: disp.c clamp, the capture slot size rule, Wall tab ranges, check state / cues / LFO targets with negative ints, docs (x vs y differ). Side-by-side neighbours would need another slot layout (wider pitch): not part of it |
 | | **Done** | | |

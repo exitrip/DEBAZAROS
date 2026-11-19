@@ -551,6 +551,38 @@ static void handle(dz_msg *m, void *ctx)
 }
 
 /* the pixel domain (pix_owns): on the pixel thread, or inline without it */
+/* sprites as state (2026-11-20): file and text sprites (+ their colour key)
+ * are made again on resume and by cues: /sprite/<id>/src kind args (one key
+ * for every kind, and a real address: dz_sprite.c) */
+void sprite_state(state_cb cb, void *ctx)
+{
+	for (int id = 0; id < DZ_SPRITES; id++) {
+		const dz_sprite_rec *r = dz_sprite_get_rec(id);
+		char p[32];
+
+		if (!r || !r->kind)
+			continue;
+		/* the key is the address: show files keep only key + args */
+		snprintf(p, sizeof(p), "/sprite/%d/src", id);
+		if (r->kind == 1) {
+			if (r->w > 0 && r->h > 0)
+				st_emit(cb, ctx, NULL, p, "ssii", "file", r->text, r->w, r->h);
+			else
+				st_emit(cb, ctx, NULL, p, "ss", "file", r->text);
+		} else if (r->kind == 2) {
+			st_emit(cb, ctx, NULL, p, "siiisii", "text", r->r, r->g, r->b, r->text, r->scale, r->font);
+		} else if (r->face[0]) {
+			st_emit(cb, ctx, NULL, p, "siiifss", "ttf", r->r, r->g, r->b, r->size, r->text, r->face);
+		} else {
+			st_emit(cb, ctx, NULL, p, "siiifs", "ttf", r->r, r->g, r->b, r->size, r->text);
+		}
+		if (r->key) {
+			snprintf(p, sizeof(p), "/sprite/%d/key", id);
+			st_emit(cb, ctx, NULL, p, "iiii", r->kr, r->kg, r->kb, r->ktol);
+		}
+	}
+}
+
 static void handle_pix_msg(dz_msg *m);
 
 /* one pixel-domain message; then the buffers read from live slots go

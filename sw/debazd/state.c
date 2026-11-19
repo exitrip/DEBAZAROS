@@ -235,6 +235,7 @@ void state_dump(state_cb cb, void *ctx)
 	anim_state(cb, ctx);
 	ascii_state(cb, ctx);
 	slit_state(cb, ctx);
+	sprite_state(cb, ctx);
 	lua_state(cb, ctx);
 	pix_unlock();
 	dds_state(cb, ctx);
@@ -391,6 +392,7 @@ static int rank_of(const char *a)
 		{ "/movie/", "/vf", 10 }, { "/movie/", "/af", 10 }, { "/movie/", "/trails", 10 },
 		{ "/movie/", "/ghost", 10 }, { "/movie/", "/file", 11 }, { "/img/", "/file", 11 }, { "/movie/", "", 12 },
 		{ "/audio/out/", "/source", 20 }, { "/audio/out/", "/file", 21 },
+		{ "/sprite/", "/key", 26 }, { "/sprite/", "", 25 },
 		{ "/disp/", "", 30 }, { "/anim/", "/play", 32 }, { "/anim/", "/pause", 33 },
 		{ "/anim/", "", 31 },
 		{ "/ascii/", "/chars", 40 }, { "/ascii/", "/run", 42 }, { "/ascii/", "", 41 },

@@ -593,6 +593,29 @@ a full get() each time: the live check and a clock_gettime system call per
 pixel. One bouncing 150 px sprite at 30 fps = 50 % of the pixel thread,
 now 13 % (the surface is looked up once per OSC message).
 
+Many sprites (2026-11-20, template sprite-swarm: all 17 loaded sprites
+bounce across both displays): per frame every old box is erased first,
+then every sprite drawn; `flip 1` draws into a second slot per display and
+switches at vsync (each slot erases only the boxes it got two frames ago).
+Measured at 1280 x 1024, 17 sprites at scale 0.35: 25 fps (flip 23),
+debazd ~100 % of a core. Fixes on the way: dz_draw_movie_stop did two
+unlink() per draw op even without a movie (5 % of the pixel thread); a
+sprite below half size draws from box-filtered 1/2, 1/4, 1/8 copies (made
+on first use, also less aliasing) and only the part of each row inside
+the rotated sprite; opaque texels on a plain surface are stored directly;
+a plain span fills (erase box 190 px 1.64 -> 0.32 ms). Sprites are state
+now: `/sprite/<id>/src kind args` (+ `/sprite/<id>/key`) in /state, so a
+debazd restart (resume), cues and show files load them again (a restart
+lost them before). The key is a real address: show files keep only key +
+args, and a key that is not an address does not load from a file (the
+first version, key /sprite/<id>/src + path /load, failed the cue-decimal
+self test that way).
+Pacing: a controller script must wait for debazd (osc_get as a fence each
+frame); at 30 fps unpaced the pixel queue filled (1023) and erases were
+dropped (trails). osc_get now waits for the reply from ITS address (a
+/disp show reply passed the fence early); "/value" / "/error" replies for
+it count too.
+
 Sprites in the web app (2026-11-20, `www/sprites.js`): ONE selected sprite
 number for the Media and Paint tabs (kept in the browser). Media tab:
 Sprites card = a palette of thumbnails (each loaded sprite, the selected
@@ -658,6 +681,38 @@ state). MIDI: a script opens an ALSA raw MIDI device with the FFI
 (card 1, clients 20-23) and aconnect/amidi/aseqdump; tested in and out
 through VirMIDI 1-0 (template `midi-io`).
 
+**MIDI out to a synth (2026-11-20):** fluidsynth 2.2.2 (meta-multimedia,
+ALSA only: a bbappend removes PulseAudio) + the TimGM6mb General MIDI
+soundfont (recipe debaz-soundfonts, /usr/share/soundfonts/default.sf2) are in
+the image recipe; on .236 by `tools/pkgpush.sh` (below). `sudo dzsynth.sh
+start [out 0|1|3] [soundfont] [fx]` starts it on a DEBAZ output and connects
+the four VirMIDI ports. Measured (48 kHz, 2 cores, reverb + chorus off):
+idle ~7 % of a core, 8 piano notes 12 %, 20 string notes 67 % (fx on: 25 %
+/ ~100 %). The output's PCM has one owner (no movie audio on the same output
+meanwhile). Large soundfonts: /media/debaz/soundfonts.
+
+Scripts play it with `midi.*` (dzlua.c: an ALSA sequencer client "dzlua
+<slot>" with a real-time queue, libasound by dlopen): every event carries a
+time stamp in script time and the kernel sends it then, so the tempo does
+not follow the frame rate (raw writes from frame() did: up to a frame late,
+"rubber-banding" when frames ran slow). Schedule ~0.15-0.2 s ahead
+(template midi-arp). All off on every way out: the script's end, a Lua
+error, os.exit and /lua/<s>/stop (SIGTERM): the main client is closed
+first (its queue and the notes waiting in it go), then a second client
+"dzlua <slot> panic" sends sustain off, All Notes Off, All Sound Off on 16
+channels (checked with aseqdump: 48 CCs at stop, nothing after them; exit
+1 and 0 paths too). SIGKILL (0.5 s after a SIGTERM that hangs) cannot send
+it. Raw MIDI device writes (FFI) get no clean-up: use midi.*.
+
+**Packages onto a running unit (`tools/pkgpush.sh`, laptop):** no package
+manager on the unit, so the build machine unpacks the rpm files (rpm2cpio)
+and the files go into the unit's / over ssh (top-level entries only,
+`--no-overwrite-dir`: existing folders keep owner and mode), then ldconfig;
+file lists in /var/lib/debaz-pkgpush/<pkg>.files (undo by hand). Name only
+packages the image lacks; check `rpm -qpR` on the build machine first. 12 s
+for fluidsynth + glib + libgomp + the soundfont (2026-11-20). Build them
+with `petalinux-build -c <recipe>` in the sandbox (~/dz-sandbox/pkg-build.sh).
+
 **Audio in a script (2026-11-20):** `audio` = debazd's analysis (react.c)
 through shared memory `/dev/shm/dzreact` (`lib/dz_react_shm.h`, version
 1): `audio.level peak bass low mid high air flux beat`, `band[0..15]`,
@@ -687,7 +742,7 @@ together.
 **Templates (web Lua panel, examples list):** skeleton (all hooks,
 smoothed params), draw-once, own-loop (scenes with wait()),
 layer-overlay, osc-control (an LFO + DDS from a script, with undo),
-audio-scope, audio-react, midi-io, sprite-bounce (a debazd sprite bounces across display 0 and on across display 1 and back: the script is only a controller, osc() /draw rect to erase + /sprite/draw per frame; run it on a third slot), and the quirks: dirty-fast (one changed rectangle
+audio-scope, audio-react, midi-io, midi-arp, sprite-bounce (a debazd sprite bounces across display 0 and on across display 1 and back: the script is only a controller, osc() /draw rect to erase + /sprite/draw per frame; run it on a third slot), and the quirks: dirty-fast (one changed rectangle
 per frame: two far circles 8.5 ms with one present(), 0.4 ms with a
 present() each), fb-plasma (FB loops; one computed row + ffi.copy, short
 nested loops are ~3x slower), grab-mosaic (grab() reads uncached memory,
@@ -1064,6 +1119,7 @@ dzctl /io/press/2 "/lfo/3/trigger"                # button 2 fires an envelope
 | `/sprite/<id>/draw` | slot x y [scale] [angle] [alpha] — centred at x,y |
 | `/sprite/<id>` | -> `/sprite/<id> w h "src"` (src since 2026-11-20: `file:<name>`, `grab:<slot> x y w h`, `text:#rrggbb:<text>`, `ttf:#rrggbb:<text>`, ` +key` after a key) |
 | `/sprite/list` | -> `/sprite/<id> w h "src"` for each loaded sprite, then `/sprite/list n` |
+| `/sprite/<id>/src` | "file" name [w h] \| "text" r g b "text" [scale] [font] \| "ttf" r g b size "text" ["font"] — the state form (resume, cues, show files): the same as load / text / ttf |
 | `/draw/<s>/text` | r g b x y "text" [scale] [16\|32] |
 | `/draw/<s>/ttf` | r g b x y size "text" ["font file"] |
 | `/draw/<s>/rotozoom` | angle zoom [cx cy] [src] — on itself = feedback tunnel |

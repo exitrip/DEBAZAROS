@@ -290,6 +290,114 @@ function frame(n, t)
   place(x, y)
 end
 `,
+  "sprite-swarm": `-- TEMPLATE / STRESS TEST: every sprite loaded on the unit (/sprite/<id> for
+-- 0..63) bounces across display 0 and display 1 (one wide floor of two
+-- slots). A controller script: it sends OSC each frame (osc()), the drawing
+-- happens in debazd. Run it on a slot that is not one of them (e.g. 9).
+-- Each frame: first ALL old boxes are erased, then ALL sprites drawn (an
+-- erase never cuts a sprite drawn earlier in the same frame).
+-- flip 1 = double buffer: each display gets a second slot, the frame is
+-- drawn there and the display switches to it at vsync, after debazd has
+-- finished drawing it: no half-erased sprite is ever on screen. Each slot remembers the boxes drawn into it
+-- (two frames ago) and erases only those: about the same work as flip 0
+-- (a full clear per frame was 54 ms a slot at 1920 x 1080).
+-- Pacing: each frame ends with a query that debazd answers after the
+-- frame's messages (osc_get = a fence): the script runs as fast as debazd
+-- draws (~1.6 ms per erase box, ~2 ms per sprite at scale 0.35), and the
+-- pixel thread's queue cannot overflow (it did at 30 fps: 1023 waiting).
+-- params: a (5), b (6) the slots of display 0 / 1; a2 (7), b2 (8) their
+--   back slots (flip); show (1); scale (0.35); speed (6); spin (2);
+--   flip (0); max (64) sprites at most
+local A, B = param.a or 5, param.b or 6
+local FLIP = (param.flip or 0) ~= 0
+local SC = param.scale or 0.35
+local R = math.ceil(256 * SC * 0.71) + 3
+
+-- the loaded sprites: one query per number (osc_get gets one reply)
+local ids = {}
+for id = 0, 63 do
+  local r, addr = osc_get("/sprite/" .. id)
+  if addr == "/sprite/" .. id and #ids < (param.max or 64) then ids[#ids + 1] = id end
+end
+print(#ids .. " sprites: " .. table.concat(ids, " "))
+if #ids == 0 then error("no sprites loaded (Media tab, Sprites card)") end
+
+local front = { [0] = A, [1] = B }                   -- what each display shows
+local back = { [0] = param.a2 or 7, [1] = param.b2 or 8 }
+if (param.show or 1) ~= 0 then osc("/disp/0/show", A) osc("/disp/1/show", B) end
+for _, s in ipairs({ A, B, back[0], back[1] }) do osc("/draw/" .. s .. "/clear", 0, 0, 0) end
+
+local sp = {}
+for k, id in ipairs(ids) do
+  local a = math.random() * 2 * math.pi
+  local v = (param.speed or 6) * (0.6 + math.random() * 0.8)
+  sp[k] = { id = id, x = R + math.random() * (2 * W - 2 * R), y = R + math.random() * (H - 2 * R),
+            vx = math.cos(a) * v, vy = math.sin(a) * v, ang = math.random() * 360,
+            spin = (param.spin or 2) * (math.random() < 0.5 and -1 or 1) * (0.5 + math.random()) }
+end
+local old = {}                                       -- erase boxes: { slot, x, y }
+local drawn = {}                                     -- flip: slot -> boxes drawn into it
+
+-- display d's part of the virtual x range [0, 2W)
+local function parts(x)
+  local p = {}
+  if x - R < W then p[#p + 1] = { 0, x } end
+  if x + R >= W then p[#p + 1] = { 1, x - W } end
+  return p
+end
+
+local fence = "/sprite/" .. ids[1]
+local function wait_drawn()                          -- until debazd has done this frame
+  for _ = 1, 25 do if osc_get(fence) then return end end
+end
+
+function frame(n, t)
+  wait_drawn()
+  for _, s in ipairs(sp) do                          -- move
+    s.x, s.y = s.x + s.vx, s.y + s.vy
+    if s.x < R then s.x, s.vx = R, math.abs(s.vx) elseif s.x > 2 * W - R then s.x, s.vx = 2 * W - R, -math.abs(s.vx) end
+    if s.y < R then s.y, s.vy = R, math.abs(s.vy) elseif s.y > H - R then s.y, s.vy = H - R, -math.abs(s.vy) end
+    s.ang = (s.ang + s.spin) % 360
+  end
+  if FLIP then                                       -- draw into the back slots, then show them
+    for d = 0, 1 do                                  -- what this back slot got last time
+      local bs = back[d]
+      for _, o in ipairs(drawn[bs] or {}) do
+        osc("/draw/" .. bs .. "/rect", 0, 0, 0, math.floor(o[1] - R), math.floor(o[2] - R), 2 * R, 2 * R)
+      end
+      drawn[bs] = {}
+    end
+    for _, s in ipairs(sp) do
+      for _, p in ipairs(parts(s.x)) do
+        local bs = back[p[1]]
+        osc("/sprite/" .. s.id .. "/draw", bs, osc_f(p[2]), osc_f(s.y), osc_f(SC), osc_f(s.ang), osc_f(1))
+        local t = drawn[bs] t[#t + 1] = { p[2], s.y }
+      end
+    end
+    -- the switch only after debazd has drawn the back slots: /disp/<d>/show
+    -- runs on debazd's main thread at the next vsync, the drawing on its
+    -- pixel thread (not in order with each other: without this wait a
+    -- half-drawn back slot could go on screen)
+    wait_drawn()
+    for d = 0, 1 do
+      osc("/disp/" .. d .. "/show", back[d])
+      front[d], back[d] = back[d], front[d]
+    end
+    return
+  end
+  for _, o in ipairs(old) do                         -- 1. erase every old box
+    osc("/draw/" .. o[1] .. "/rect", 0, 0, 0, math.floor(o[2] - R), math.floor(o[3] - R), 2 * R, 2 * R)
+  end
+  old = {}
+  for _, s in ipairs(sp) do                          -- 2. draw every sprite
+    for _, p in ipairs(parts(s.x)) do
+      local slot = p[1] == 0 and A or B
+      osc("/sprite/" .. s.id .. "/draw", slot, osc_f(p[2]), osc_f(s.y), osc_f(SC), osc_f(s.ang), osc_f(1))
+      old[#old + 1] = { slot, p[2], s.y }
+    end
+  end
+end
+`,
   "audio-scope": `-- TEMPLATE: an oscilloscope of the audio (debazd's analysis, \`audio\`).
 -- Source: /audio/react/source auto (a movie that plays audio, else the
 -- HDMI_2 input), capture, movie. params:
@@ -397,14 +505,15 @@ function frame(n, t)
   end
 end
 `,
-  "midi-io": `-- TEMPLATE: MIDI in and out with plain file I/O on an ALSA raw MIDI device
--- (LuaJIT FFI calls open/read/write of the C library: no extra library).
--- Default device: VirMIDI 1-0 (/dev/snd/midiC1D0, ALSA client 20). Route it
--- with aconnect on the unit, e.g. a player on client 21 -> this script:
+  "midi-io": `-- TEMPLATE: MIDI in from an ALSA raw MIDI device (LuaJIT FFI: open/read of
+-- the C library), MIDI out with midi.* (the ALSA sequencer, on time, all
+-- notes off at the end). In: VirMIDI 1-0 (/dev/snd/midiC1D0, client 20) by
+-- default; route a source to it with aconnect on the unit, e.g.
 --   aconnect 21:0 20:0     test: amidi -p hw:1,1 -S "90 3C 7F"
---   this script -> a synth: aconnect 20:0 <synth client>   (aconnect -l)
--- In: note on = a circle (x = pitch, size = velocity), CC 1..8 = param.cc1..
--- Out: a note each time the ball hits a wall. param dev = other device.
+-- (dzsynth.sh connects VirMIDI to the synth too: notes you send to 20 also
+-- sound.) In: note on = a circle (x = pitch, size = velocity), CC n =
+-- param.cc<n>. Out: a note each time the ball hits a wall (to "FLUID Synth":
+-- sudo dzsynth.sh start). param dev = other input device.
 local ffi = require("ffi")
 local bit = require("bit")
 pcall(ffi.cdef, [[
@@ -416,12 +525,8 @@ int close(int fd);
 local O_RDWR, O_NONBLOCK = 2, 2048                  -- Linux ARM values
 local fd = ffi.C.open(param.dev or "/dev/snd/midiC1D0", O_RDWR + O_NONBLOCK)
 if fd < 0 then error("cannot open the MIDI device (dev param)") end
-local buf, out = ffi.new("uint8_t[512]"), ffi.new("uint8_t[3]")
+local buf = ffi.new("uint8_t[512]")
 
-local function send(a, b, c)                        -- one 3-byte message
-  out[0], out[1], out[2] = a, b, c
-  ffi.C.write(fd, out, 3)
-end
 
 local status, data = 0, {}                          -- parser (running status)
 local function on_msg(st, d1, d2)
@@ -452,10 +557,55 @@ function frame(n, t)
   fade(0.05)
   midi_in()
   x, y = x + vx, y + vy
-  if x < 0 or x > W then vx = -vx send(0x90, 48 + math.floor(y / H * 24), 100) end
-  if y < 0 or y > H then vy = -vy send(0x90, 60 + math.floor(x / W * 24), 80) end
+  if x < 0 or x > W then vx = -vx midi.note(0, 48 + math.floor(y / H * 24), 100, 0.3) end
+  if y < 0 or y > H then vy = -vy midi.note(0, 60 + math.floor(x / W * 24), 80, 0.3) end
   circle(x, y, 8 + (param.cc1 or 0) * 60, 0xFFFFFF, true)
-  if n % 4 == 0 then for k = 36, 84 do send(0x80, k, 0) end end  -- note offs (lazy)
+end
+`,
+  "midi-arp": `-- TEMPLATE: MIDI out on time (midi.*: the ALSA sequencer). Start the synth
+-- first (sudo dzsynth.sh start). Every step is scheduled AHEAD seconds before
+-- it sounds, with its exact time: the tempo does not follow the frame rate.
+-- An arpeggio, a bass line and drums; the notes are drawn when they are sent.
+-- Stop = all notes off (the script's end, an error or /lua/<s>/stop do it).
+-- params: bpm (110), prog (lead GM program 0-127, default 81 = saw lead),
+--   bass (33 = finger bass), voices (1-4 lead notes per step), drums (1),
+--   vel (90), swing (0..0.5: every 2nd sixteenth later), ahead (0.2 s)
+local CHORDS = { { 57, 60, 64, 67 }, { 53, 57, 60, 64 }, { 48, 52, 55, 59 }, { 55, 59, 62, 65 } }  -- Am7 Fmaj7 Cmaj7 G7
+midi.program(0, param.prog or 81)    -- lead on channel 0
+midi.program(1, param.bass or 33)    -- bass on channel 1
+trails(0.08)
+
+local function dot(ch, n, v)
+  circle((n - 24) / 72 * W, H - (v / 127) * H * 0.8 - 40, 6 + ch * 4, hsv(ch / 10 + n / 120, 0.8, 1), true)
+end
+local function note(ch, n, v, len, at)
+  midi.note(ch, n, v, len, at)
+  dot(ch, n, v)
+end
+
+local step, nextt = 0, time() + 0.1
+function onparam(k, v)
+  if k == "prog" then midi.program(0, v) elseif k == "bass" then midi.program(1, v) end
+end
+
+function frame(n, t)
+  local spb = 60 / (param.bpm or 110) / 4        -- one sixteenth
+  local v = param.vel or 90
+  while nextt < t + (param.ahead or 0.2) do      -- everything due in the next AHEAD s
+    local at = nextt + ((step % 2 == 1) and spb * (param.swing or 0) or 0)
+    local ch = CHORDS[math.floor(step / 16) % #CHORDS + 1]
+    for k = 1, math.max(1, math.min(4, param.voices or 1)) do
+      note(0, ch[(step + k - 1) % 4 + 1] + 12 * (k > 2 and 1 or 0) + ((step % 8 >= 4) and 12 or 0), v, spb * 0.9, at)
+    end
+    if step % 4 == 0 then note(1, ch[1] - 24, v + 10, spb * 3.5, at) end
+    if (param.drums or 1) ~= 0 then
+      if step % 4 == 0 then note(9, 36, 110, spb, at) end           -- kick
+      if step % 8 == 4 then note(9, 38, 100, spb, at) end           -- snare
+      note(9, 42, step % 2 == 0 and 70 or 40, spb * 0.5, at)         -- hat
+    end
+    step = step + 1
+    nextt = nextt + spb
+  end
 end
 `,
   "dirty-fast": `-- QUIRK: only the changed area goes to the slot, so small changes are fast.
@@ -578,11 +728,39 @@ end
 const NOTES = `Shared slot: the script keeps running over a movie or the capture (layer mode, auto); brush, lines,
 shapes and text from Paint splat into its slot; clear, fill, image load, fade, a movie start stop it.
 Speed: only the changed rectangle goes to the slot (one per frame: present() between far areas); trails() is cheaper
-than fade(); FB[] loops are the fastest pixel writes. MIDI: the midi-io template (raw ALSA device through the FFI).
+than fade(); FB[] loops are the fastest pixel writes. MIDI: midi.* (the ALSA sequencer, time-stamped, all off at the end).
 Full API: the top of sw/dzlua/prelude.lua.`;
 
 let ed, nameIn, slotSel, list, logEl, statEl, pkey, pval, timer = 0, polls = 0;
 let hl, band, diagEl, helpEl, lintRes = null, lintTimer = 0, lintGen = 0;
+let runEl, runSeen = null, runMap = new Map(), listTimer = 0;	// scripts running on ANY slot (/lua/list)
+
+function listRunning() {
+  if (!net.connected()) return;
+  runSeen = new Map();
+  net.msg("/lua/list");
+}
+
+function showRunning() {
+  if (!runMap.size) {
+    runEl.replaceChildren(h("span.hint", {}, "no script runs on any slot"));
+    return;
+  }
+  runEl.replaceChildren(h("span.hint", {}, "running:"), ...[...runMap].sort((a, b) => a[0] - b[0]).map(([sl, r]) =>
+    h("span.lua-run" + (sl === slot() ? ".on" : ""), {},
+      h("button.ghost", { title: `show slot ${sl} in this panel (status, log, Stop)`,
+        onclick: () => { slotSel.value = sl; store.set("lua.slot", sl); poll(2); showRunning(); } },
+        `slot ${sl}: ${r.name} · ${r.fps.toFixed(0)} fps`),
+      h("button.danger", { title: `/lua/${sl}/stop`, onclick: () => { net.msg(`/lua/${sl}/stop`); setTimeout(listRunning, 700); poll(2); } }, "■"))));
+}
+
+// every 3 s while the panel is on screen
+function listTick() {
+  listTimer = 0;
+  if (!runEl.offsetParent) return;
+  listRunning();
+  listTimer = setTimeout(listTick, 3000);
+}
 
 // ---- highlighting, lint, help (luahl.js) ---------------------------------
 function lineH() { return parseFloat(getComputedStyle(ed).lineHeight) || 18.85; }
@@ -810,6 +988,7 @@ export function init(root) {
     ...[["auto", "layer: auto"], ["1", "layer: on"], ["0", "layer: off"]].map(([v, t]) => h("option", { value: v }, t)));
   layerSel.value = store.get("lua.layer", "auto");
   logEl = h("div.log.lualog", { role: "log" });
+  runEl = h("div.row.lua-running", {}, h("span.hint", {}, "…"));
   hl = h("pre.luahl", { "aria-hidden": "true" });
   band = h("div.luaerr");
   diagEl = h("div.luadiag");
@@ -830,6 +1009,7 @@ export function init(root) {
       h("label", {}, "param"), pkey, pval,
       h("button", { title: "send /lua/<slot>/p/<key> value (also an LFO target)", onclick: setParam }, "Set"),
       statEl),
+    runEl,
     h("div.luaed", {}, hl, ed),
     helpEl,
     diagEl,
@@ -838,6 +1018,20 @@ export function init(root) {
   changed();
 
   net.on("/lua", (m) => {
+    if (m.path === "/lua/list") {			// the end of a list: replace the running set
+      if (runSeen) { runMap = runSeen; runSeen = null; showRunning(); }
+      return;
+    }
+    const st = m.path.match(/^\/lua\/(\d+)\/status$/);
+    if (st) {					// any slot: keep the running set current
+      const sl = Number(st[1]);
+      if (m.args[0]) {
+        const r = { name: m.args[1], fps: m.args[3] || 0 };
+        runMap.set(sl, r);
+        if (runSeen) runSeen.set(sl, r);
+      } else runMap.delete(sl);
+      if (!runSeen) showRunning();
+    }
     const mm = m.path.match(/^\/lua\/(\d+)\/(status|log)$/);
     if (!mm || Number(mm[1]) !== slot()) return;
     if (mm[2] === "log") return showLog(m.args[0] || "");
@@ -848,10 +1042,11 @@ export function init(root) {
     statEl.className = running ? "hint" : exit > 0 && exit < 128 ? "warn-text" : "hint";
     if (running) polls = Math.max(polls, 2);
   });
-  net.onConnect(() => { refreshList(); poll(1); });
+  net.onConnect(() => { refreshList(); poll(1); listRunning(); });
 }
 
 export function show() {
   refreshList();
   poll(1);
+  if (!listTimer) listTick();
 }

@@ -16,11 +16,66 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MIPS 3			/* 1/2, 1/4, 1/8 size copies */
+
 typedef struct {
 	int       w, h;
 	uint32_t *px;
 	char      src[160];	/* where it came from (dz_sprite_src) */
+	uint32_t *mip[MIPS];	/* box-filtered smaller copies, made on first use */
+	int       mw[MIPS], mh[MIPS];
+	dz_sprite_rec rec;	/* how it was made (state) */
 } sprite_t;
+
+static void mips_free(sprite_t *s)
+{
+	for (int k = 0; k < MIPS; k++) {
+		free(s->mip[k]);
+		s->mip[k] = NULL;
+		s->mw[k] = s->mh[k] = 0;
+	}
+}
+
+/* level k (1..MIPS) = half of level k-1, colours averaged by alpha;
+ * NULL if too small or no memory */
+static const uint32_t *mip(sprite_t *s, int k, int *w, int *h)
+{
+	const uint32_t *src = k == 1 ? s->px : s->mip[k - 2];
+	int sw = k == 1 ? s->w : s->mw[k - 2], sh = k == 1 ? s->h : s->mh[k - 2];
+	int dw = sw / 2, dh = sh / 2;
+	uint32_t *d;
+
+	if (!s->mip[k - 1]) {
+		if (!src || dw < 4 || dh < 4)
+			return NULL;
+		d = malloc((size_t)dw * dh * 4);
+		if (!d)
+			return NULL;
+		for (int y = 0; y < dh; y++)
+			for (int x = 0; x < dw; x++) {
+				const uint32_t *a = src + (size_t)(2 * y) * sw + 2 * x, *b = a + sw;
+				uint32_t q[4] = { a[0], a[1], b[0], b[1] };
+				unsigned sa = 0, sr = 0, sg = 0, sb = 0;
+
+				for (int i = 0; i < 4; i++) {
+					unsigned al = q[i] >> 24;
+
+					sa += al;
+					sr += ((q[i] >> 16) & 0xFF) * al;
+					sg += ((q[i] >> 8) & 0xFF) * al;
+					sb += (q[i] & 0xFF) * al;
+				}
+				d[(size_t)y * dw + x] = sa ? ((sa / 4) << 24) | ((sr / sa) << 16) |
+							     ((sg / sa) << 8) | (sb / sa) : 0;
+			}
+		s->mip[k - 1] = d;
+		s->mw[k - 1] = dw;
+		s->mh[k - 1] = dh;
+	}
+	*w = s->mw[k - 1];
+	*h = s->mh[k - 1];
+	return s->mip[k - 1];
+}
 
 static sprite_t S[DZ_SPRITES];
 
@@ -35,6 +90,7 @@ void dz_sprite_free(int id)
 
 	if (s) {
 		free(s->px);
+		mips_free(s);
 		memset(s, 0, sizeof(*s));
 	}
 }
@@ -52,6 +108,13 @@ int dz_sprite_set(int id, int w, int h, uint32_t *px)
 	s->h = h;
 	s->px = px;
 	return 0;
+}
+
+const dz_sprite_rec *dz_sprite_get_rec(int id)
+{
+	sprite_t *s = sp(id);
+
+	return s && s->px ? &s->rec : NULL;
 }
 
 const char *dz_sprite_src(int id)
@@ -176,6 +239,7 @@ int dz_sprite_key(int id, uint8_t r, uint8_t g, uint8_t b, int tol)
 		if (abs(dr) <= tol && abs(dg) <= tol && abs(db) <= tol)
 			s->px[k] = v & 0x00FFFFFFu;	/* alpha 0 */
 	}
+	mips_free(s);				/* the smaller copies are made again */
 	return 0;
 }
 
@@ -188,14 +252,31 @@ int dz_sprite_draw(int id, int slot, float cx, float cy, float scale, float angl
 	float ca, sa, hw, hh, ex, ey;
 	unsigned a8;
 
+	const uint32_t *tex;
+	int tw, th, plain;
+	float sc;
+
 	if (!s || !s->px || scale <= 0.0f)
 		return -1;
+	/* below half size: a box-filtered smaller copy (2026-11-20): fewer cache
+	 * misses (a 256 px sprite at 0.35 read every 3rd texel of 256 KB) and
+	 * less aliasing; the effective scale stays above 0.5 */
+	tex = s->px; tw = s->w; th = s->h; sc = scale;
+	for (int k = 1; k <= MIPS && sc < 0.5f; k++) {
+		int mw, mh;
+		const uint32_t *m = mip(s, k, &mw, &mh);
+
+		if (!m)
+			break;
+		tex = m; tw = mw; th = mh;
+		sc = scale * (float)s->w / (float)mw;
+	}
 	alpha = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha);
 	a8 = (unsigned)(alpha * 256.0f + 0.5f);
 	ca = cosf(angle * (float)M_PI / 180.0f);
 	sa = sinf(angle * (float)M_PI / 180.0f);
-	hw = s->w * scale * 0.5f;
-	hh = s->h * scale * 0.5f;
+	hw = tw * sc * 0.5f;
+	hh = th * sc * 0.5f;
 	ex = fabsf(hw * ca) + fabsf(hh * sa);	/* half extent of the rotated box */
 	ey = fabsf(hw * sa) + fabsf(hh * ca);
 	/* on a live slot only the box is read (splat, the writer keeps running) */
@@ -209,31 +290,64 @@ int dz_sprite_draw(int id, int slot, float cx, float cy, float scale, float angl
 	x1 = x1 > W - 1 ? W - 1 : x1; y1 = y1 > H - 1 ? H - 1 : y1;
 	if (x1 < x0 || y1 < y0)
 		return 0;			/* off screen */
+	/* plain surface (alpha 1, blend normal) + alpha 1: opaque texels are
+	 * stored directly, only the edges blend */
+	plain = a8 >= 256 && dz_surf_plain(slot);
 	{
 		/* inverse map: dest -> sprite, 16.16 fixed point, stepped per pixel */
-		float inv = 1.0f / scale;
+		float inv = 1.0f / sc;
 		float ux = ca * inv, uy = sa * inv;	/* d(src x)/d(dst x), /d(dst y) */
 		float vx = -sa * inv, vy = ca * inv;
 		int32_t dux = (int32_t)(ux * 65536.0f), dvx = (int32_t)(vx * 65536.0f);
-		int32_t sw = s->w << 16, sh = s->h << 16;
+		int32_t sw = tw << 16, sh = th << 16;
 
 		for (int y = y0; y <= y1; y++) {
 			float dx = (float)x0 - cx, dy = (float)y - cy;
-			int32_t u = (int32_t)((dx * ux + dy * uy + s->w * 0.5f) * 65536.0f);
-			int32_t v = (int32_t)((dx * vx + dy * vy + s->h * 0.5f) * 65536.0f);
+			float uf = dx * ux + dy * uy + tw * 0.5f, vf = dx * vx + dy * vy + th * 0.5f;
+			float lo = 0.0f, hi = (float)(x1 - x0);
+			int32_t u, v;
 			uint32_t *row = dst + (size_t)y * W;
+			int xa, xb;
 
-			for (int x = x0; x <= x1; x++, u += dux, v += dvx) {
+			/* only the part of the row inside the rotated sprite (the
+			 * corners of the box are empty: about half of it at 45 deg);
+			 * one pixel of margin, the test per pixel stays */
+			if (ux > 1e-6f || ux < -1e-6f) {
+				float a = -uf / ux, b = ((float)tw - uf) / ux;
+				if (a > b) { float t = a; a = b; b = t; }
+				lo = a > lo ? a : lo; hi = b < hi ? b : hi;
+			} else if (uf < 0.0f || uf >= (float)tw)
+				continue;
+			if (vx > 1e-6f || vx < -1e-6f) {
+				float a = -vf / vx, b = ((float)th - vf) / vx;
+				if (a > b) { float t = a; a = b; b = t; }
+				lo = a > lo ? a : lo; hi = b < hi ? b : hi;
+			} else if (vf < 0.0f || vf >= (float)th)
+				continue;
+			if (hi < lo)
+				continue;
+			xa = x0 + (int)floorf(lo) - 1;
+			xb = x0 + (int)ceilf(hi) + 1;
+			xa = xa < x0 ? x0 : xa;
+			xb = xb > x1 ? x1 : xb;
+			dx = (float)xa - cx;
+			u = (int32_t)((dx * ux + dy * uy + tw * 0.5f) * 65536.0f);
+			v = (int32_t)((dx * vx + dy * vy + th * 0.5f) * 65536.0f);
+
+			for (int x = xa; x <= xb; x++, u += dux, v += dvx) {
 				uint32_t p;
 				unsigned pa;
 
 				if (u < 0 || v < 0 || u >= sw || v >= sh)
 					continue;
-				p = s->px[(size_t)(v >> 16) * s->w + (u >> 16)];
+				p = tex[(size_t)(v >> 16) * tw + (u >> 16)];
 				pa = (p >> 24) + ((p >> 31) & 1);	/* 0..256 */
 				if (!pa)
 					continue;
-				dz_surf_put(slot, &row[x], p | 0xFF000000u, (pa * a8) >> 8);
+				if (plain && pa >= 256)
+					row[x] = p | 0xFF000000u;
+				else
+					dz_surf_put(slot, &row[x], p | 0xFF000000u, (pa * a8) >> 8);
 			}
 		}
 	}
@@ -259,6 +373,14 @@ int dz_sprite_dispatch(const dz_msg *m, int verbose)
 
 	if (sscanf(m->path, "/sprite/%d/%23s%n", &id, op, &k) != 2 || m->path[k])
 		return 0;
+	/* /sprite/<id>/src kind ... (the state: resume, cues, show files) =
+	 * the same as /sprite/<id>/load|text|ttf with the args after kind */
+	if (!strcmp(op, "src") && n >= 2 && a[0].type == 's' &&
+	    (!strcmp(a[0].s, "file") || !strcmp(a[0].s, "text") || !strcmp(a[0].s, "ttf"))) {
+		snprintf(op, sizeof(op), "%s", !strcmp(a[0].s, "file") ? "load" : a[0].s);
+		a++;
+		n--;
+	}
 	if (!strcmp(op, "load") && n >= 1 && a[0].type == 's')
 		rc = dz_sprite_load(id, a[0].s, n >= 3 ? a[1].i : 0, n >= 3 ? a[2].i : 0);
 	else if (!strcmp(op, "grab") && n >= 5)
@@ -281,19 +403,48 @@ int dz_sprite_dispatch(const dz_msg *m, int verbose)
 		return 0;
 	if (rc < 0)
 		dz_surf_fail();
-	else if (!strcmp(op, "load"))	/* the source, for /sprite/<id> and /sprite/list */
+	else if (!strcmp(op, "load")) {	/* the source, for /sprite/<id> and /sprite/list */
+		sprite_t *t = sp(id);
+
 		note(id, "file:%s", a[0].s);
+		t->rec.kind = 1;
+		t->rec.w = n >= 3 ? a[1].i : 0;
+		t->rec.h = n >= 3 ? a[2].i : 0;
+		snprintf(t->rec.text, sizeof(t->rec.text), "%s", a[0].s);
+	}
 	else if (!strcmp(op, "grab"))
 		note(id, "grab:%d %d %d %d %d", a[0].i, a[1].i, a[2].i, a[3].i, a[4].i);
-	else if (!strcmp(op, "text"))
-		note(id, "text:#%02x%02x%02x:%s", c8(&a[0]), c8(&a[1]), c8(&a[2]), a[3].s);
-	else if (!strcmp(op, "ttf"))
-		note(id, "ttf:#%02x%02x%02x:%s", c8(&a[0]), c8(&a[1]), c8(&a[2]), a[4].s);
+	else if (!strcmp(op, "text") || !strcmp(op, "ttf")) {
+		sprite_t *t = sp(id);
+		int tt = op[1] == 't';		/* "ttf" */
+
+		note(id, "%s:#%02x%02x%02x:%s", op, c8(&a[0]), c8(&a[1]), c8(&a[2]), tt ? a[4].s : a[3].s);
+		t->rec.kind = tt ? 3 : 2;
+		t->rec.r = c8(&a[0]);
+		t->rec.g = c8(&a[1]);
+		t->rec.b = c8(&a[2]);
+		if (tt) {
+			t->rec.size = af(&a[3]);
+			snprintf(t->rec.text, sizeof(t->rec.text), "%s", a[4].s);
+			snprintf(t->rec.face, sizeof(t->rec.face), "%s", n >= 6 && a[5].type == 's' ? a[5].s : "");
+		} else {
+			t->rec.scale = n >= 5 ? a[4].i : 1;
+			t->rec.font = n >= 6 ? a[5].i : 16;
+			snprintf(t->rec.text, sizeof(t->rec.text), "%s", a[3].s);
+		}
+	}
 	else if (!strcmp(op, "key")) {
 		sprite_t *t = sp(id);
 
 		if (t && !strstr(t->src, " +key"))
 			strncat(t->src, " +key", sizeof(t->src) - strlen(t->src) - 1);
+		if (t) {
+			t->rec.key = 1;
+			t->rec.kr = c8(&a[0]);
+			t->rec.kg = c8(&a[1]);
+			t->rec.kb = c8(&a[2]);
+			t->rec.ktol = n >= 4 ? a[3].i : 0;
+		}
 	}
 	if (verbose)
 		fprintf(stderr, "dz_sprite: %d %s%s\n", id, op, rc < 0 ? " FAILED" : "");

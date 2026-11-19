@@ -725,6 +725,213 @@ DZL double dzl_wait(double fps)
 	return work_t0 - t_start;
 }
 
+
+/* ---- MIDI out: the ALSA sequencer with a real-time queue (2026-11-20) ------
+ * Notes leave at their time stamp (the kernel's hrtimer), not at the frame:
+ * a script schedules them ahead (midi.note(..., at)). libasound by dlopen
+ * (the toolchain has no ALSA headers: the event layout is written out here,
+ * snd_seq_event_t = 28 bytes on ARM32). Every way out sends "all off":
+ * the end of the script, a Lua error, os.exit (atexit) and SIGTERM
+ * (/lua/<s>/stop): the main client is closed first (that drops its queue
+ * with every event still waiting in it), then a second client sends sustain
+ * off, All Notes Off and All Sound Off on the 16 channels. SIGKILL (debazd
+ * sends it 0.5 s after SIGTERM) cannot be caught. */
+typedef struct { unsigned char client, port; } sq_addr;
+typedef struct {
+	unsigned char type, flags;
+	char          tag;
+	unsigned char queue;
+	unsigned int  sec, nsec;		/* union time: real time */
+	sq_addr       source, dest;
+	union {
+		struct { unsigned char channel, note, velocity, off_velocity; unsigned int duration; } note;
+		struct { unsigned char channel, u1, u2, u3; unsigned int param; int value; } control;
+		unsigned char raw[12];
+	} data;
+} sq_event;
+_Static_assert(sizeof(sq_event) == 28, "snd_seq_event_t layout");
+
+enum { SQ_NOTEON = 6, SQ_NOTEOFF = 7, SQ_CONTROLLER = 10, SQ_PGMCHANGE = 11, SQ_PITCHBEND = 13,
+       SQ_START = 30, SQ_REAL = 1, SQ_DIRECT = 253, SQ_SUBS = 254, SQ_UNKNOWN = 253 };
+
+static int slot_no = -1;
+static struct {
+	void *lib;
+	int  (*f_open)(void **, const char *, int, int);
+	int  (*f_name)(void *, const char *);
+	int  (*f_port)(void *, const char *, unsigned, unsigned);
+	int  (*f_queue)(void *);
+	int  (*f_ctlq)(void *, int, int, int, void *);
+	int  (*f_out)(void *, sq_event *);
+	int  (*f_direct)(void *, sq_event *);
+	int  (*f_drain)(void *);
+	int  (*f_parse)(void *, sq_addr *, const char *);
+	int  (*f_connect)(void *, int, int, int);
+	int  (*f_pollfd)(void *, void *, unsigned, short);
+	void  *seq, *pseq;			/* main client, panic client */
+	int    port, pport, queue, fd, on;
+	double t0;				/* script time of the queue's 0 */
+	char   err[160];
+} M = { .fd = -1 };
+
+static void midi_panic_on(void *seq, int port)
+{
+	static const int cc[3] = { 64, 123, 120 };	/* sustain off, all notes off, all sound off */
+	sq_event e;
+
+	for (int ch = 0; ch < 16; ch++)
+		for (int k = 0; k < 3; k++) {
+			memset(&e, 0, sizeof(e));
+			e.type = SQ_CONTROLLER;
+			e.queue = SQ_DIRECT;
+			e.source.port = (unsigned char)port;
+			e.dest.client = SQ_SUBS;
+			e.dest.port = SQ_UNKNOWN;
+			e.data.control.channel = (unsigned char)ch;
+			e.data.control.param = (unsigned)cc[k];
+			M.f_direct(seq, &e);
+		}
+}
+
+/* signal-safe enough: close() and direct writes, no allocation */
+static void midi_close(void)
+{
+	if (!M.on)
+		return;
+	M.on = 0;
+	if (M.fd >= 0)
+		close(M.fd);			/* the main client: its queue and waiting notes go */
+	M.fd = -1;
+	midi_panic_on(M.pseq, M.pport);
+}
+
+static void midi_sigterm(int sig)
+{
+	midi_close();
+	_exit(128 + sig);
+}
+
+static int need(void **f, const char *n)
+{
+	*f = dlsym(M.lib, n);
+	if (!*f)
+		snprintf(M.err, sizeof(M.err), "libasound: no %s", n);
+	return *f ? 0 : -1;
+}
+
+static int connect_dest(void *seq, int port, const char *dest)
+{
+	sq_addr a;
+
+	if (M.f_parse(seq, &a, dest) < 0 || M.f_connect(seq, port, a.client, a.port) < 0) {
+		snprintf(M.err, sizeof(M.err), "no MIDI destination \"%s\" (sudo dzsynth.sh start? aconnect -l)", dest);
+		return -1;
+	}
+	return 0;
+}
+
+/* open once: clients "dzlua <slot>" (+ "panic"), port "out", a real-time
+ * queue; connect to dest ("FLUID Synth" = dzsynth.sh, a client:port, or
+ * "none" = only who subscribes, aconnect). 0 = ok, -1 = see dzl_midi_err() */
+DZL int dzl_midi_open(const char *dest)
+{
+	struct { int fd; short ev, rev; } pfd;
+	char name[40];
+	sq_event e;
+
+	if (M.on)
+		return 0;
+	M.err[0] = 0;
+	if (!M.lib && !(M.lib = dlopen("libasound.so.2", RTLD_NOW))) {
+		snprintf(M.err, sizeof(M.err), "no libasound.so.2");
+		return -1;
+	}
+	if (need((void **)&M.f_open, "snd_seq_open") || need((void **)&M.f_name, "snd_seq_set_client_name") ||
+	    need((void **)&M.f_port, "snd_seq_create_simple_port") || need((void **)&M.f_queue, "snd_seq_alloc_queue") ||
+	    need((void **)&M.f_ctlq, "snd_seq_control_queue") || need((void **)&M.f_out, "snd_seq_event_output") ||
+	    need((void **)&M.f_direct, "snd_seq_event_output_direct") || need((void **)&M.f_drain, "snd_seq_drain_output") ||
+	    need((void **)&M.f_parse, "snd_seq_parse_address") || need((void **)&M.f_connect, "snd_seq_connect_to") ||
+	    need((void **)&M.f_pollfd, "snd_seq_poll_descriptors"))
+		return -1;
+	if (!M.seq && (M.f_open(&M.seq, "default", 1 /* output */, 0) < 0 ||
+		       M.f_open(&M.pseq, "default", 1, 0) < 0)) {
+		snprintf(M.err, sizeof(M.err), "cannot open the ALSA sequencer");
+		M.seq = NULL;
+		return -1;
+	}
+	snprintf(name, sizeof(name), "dzlua %d", slot_no);
+	M.f_name(M.seq, name);
+	snprintf(name, sizeof(name), "dzlua %d panic", slot_no);
+	M.f_name(M.pseq, name);
+	M.port = M.f_port(M.seq, "out", 1 | 32 /* READ | SUBS_READ */, 2 | (1u << 20) /* MIDI_GENERIC | APPLICATION */);
+	M.pport = M.f_port(M.pseq, "panic", 1 | 32, 2 | (1u << 20));
+	if (M.port < 0 || M.pport < 0 || (M.queue = M.f_queue(M.seq)) < 0) {
+		snprintf(M.err, sizeof(M.err), "ALSA sequencer: no port / queue");
+		return -1;
+	}
+	if (dest && *dest && strcmp(dest, "none") &&
+	    (connect_dest(M.seq, M.port, dest) < 0 || connect_dest(M.pseq, M.pport, dest) < 0))
+		return -1;
+	memset(&e, 0, sizeof(e));
+	M.f_ctlq(M.seq, M.queue, SQ_START, 0, NULL);
+	M.f_drain(M.seq);
+	M.t0 = mono() - t_start;		/* the queue's 0 in script time */
+	M.fd = M.f_pollfd(M.seq, &pfd, 1, 4 /* POLLOUT */) == 1 ? pfd.fd : -1;
+	M.on = 1;
+	atexit(midi_close);
+	signal(SIGTERM, midi_sigterm);
+	return 0;
+}
+
+DZL const char *dzl_midi_err(void) { return M.err; }
+
+/* kind 0 note on, 1 note off, 2 controller, 3 program, 4 pitch bend
+ * (a = -8192..8191); at = script time (time()), < 0 or past = now */
+DZL int dzl_midi_ev(int kind, int ch, int a, int b, double at)
+{
+	static const unsigned char T[5] = { SQ_NOTEON, SQ_NOTEOFF, SQ_CONTROLLER, SQ_PGMCHANGE, SQ_PITCHBEND };
+	sq_event e;
+	double q;
+
+	if (!M.on || kind < 0 || kind > 4)
+		return -1;
+	memset(&e, 0, sizeof(e));
+	e.type = T[kind];
+	e.source.port = (unsigned char)M.port;
+	e.dest.client = SQ_SUBS;
+	e.dest.port = SQ_UNKNOWN;
+	if (kind <= 1) {
+		e.data.note.channel = (unsigned char)(ch & 15);
+		e.data.note.note = (unsigned char)(a & 127);
+		e.data.note.velocity = (unsigned char)(b < 0 ? 0 : b > 127 ? 127 : b);
+	} else {
+		e.data.control.channel = (unsigned char)(ch & 15);
+		e.data.control.param = (unsigned)a;
+		e.data.control.value = kind == 2 ? b : a;
+		if (kind == 3)
+			e.data.control.param = 0;
+	}
+	q = at - M.t0;
+	if (at < 0 || q <= 0) {
+		e.queue = SQ_DIRECT;
+		return M.f_direct(M.seq, &e) < 0 ? -1 : 0;
+	}
+	e.flags = SQ_REAL;			/* real time, absolute */
+	e.queue = (unsigned char)M.queue;
+	e.sec = (unsigned)q;
+	e.nsec = (unsigned)((q - (double)e.sec) * 1e9);
+	if (M.f_out(M.seq, &e) < 0)
+		return -1;
+	return M.f_drain(M.seq) < 0 ? -1 : 0;
+}
+
+/* now: all off on 16 channels (the waiting notes stay queued) */
+DZL void dzl_midi_panic(void)
+{
+	if (M.on)
+		midi_panic_on(M.pseq, M.pport);
+}
+
 /* the next control line ("key value"), or NULL */
 DZL const char *dzl_ctl(void)
 {
@@ -851,7 +1058,7 @@ int main(int argc, char **argv)
 
 	while ((opt = getopt(argc, argv, "s:lc:t:n:So:")) != -1) {
 		switch (opt) {
-		case 's': s = atoi(optarg); break;
+		case 's': s = atoi(optarg); slot_no = s; break;
 		case 'c': ctl = optarg; break;
 		case 't': stat_path = optarg; break;
 		case 'n': frames_max = atoi(optarg); break;

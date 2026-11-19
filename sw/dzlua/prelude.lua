@@ -57,11 +57,25 @@
 --     .nbins, .spec[k]  amplitude spectrum of the mix, k = 0..nbins-1;
 --                       .hz(k) -> Hz, .bin(hz) -> k   .fft_n (1024)
 --     .source ("off" "capture" "peak" "movie" "none"), .age (s), .frame
+--   midi                MIDI out through the ALSA sequencer, on time: events
+--                       carry a time stamp (script time, like time()), the
+--                       kernel sends them then, whatever the frame rate.
+--                       Schedule ahead (e.g. 0.15 s). The first call opens it
+--                       and connects "FLUID Synth" (sudo dzsynth.sh start);
+--                       midi.open(dest) for another (aconnect -l name or
+--                       "none"; param midi_dest). ch = 0..15 (9 = GM drums)
+--     .note(ch, n, vel, len, [at])   on at `at` (default now), off at at+len
+--     .on(ch, n, vel, [at])  .off(ch, n, [at])  .cc(ch, c, v, [at])
+--     .program(ch, p, [at])  .bend(ch, -8192..8191, [at])
+--     .panic()          all off now (sustain, notes, sound) on 16 channels
+--                       The script's end, an error and /lua/<s>/stop send
+--                       all off by themselves (waiting notes are dropped).
 --   osc(addr, ...)      send an OSC message to debazd (any Console message:
 --                       /lfo, /dds, fields, /disp, /cue/go ...). Numbers:
 --                       whole = int, else float; osc_f(v) = always float
---   osc_get(addr, ...)  send and wait (0.2 s) for the reply: its args as a
---                       table (nil = no reply), 2nd result = its address
+--   osc_get(addr, ...)  send and wait (0.2 s) for the reply from addr (else
+--                       the first other reply): its args as a table (nil =
+--                       no reply), 2nd result = its address
 
 local ffi = require("ffi")
 ffi.cdef [[
@@ -267,23 +281,67 @@ local function parse_msg(p, len)                      -- -> address, { args }
   return a, r
 end
 
-function osc_get(addr, ...)                           -- first reply message only
+function osc_get(addr, ...)                           -- the reply from addr (else the first)
   local fd = osc_open()
   local pf = ffi.new("struct dzl_pollfd[1]")
   pf[0].fd, pf[0].events = fd, 1
   while C.poll(pf, 1, 0) > 0 do C.recv(fd, rbuf, 65536, 0) end   -- old replies
   osc(addr, ...)
-  if C.poll(pf, 1, 200) <= 0 then return nil end
-  local n = tonumber(C.recv(fd, rbuf, 65536, 0))
-  if n < 8 then return nil end
-  if ffi.string(rbuf, 7) == "#bundle" then
-    if n < 20 then return nil end
-    local a, r = parse_msg(rbuf + 20, rd32(rbuf + 16))
-    return r, a
+  -- other messages of the script may answer too (e.g. /disp/<d>/show): skip
+  -- them until the reply from addr comes (2026-11-20: a fence passed early)
+  local first, firsta
+  local t_end = C.dzl_mono() + 0.2
+  while true do
+    local ms = math.floor((t_end - C.dzl_mono()) * 1000)
+    if ms < 0 or C.poll(pf, 1, ms) <= 0 then break end
+    local n = tonumber(C.recv(fd, rbuf, 65536, 0))
+    if n >= 8 then
+      local p, len = rbuf, n
+      local bundle = ffi.string(rbuf, 7) == "#bundle"
+      if bundle and n >= 20 then p, len = rbuf + 20, rd32(rbuf + 16) end
+      if not bundle or n >= 20 then
+        local a, r = parse_msg(p, len)
+        -- a field answers "/value" <addr> ..., a failure "/error" <why> <addr>
+        if a == addr or (a == "/value" and r[1] == addr) or (a == "/error" and r[2] == addr) then
+          return r, a
+        end
+        if not first then first, firsta = r, a end
+      end
+    end
   end
-  local a, r = parse_msg(rbuf, n)
-  return r, a
+  return first, firsta
 end
+
+-- midi: the ALSA sequencer client in dzlua.c (real-time queue)
+pcall(ffi.cdef, [[
+int dzl_midi_open(const char *dest);
+const char *dzl_midi_err(void);
+int dzl_midi_ev(int kind, int ch, int a, int b, double at);
+void dzl_midi_panic(void);
+]])
+midi = {}
+local midi_on = false
+function midi.open(dest)
+  if midi_on then return true end
+  if C.dzl_midi_open(dest or param.midi_dest or "FLUID Synth") ~= 0 then
+    error("midi: " .. ffi.string(C.dzl_midi_err()), 2)
+  end
+  midi_on = true
+  return true
+end
+local function mo() if not midi_on then midi.open() end end
+local function ev(kind, ch, a, b, at) mo() C.dzl_midi_ev(kind, ch, a, b, at or -1) end
+function midi.on(ch, n, v, at) ev(0, ch, n, v or 100, at) end
+function midi.off(ch, n, at) ev(1, ch, n, 0, at) end
+function midi.note(ch, n, v, len, at)
+  at = at or C.dzl_time()
+  ev(0, ch, n, v or 100, at)
+  ev(1, ch, n, 0, at + (len or 0.25))
+end
+function midi.cc(ch, c, v, at) ev(2, ch, c, v, at) end
+function midi.program(ch, p, at) ev(3, ch, p, 0, at) end
+function midi.bend(ch, v, at) ev(4, ch, v, 0, at) end
+function midi.panic() if midi_on then C.dzl_midi_panic() end end
 
 -- audio: debazd's analysis (react.c) through shared memory
 -- (lib/dz_react_shm.h; ⚠️ keep this struct equal to it)

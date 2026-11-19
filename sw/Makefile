@@ -25,7 +25,7 @@ LIBSRC  := $(wildcard lib/*.c)
 LIBOBJ  := $(LIBSRC:%.c=$(OBJ)/%.o)
 HDRS    := $(wildcard lib/*.h include/*.h debazd/*.h)
 BINS    := $(OUT)/debazd $(OUT)/dzctl $(OUT)/fbfeed $(OUT)/dzmosh $(OUT)/vsync_probe $(OUT)/dzweb $(OUT)/pcmplay $(OUT)/dzbus $(OUT)/dzlua
-SCRIPTS := tools/capstat.sh tools/plreload.sh tools/dzstart.sh tools/dzrun.sh tools/dzsetup.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
+SCRIPTS := tools/dzsynth.sh tools/capstat.sh tools/plreload.sh tools/dzstart.sh tools/dzrun.sh tools/dzsetup.sh tools/keytest.sh tools/ddrprio.sh tools/lrtest.sh tools/evwatch.sh tools/avplay.sh tools/avswitch.sh tools/debaz-mac.sh tools/debaz-firstboot.sh
 # the image: debaz-mac.sh + debaz-firstboot.sh come from recipe debaz-firstboot (/usr/sbin)
 IMG_SCRIPTS := $(filter-out tools/debaz-mac.sh tools/debaz-firstboot.sh,$(SCRIPTS))
 

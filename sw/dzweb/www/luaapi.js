@@ -86,6 +86,17 @@ export const API = [
     ["audio.source", "audio.source", "\"off\" \"capture\" \"peak\" \"movie\" \"none\""],
     ["audio.age", "audio.age", "seconds since debazd wrote the data"],
   ]],
+  ["MIDI out (on time)", [
+    ["midi", "midi", "MIDI out through the ALSA sequencer: every event has a time stamp (script time, like time()) and leaves then, whatever the frame rate; schedule ~0.15 s ahead. First use connects \"FLUID Synth\" (sudo dzsynth.sh start). The script's end, an error and Stop send all notes off"],
+    ["midi.note", "midi.note(ch, n, vel, len, [at])", "note on at `at` (default now), off at at + len seconds; ch 0-15 (9 = GM drums)"],
+    ["midi.on", "midi.on(ch, n, vel, [at])", "note on alone (send the off yourself)"],
+    ["midi.off", "midi.off(ch, n, [at])", "note off"],
+    ["midi.cc", "midi.cc(ch, controller, value, [at])", "control change"],
+    ["midi.program", "midi.program(ch, p, [at])", "program change (GM 0-127)"],
+    ["midi.bend", "midi.bend(ch, v, [at])", "pitch bend -8192..8191"],
+    ["midi.panic", "midi.panic()", "now: sustain off, all notes off, all sound off on 16 channels"],
+    ["midi.open", "midi.open([dest])", "connect another destination (aconnect -l name, or \"none\": only who subscribes); param midi_dest"],
+  ]],
   ["OSC to debazd", [
     ["osc", "osc(addr, ...)", "send a Console message (/lfo /dds /fx fields /disp /cue ...); whole numbers = int, strings, osc_f(v) = float. ~0.1 ms; what it sets stays after the script"],
     ["osc_get", "r, addr = osc_get(addr, ...)", "send and wait 0.2 s for the reply: its args as a table (nil = no reply). ~1 ms"],

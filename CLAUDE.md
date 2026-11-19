@@ -1143,6 +1143,11 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   ALSA raw MIDI (VirMIDI card 1; no fluidsynth in the image), web editor
   highlighting + lint (vendored www/luaparse.js) + reference
   (www/luaapi.js = the prelude API as data: keep in step).
+  MIDI synth (Nov 20): fluidsynth (bbappend: no PulseAudio) + recipe
+  debaz-soundfonts in debaz-sw RDEPENDS; `sudo dzsynth.sh start [out]`;
+  quick deploy of built packages to a RUNNING unit without an image:
+  `sh sw/tools/pkgpush.sh pkg...` (laptop; rpm2cpio on the build machine,
+  never unpacks "." over /; lists in /var/lib/debaz-pkgpush).
   sw/README.md "Lua scripts into a slot" (API, costs: DDR bound, trails()).
 - **Shared slots (Nov 20 2026, ON .236, ROADMAP §19 / task 26):** a slot is
   LIVE while a movie plays there, it is the capture slot, or a script runs

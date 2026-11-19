@@ -15,6 +15,8 @@
  *                      uses the target surface's blend mode (/draw/<s>/blend)
  *   /sprite/<id>/free
  *   /sprite/<id>                           -> /sprite/<id> i:w i:h s:src (debazd)
+ *   /sprite/<id>/src  "file"|"text"|"ttf" args...   = load|text|ttf with those
+ *                                          args (the state key; resume, cues)
  *   /sprite/list                           -> /sprite/<id> i:w i:h s:src for each
  *                                             loaded sprite, then /sprite/list i:n
  *   src (2026-11-20): "file:<name>", "grab:<slot> x y w h", "text:#rrggbb:<text>",
@@ -38,6 +40,22 @@ int  dz_sprite_draw(int id, int slot, float cx, float cy, float scale, float ang
 		    float alpha);
 int  dz_sprite_size(int id, int *w, int *h);
 const char *dz_sprite_src(int id);	/* NULL = not loaded */
+
+/* how a sprite was made, to make it again (debazd state: resume, cues;
+ * 2026-11-20). kind 0 = cannot be restored (grab, set from code) */
+typedef struct {
+	int     kind;			/* 0 none, 1 file, 2 pixel text, 3 ttf */
+	uint8_t r, g, b;		/* text colour */
+	int     w, h;			/* file: the resize (0 0 = native) */
+	int     scale, font;		/* pixel text */
+	float   size;			/* ttf px */
+	char    text[160];		/* file name or the text */
+	char    face[96];		/* ttf font file ("" = default) */
+	int     key;			/* a colour key after it */
+	uint8_t kr, kg, kb;
+	int     ktol;
+} dz_sprite_rec;
+const dz_sprite_rec *dz_sprite_get_rec(int id);	/* NULL = not loaded */
 void dz_sprite_free(int id);
 
 /* /sprite/... except the query. Returns operations done, 0 = not ours. */

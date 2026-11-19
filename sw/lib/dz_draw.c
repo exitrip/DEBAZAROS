@@ -591,9 +591,13 @@ static void span(surf_t *s, int y, int x0, int x1, uint32_t v)
 	if (x1 <= x0)
 		return;
 	p = s->shadow + (size_t)y * s->w;
-	for (int x = x0; x < x1; x++)
-		put(s, &p[x], v, 256);
-	dirty(s, x0, y, x1, y + 1);
+	if (s->alpha >= 256 && s->blend == DZ_BLEND_NORMAL)	/* plain: a fill (2026-11-20: the */
+		for (int x = x0; x < x1; x++)			/* erase boxes of 17 sprites per frame) */
+			p[x] = v;
+	else
+		for (int x = x0; x < x1; x++)
+			put(s, &p[x], v, 256);
+	dirty(s, x0, y, x1, y + 1);			/* both: the present copies it */
 }
 
 /* ---- splat on a live slot -------------------------------------------------- */
@@ -1772,7 +1776,10 @@ int dz_draw_movie_stop(int i)
 		dz_kill_group(s->aplayer, SIGKILL);	/* at once: no ALSA buffer play-out */
 		s->aplayer = 0;
 	}
-	if (s) {
+	/* the clean-up only when something ran: every draw op that takes the slot
+	 * comes here, and the two unlink()s per call were 5 % of the pixel thread
+	 * with 17 bouncing sprites (2026-11-20) */
+	if (s && (s->player > 0 || s->cmdfd1[0] || s->cmdfd1[1] || s->cpu_n)) {
 		s->paused = s->mosh = s->bloom = 0;
 		s->corrupt = 0.0f;
 		for (int k = 0; k < 2; k++)

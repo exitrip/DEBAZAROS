@@ -118,6 +118,7 @@ void st_emit(state_cb cb, void *ctx, const char *key, const char *path, const ch
 void st_emit_args(state_cb cb, void *ctx, const char *key, const char *path,
 		  const dz_arg *a, int n);
 void state_dump(state_cb cb, void *ctx);
+void sprite_state(state_cb cb, void *ctx);	/* debazd.c */
 /* a list of targets: key + the OSC message bytes, in order */
 typedef struct {
 	char    *key;
