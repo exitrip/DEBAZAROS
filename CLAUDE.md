@@ -16,6 +16,8 @@ artifacts/..._dsp). `signed-mixer`, `global-pclk`, `dsp-pipe` are all in main.
 `capture-reset` = paused experiments (not merged). `clanker` is the last stable
 point; `nuMix` and the other branches are old.
 Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
+Untested work: ONE list, ROADMAP.md "Test backlog" (consolidated 2026-11-20; add new
+untested items there). XADC reads 0 = hardware (VDDA needs 1V8, rework TBD).
 
 ⚠️ **The Vivado project is fragile.** Recent history includes a broken/recovered build
 ("recovered a decent build... after breaking trying out frame buffer read IP").
@@ -444,7 +446,7 @@ bitstreams alias page 1 onto page 0): sources [0] J3 pin 3, [1] J5 pin 3, [7:2]
 user I/O lines, [8] vsync; RISE/FALL enables, PEND (W1C), IRQ_EN, 100 MHz
 EV_TIME, timestamps of the last J3 / J5 / line / vsync edge, HDMI_0 DDS phase
 now and at the last vsync. Map in hdmi_audio_regs.v; debazd `/ev/...`,
-`/dds/0/phase`, `/dds/0/phase_vs`. LED_RED (W14, maybe not fitted) = IO_OUT
+`/dds/0/phase`, `/dds/0/phase_vs`. LED_RED (W14; WORKS, user 2026-11-20) = IO_OUT
 [12], `/led/red`.
 
 ### Address map (PS view)

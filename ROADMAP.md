@@ -35,57 +35,81 @@ Section numbers are fixed labels (CLAUDE.md, the READMEs and code comments
 refer to "section 14" etc.): open sections come first, finished sections
 last, so the numbers are not in order. Sections 3 and 7 were never written.
 
-## Hardware test backlog (audit 2026-11-02)
+## Test backlog (one list, consolidated 2026-11-20)
 
-What is built but not yet exercised on a board. Bench card = debaz-67b806
-(image debazaros-20261102-dsp, BOOT.BIN `_dsp`, software of commit 1e70b83e
-copied in by hand). Tick an item off with the date when it passes.
+What is built but not yet exercised by hand. Bench board .236 (debaz-7130d5,
+HEAD software by hand). Tick an item with the date when it passes; add new
+untested work here, not in other sections.
 
-New today, partly tested:
-- [ ] `/movie/<s>/stats` + the Movie effects "load" line (fbfeed / dzmosh
-  `-S` stats files, CPU per program): host tests only, the new card has no
-  movies yet. Test: upload a mkmedia movie, play it, watch the line; mosh /
-  bloom / corrupt counters; a fps cap.
-- [ ] Header chip `/stats` in the browser (warn colour when a tick > 25 ms).
-- [ ] XADC: EVERY channel reads 0 on this card (temp, vccint, vccaux in
-  /sys/bus/iio/devices/iio:device0), so `/stats` shows no temperature. The
-  XADC does not sample: check the xadc driver / PS-XADC interface setup.
-- [ ] Wall D0/D1 sliders following an LFO or cue on the crop (only a set
-  from this browser was tested).
-- [ ] `sw/tools/dzstate.py load` with a movie, anim or audio player in the
-  state (it restarts them); a full 6 -> 6 + 0 -> 6 `asciibench.py` run with
-  nobody at the controls.
-- [ ] ASCII braille / half with the pixel-pair sampling (look: dots at 160+
-  columns), `/ascii` through a cue fade.
+Done / settled on 2026-11-20 (user):
+- [x] LED_RED (W14) works.
+- [x] HDMI_1 audio out: heard in several configurations (all USB-dongle
+  audio goes out of HDMI_1).
+- XADC: every channel reads 0 = HARDWARE: VDDA needs a 1V8 supply (board
+  rework, TBD). No software work until then.
+- Fan ports / PL_KEY function select / events: DEFERRED (user), see the
+  gateware group below.
 
-The new image on a fresh card (first boot passed 2026-11-02: MAC, hostname,
-partitions, ethernet on `_dsp`, debaz.service, both displays, input audio):
-- [ ] Second boot: firstboot does not repeat, MAC and media stay.
-- [ ] Capture PICTURE on this card (only its audio and lock were seen).
-- [ ] Media from scratch: web upload, `mkmedia` to the card. (Fonts: the
-  image has 25 TrueType files in /usr/share/fonts, checked 2026-11-02.)
+Built 2026-11-19/20, tested only by readback, host tests or briefly:
+- [ ] Crops outside the slot (task 27): only VDMA addresses were checked.
+  Look at a monitor: crop y -360 (the slot before bleeds in), Wall tab
+  "Centre" with a 640x480 movie, an LFO on /disp/0/crop/y (film strip), a
+  cue with a negative crop.
+- [ ] Lua `audio` with the HDMI_2 input (only movie audio tested):
+  audio-scope wave / xy / spec with laptop stereo, audio-react beat on music.
+- [ ] Lua MIDI with a real source (only VirMIDI loopback; no USB on the
+  board: network MIDI or the UART add-on).
+- [ ] Lua osc-control (undo), layer mode over a playing movie, grab-mosaic,
+  the web lint / help / reference on a real script session.
+- [ ] Slit modes beyond row / col: waterfall (scroll 1, next slot), scan,
+  scanv, tiles, the capture as source, a slit inside a cue (speed fix
+  2026-11-20: col 250 = 1.2 ms a frame).
+- [ ] Sprites: grab from the capture, ttf + key, a sprite on an LFO target,
+  the new Media Sprites card / Paint preview with own images; sprite-bounce.
+- [ ] Services + resume (Nov 19): a debazd restart resumed (seen 2026-11-20);
+  a cold boot that resumes a show: not tried. Hardware watchdog: prepared,
+  NOT enabled (only with the user present).
+
+Software never exercised by the user:
+- [ ] Auto-follow + playlists (Nov 4, host-tested only): /cue/follow ...
+  secs | end, /scene/loop, Media tab "Playlist -> scene".
+- [ ] Cues / scenes / shows end to end (section 15): record, go / next /
+  back, fades, dips, looks, show save / load / reload, a show at boot; show
+  bundle download / upload, the cue media gate (Nov 19).
+- [ ] Image sequences (section 16): Media player card, /anim/save from
+  Paint, timing sheet, onion skin, folder upload.
+- [ ] ASCII braille / half (pixel-pair sampling, 160+ columns), /ascii
+  through a cue fade.
+- [ ] Wall D0/D1 sliders following an LFO or a cue on the crop.
+- [ ] /movie/<s>/stats + the Movie effects "load" line; the header /stats
+  chip warn colour (tick > 25 ms).
+- [ ] `sw/tools/dzstate.py load` with a movie / anim / audio player in the
+  state; an unattended asciibench.py run.
+- [ ] Datamosh and live ffmpeg options on the image's ffmpeg (worked on the
+  bench board Nov 1).
+- [ ] New video modes: 1280x1024, 1280x720 at 45 and 25 Hz.
+- [ ] Fleet page (www/fleet.html) with several units.
+
+Images and boot (next: the image revision):
+- [ ] The newest image (Nov 19 "data") and the Nov 18 "modes" image have
+  never booted from a card.
+- [ ] Fresh card: second boot (firstboot does not repeat, MAC and media
+  stay), capture PICTURE, media from scratch (web upload, mkmedia).
 - [ ] Fallback bitstreams from /lib/firmware with plreload (`_sdly`,
-  `_osc_epo`) and `BITSTREAM=` in /etc/debaz/dzstart.conf.
+  `_osc_epo`) and BITSTREAM= in the dzstart.conf.
 - [ ] Boot without a network: the clock starts in 2021 (no RTC); show
   folders, logs and mtime guards then carry wrong dates.
-- [ ] HDMI_1 audio out (only HDMI_0 was heard), ALSA playback from the image.
+- [ ] Not in any image yet: dzlua + LuaJIT scripts, shared slots, the
+  /dev/shm audio feed, the slit / sprite / crop fixes of 2026-11-20.
 
-Software never exercised by the user (worked on the bench board Nov 1, not on
-this card or this image):
-- [ ] Cues / scenes / shows (section 15): Cues tab, record, go / next /
-  back, fades, dips, looks, show save / load / reload, a show at boot.
-- [ ] Image sequences (section 16): Media player card, `/anim/save` from
-  Paint, timing sheet, onion skin, folder upload.
-- [ ] Datamosh and live ffmpeg options on this image's ffmpeg.
-
-Gateware in `_dsp`, simulated only or never confirmed on hardware:
+Gateware in `_dsp`, simulated only or never confirmed on hardware
+(DEFERRED by the user 2026-11-20):
 - [ ] pl_io function select on PL_KEY0-5: I2C / SPI / UART on EMIO, the I2S
   master (needs the PetaLinux nodes: i2c0, spidev, ttyPS1).
 - [ ] Events block `/ev/...` (0x43C6_1000) and its IRQ; PL_KEY4/5 (K17,
   E19) gave no events on 2026-10-28: OPEN.
 - [ ] Fan ports J3/J5: inputs, opto outputs, vsync out, hardware PWM on J3
   (`/fan/3/pwm`), servo.
-- [ ] LED_RED (W14, maybe not fitted).
 
 Known open defects (not tests): HDMI_1 wants a sync delay of ~8 (3-bit field,
 task 21); HDMI_1 drop-outs without crop activity (cause open); the capture
