@@ -98,8 +98,8 @@ mounts() {
 # ---- 3. media folders --------------------------------------------------------------
 folders() {
 	mkdir -p "$MEDIA"
-	mkdir -p "$MEDIA/scripts"		# LuaJIT scripts (debazd /lua), no old folder
-	mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA/scripts" 2>/dev/null
+	mkdir -p "$MEDIA/scripts" "$MEDIA/soundfonts"	# LuaJIT scripts (debazd /lua), large SF2 soundfonts
+	mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA/scripts" "$MEDIA/soundfonts" 2>/dev/null
 	for k in img movies audio; do
 		mkdir -p "$MEDIA/$k"
 		mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA" "$MEDIA/$k" 2>/dev/null

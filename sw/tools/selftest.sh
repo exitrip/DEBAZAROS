@@ -218,6 +218,9 @@ q /sprite/1/text 255 0 0 AB 1 16 >/dev/null
 check sprite-size  "/sprite/1 16 16"              q /sprite/1
 check sprite-src   '/sprite/1 16 16 "text:#ff0000:AB"' q /sprite/1
 check sprite-list  "/sprite/list 1"                q /sprite/list
+q /sprite/7/src text 0 255 0 XY 1 16 >/dev/null	# the state form makes it again
+check sprite-state '/sprite/7 16 16 "text:#00ff00:XY"' q /sprite/7
+q /sprite/7/free >/dev/null
 q /draw/8/clear 0 0 0 >/dev/null
 q /sprite/1/draw 8 200 200 >/dev/null
 check sprite-draw  "/pixel 8 194 194 255 0 0"     q /surface/8/peek 194 194

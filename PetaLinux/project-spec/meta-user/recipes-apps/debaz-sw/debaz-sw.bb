@@ -69,6 +69,11 @@ RDEPENDS:${PN} += "libturbojpeg libpng"
 # dzlua (LuaJIT scripts into a slot, 2026-11-20) opens libluajit-5.1 with
 # dlopen too (CONFIG_luajit=y in rootfs_config already)
 RDEPENDS:${PN} += "luajit"
+# MIDI (2026-11-20): fluidsynth (meta-multimedia 2.2.2, ALSA audio + ALSA
+# sequencer MIDI; SF2 only: no libsndfile) with a General MIDI soundfont, and the
+# ALSA MIDI tools (aconnect, aplaymidi, amidi, aseqdump: already in the image).
+# A script sends MIDI to it through VirMIDI (sw/README.md "MIDI").
+RDEPENDS:${PN} += "fluidsynth fluidsynth-bin debaz-soundfonts"
 
 # bitstreams are data, not ELF for this machine
 INSANE_SKIP:${PN} += "arch"
