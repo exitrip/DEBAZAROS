@@ -20,6 +20,7 @@ const GROUPS = [ // title, path prefix
 let root;
 let fields = [];
 let hueUi = null;	// the Colour FX card's hue controls
+let keyUpd = null;	// the Colour key card's /fx/key/color reply handler (the card is rebuilt)
 const controls = new Map(); // path -> { set(raw), el }
 
 function maxOf(width) {
@@ -123,26 +124,6 @@ function fxCard() {
     net.send(net.bundle(...m));
     refreshSoon();
   };
-  const keyCol = pick("#00ff00", "key colour\n/fx/key/color <0xRRGGBB> [tol]");
-  const tol = h("input", { type: "range", min: 0, max: 128, step: 1, value: 30,
-    title: "key tolerance (± per channel)\n/fx/key/tol <0..128>" });
-  const tolOut = h("span", {}, "30");
-  const sendKey = () => {
-    tolOut.textContent = tol.value;
-    net.throttled("/fx/key/color", () => net.message("/fx/key/color", hex24(keyCol.value),
-      Number(tol.value) | 0));
-    refreshSoon();
-  };
-  const keyOn = h("input", { type: "checkbox", title: "on: /fx/key/color <0xRRGGBB> <tol>\noff: /fx/key/off",
-    onchange: () => (keyOn.checked ? sendKey() : (net.msg("/fx/key/off"), refreshSoon())) });
-  const keySrc = h("input", { type: "checkbox", title: "compare HDMI_0's own video\n/fx/key/source <0|1>",
-    onchange: () => net.msg("/fx/key/source", keySrc.checked ? 1 : 0) });
-  keyCol.oninput = () => { keyOn.checked = true; sendKey(); };
-  tol.oninput = () => { keyOn.checked = true; sendKey(); };
-  const keyField = (p) => {
-    const f = fields.find((x) => x[0] === p);
-    return f ? fieldControl(f, "/key/") : null;
-  };
   return card("Colour FX (HDMI_0)",
     row("Hue", deg, degOut),
     row("Gain", gain),
@@ -157,14 +138,144 @@ function fxCard() {
     h("p.hint", {}, "Hue and map set all 9 mixer channels to constant gains. " +
       "Unsigned (mode 4): between 0°, 120° and 240° the colours lose saturation, and saturation > 1 does little. " +
       "Signed (mode 5): exact at every angle; as in the rest of the gateware, a result outside 0..255 wraps."),
-    row("Key colour", keyCol, tol, tolOut),
-    row("", h("label", {}, keyOn, " key on"),
-      h("label", { title: "test HDMI_0's video instead of HDMI_1" }, keySrc, " test HDMI_0")),
+    h("p.hint", {}, "The colour key has its own card (Colour key)."));
+}
+
+// Colour key (2026-11-20, own card): debazd /fx/key/... (fx.c) over the mixer's
+// per-channel lo/hi bands (channels 0 / 6 / 3 = R / G / B, their KEY bits).
+// The eyedropper saves the tested display's slot as keypick.jpg (debazd
+// /surface/<s>/save, served by dzweb /media/img) and averages 5 x 5 pixels of
+// it in the browser: a colour taken from the picture needs a small tolerance,
+// a pure colour from the colour dialog (#00ff00) is often 60-90 levels away
+// from the same green in real video on every channel.
+function keyCard() {
+  const clamp = (v) => Math.max(0, Math.min(255, v | 0));
+  const hex2 = (v) => v.toString(16).padStart(2, "0");
+  const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const hexOf = ([r, g, b]) => `#${hex2(r)}${hex2(g)}${hex2(b)}`;
+  const st = { on: false, col: "#00ff00", tol: 30, src: 0, lo: [0, 225, 0], hi: [30, 255, 30], custom: false };
+
+  const col = h("input", { type: "color", value: st.col, title: "the key colour\n/fx/key/color <0xRRGGBB> <tolerance>" });
+  const swatch = h("span.hint", {}, "");
+  const tol = h("input", { type: "range", min: 0, max: 128, step: 1, value: st.tol, style: "flex:1;min-width:140px",
+    title: "how far each of red, green and blue may be from the key colour (0..255 levels)\n/fx/key/tol <0..128>" });
+  const tolOut = h("span.hint", {}, "");
+  const boxOut = h("div.hint", {}, "");
+  const on = h("input", { type: "checkbox", title: "on: /fx/key/color (or /fx/key/range)\noff: /fx/key/off" });
+  const srcSel = h("select", { title: "which picture is compared with the key colour\n/fx/key/source <0|1>" },
+    h("option", { value: 0 }, "HDMI_1's picture"),
+    h("option", { value: 1 }, "HDMI_0's own picture"));
+  // per-channel ranges (advanced): lo / hi per channel -> /fx/key/range lo hi
+  const rng = ["R", "G", "B"].map((name, k) => {
+    const lo = h("input", { type: "number", min: 0, max: 255, value: st.lo[k], style: "width:70px", title: `${name} low (0..255)` });
+    const hi = h("input", { type: "number", min: 0, max: 255, value: st.hi[k], style: "width:70px", title: `${name} high (0..255)` });
+    lo.oninput = hi.oninput = () => { st.custom = true; st.lo[k] = clamp(lo.value); st.hi[k] = clamp(hi.value); showBox(); };
+    return { name, lo, hi };
+  });
+  const showBox = () => {
+    const pct = Math.round((st.tol / 255) * 100);
+    tolOut.textContent = `± ${st.tol} of 255 (${pct} %) per channel`;
+    const [r, g, b] = rgbOf(st.col);
+    swatch.textContent = `${r}, ${g}, ${b}`;
+    if (!st.custom) {
+      st.lo = [r, g, b].map((v) => clamp(v - st.tol));
+      st.hi = [r, g, b].map((v) => clamp(v + st.tol));
+      rng.forEach((x, k) => { x.lo.value = st.lo[k]; x.hi.value = st.hi[k]; });
+    }
+    boxOut.textContent = "keyed where " + rng.map((x, k) => `${x.name} ${st.lo[k]}–${st.hi[k]}`).join("  ·  ") +
+      (st.custom ? "  (per-channel ranges)" : "");
+  };
+  const send = () => {
+    showBox();
+    if (!st.on) return;
+    if (st.custom) {
+      const pack = (v) => (v[0] << 16) | (v[1] << 8) | v[2];
+      net.throttled("/fx/key", () => net.message("/fx/key/range", pack(st.lo), pack(st.hi)));
+    } else {
+      net.throttled("/fx/key", () => net.message("/fx/key/color", parseInt(st.col.slice(1), 16), st.tol));
+    }
+  };
+  col.oninput = () => { st.col = col.value; st.custom = false; send(); };
+  tol.oninput = () => { st.tol = Number(tol.value); st.custom = false; send(); };
+  on.onchange = () => { st.on = on.checked; if (st.on) send(); else net.msg("/fx/key/off"); };
+  srcSel.onchange = () => { st.src = Number(srcSel.value); net.msg("/fx/key/source", st.src); };
+
+  // eyedropper: a frame of the tested display, click = the colour there
+  const img = h("img", { alt: "", style: "max-width:100%;cursor:crosshair;display:none;border:1px solid var(--line);border-radius:6px",
+    title: "click: take the colour here (5 x 5 pixels averaged) as the key colour" });
+  const pickNote = h("span.hint", {}, "");
+  const grab = async () => {
+    const d = st.src ? 0 : 1;
+    const r = await net.ask(net.message(`/disp/${d}`), (m) => m.path === `/disp/${d}`);
+    const slot = r && typeof r.args[0] === "number" ? r.args[0] : (d ? 2 : 0);
+    net.msg(`/surface/${slot}/save`, "keypick.jpg");
+    pickNote.textContent = `slot ${slot} (display ${d})…`;
+    await new Promise((res) => setTimeout(res, 900));
+    img.onload = () => { img.style.display = ""; pickNote.textContent = `slot ${slot} (display ${d}): click a colour`; };
+    img.onerror = () => { pickNote.textContent = "no picture (Media tab: is keypick.jpg there?)"; };
+    img.src = `${net.httpBase()}/media/img/keypick.jpg?t=${Date.now()}`;
+  };
+  img.onclick = (e) => {
+    const r = img.getBoundingClientRect();
+    const x = Math.round(((e.clientX - r.left) / r.width) * img.naturalWidth);
+    const y = Math.round(((e.clientY - r.top) / r.height) * img.naturalHeight);
+    const cv = document.createElement("canvas");
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    const cx = cv.getContext("2d");
+    cx.drawImage(img, 0, 0);
+    const d = cx.getImageData(Math.max(0, x - 2), Math.max(0, y - 2), 5, 5).data;
+    const sum = [0, 0, 0];
+    for (let i = 0; i < d.length; i += 4) { sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; }
+    const n = d.length / 4;
+    st.col = hexOf(sum.map((v) => Math.round(v / n)));
+    col.value = st.col;
+    st.custom = false;
+    if (!st.on) { st.on = true; on.checked = true; }
+    send();
+    net.msg("/fx/key/source", st.src);
+  };
+  const keyField = (p) => {
+    const f = fields.find((x) => x[0] === p);
+    return f ? fieldControl(f, "/key/") : null;
+  };
+  // the board's key colour / tolerance now (one listener in init calls this)
+  keyUpd = (m) => {
+    if (m.args.length < 2 || document.activeElement === tol) return;
+    st.col = `#${(m.args[0] >>> 0).toString(16).padStart(6, "0").slice(-6)}`;
+    st.tol = m.args[1];
+    col.value = st.col; tol.value = st.tol; st.custom = false; showBox();
+  };
+  setTimeout(() => net.msg("/fx/key/color"), 400);
+  showBox();
+
+  return card("Colour key (HDMI_0)",
+    h("p.hint", {}, "HDMI_0 shows HDMI_1's picture wherever the tested picture has the key colour, " +
+      "and its own picture everywhere else. \"Has the key colour\" means: red, green and blue are ALL " +
+      "within the box below. Test HDMI_1's picture: where it has the colour, it shows through. Test HDMI_0's " +
+      "own picture: a green screen in HDMI_0's video is replaced by HDMI_1."),
+    row("", h("label", {}, on, " key on")),
+    row("Test", srcSel),
+    row("Pick", h("button", { onclick: grab, title: "save a frame of the tested display's slot (keypick.jpg in Images) and show it here" },
+      "Grab a frame"), pickNote),
+    img,
+    row("Key colour", col, swatch),
+    row("Tolerance", tol),
+    row("", tolOut),
+    boxOut,
+    h("p.hint", {}, "Take the key colour from the picture (Grab a frame, then click on it): real footage is never " +
+      "a pure colour, and the same green can sit 60–90 levels away from #00ff00 on every channel - then only a " +
+      "huge tolerance catches it. From the picture, ± 15–40 is usually enough; raise it until the area is " +
+      "keyed, lower it when other areas start to key too."),
+    h("details", {}, h("summary", {}, "Per-channel ranges (advanced)"),
+      h("p.hint", {}, "One low..high range per channel instead of colour ± tolerance, e.g. a green screen whose " +
+        "brightness varies a lot: G wide, R and B narrow. Editing a value switches to these ranges; moving the " +
+        "colour or tolerance goes back."),
+      ...rng.map((x) => row(x.name, x.lo, "–", x.hi)),
+      row("", h("button", { onclick: () => { st.custom = true; send(); }, title: "/fx/key/range <0xRRGGBB low> <0xRRGGBB high>" }, "Apply ranges"))),
     ...["/key/invert", "/key/stream"].map(keyField),
-    h("p.hint", {}, "Key: where the tested pixel is within colour ± tolerance, " +
-      "HDMI_1 replaces HDMI_0 (box = lo/hi of mixer channels 0, 6, 3 with their " +
-      "KEY bit). Default test = HDMI_1's pixel; with invert = green screen on HDMI_1. " +
-      "Needs the key bitstream (Oct 2026)."));
+    h("p.hint", {}, "invert: key everything OUTSIDE the box instead (keep the key colour, replace the rest). " +
+      "stream: fill the keyed area from HDMI_1's line-delayed copy (stream B) instead of its live picture. " +
+      "The test compares HDMI_1's OUTPUT (after its gains and feedback), so pick while HDMI_1 shows what it will show."));
 }
 
 // HDMI_1 cross-fade (debazd trans.c): own slot <-> HDMI_0's output through the two gain
@@ -270,6 +381,7 @@ async function load() {
     h("button.ghost", { title: "query every field (/<field> -> /value)", onclick: refresh, style: "margin-left:auto" }, "Refresh")],
     ...status.map((f) => fieldControl(f, "/"))));
   grid.append(fxCard());
+  grid.append(keyCard());
   grid.prepend(xfadeCard()); // first: the quick test of /fx/xfade
   root.replaceChildren(grid, card("Mixer (HDMI_0 colour matrix, 9 channels)", mixerTable(),
     h("p.hint", {}, "Each channel makes one gain of the 3×3 colour matrix. Inputs: " +
@@ -302,6 +414,7 @@ export function init(el) {
     if (s !== undefined && document.activeElement !== u.sat) { u.sat.value = s; u.satOut.textContent = Number(s).toFixed(2); }
   });
   net.on("/fx/signed", (m) => { if (hueUi) hueUi.signed.checked = !!m.args[0]; });
+  net.on("/fx/key/color", (m) => { if (keyUpd) keyUpd(m); });
 }
 
 export function connected() {

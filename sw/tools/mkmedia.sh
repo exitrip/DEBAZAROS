@@ -15,7 +15,21 @@
 #   -r fps    movie frame rate cap (default 25: the board plays 720p at about
 #             26 fps; at 30 the audio breaks up, measured 2026-10-28)
 #   -q n      MPEG-4 quality, 2 (best) .. 31 (default 4)
-#   -f        movies: fill = scale up and crop (default: fit, black bars)
+#   -f        movies: fill = scale up and crop (default: fit, black bars);
+#             the same as -z fill
+#   -z MODE   movies, the output size (2026-11-20; -s = the box):
+#               fit     scale up or down to the edge of WxH, centred, black
+#                       bars to WxH (default; smaller movies ARE enlarged)
+#               fill    scale to cover WxH, crop the rest (= -f)
+#               box     scale to the edge, NO bars: the file is the scaled
+#                       size (less to decode; place it on the board with
+#                       /movie/<s>/pos or a display crop)
+#               native  never enlarge (only shrink to fit WxH), no bars
+#             Non-square pixels (DVD-style 720x480 with SAR 109:120 etc.)
+#             become square first in every mode: nothing is stretched.
+#   -P DIR    movies: a portrait movie (taller than wide, as displayed, a
+#             rotation tag counted) is turned 90 degrees, DIR = cw | ccw;
+#             landscape movies are left alone
 #   -a fmt    audio files: wav (default) or flac (lossless, about half size)
 #   -n        movies: no audio at all
 #   -t secs   only the first secs seconds of movies and audio (tests)
@@ -55,10 +69,10 @@
 # File names change to A-Z a-z 0-9 . _ - (the board's rule).
 set -u
 
-out=./board-media size=1280x720 fps=25 q=4 fill=0 afmt=wav noaudio=0 dur=
+out=./board-media size=1280x720 fps=25 q=4 fill=0 afmt=wav noaudio=0 dur= zmode=fit portrait=
 force=0 upload=0 board=${DZ_BOARD:-} rroot=/media/debaz reserve_mb=256 anim= jq=85 fps_set=0
 usage() { awk 'NR >= 5 && /^#/ { sub(/^# ?/, ""); print; next } NR >= 5 { exit }' "$0"; exit 2; }
-while getopts o:s:r:q:fa:nt:Fum:R:A:j:h opt; do
+while getopts o:s:r:q:fz:P:a:nt:Fum:R:A:j:h opt; do
 	case $opt in
 	o) out=$OPTARG ;;
 	s) size=$OPTARG ;;
@@ -66,7 +80,9 @@ while getopts o:s:r:q:fa:nt:Fum:R:A:j:h opt; do
 	A) anim=$OPTARG ;;
 	j) jq=$OPTARG ;;
 	q) q=$OPTARG ;;
-	f) fill=1 ;;
+	f) fill=1; zmode=fill ;;
+	z) zmode=$OPTARG ;;
+	P) portrait=$OPTARG ;;
 	a) afmt=$OPTARG ;;
 	n) noaudio=1 ;;
 	t) dur=$OPTARG ;;
@@ -86,6 +102,8 @@ if [ $upload = 1 ] && [ -z "$board" ]; then
 	exit 2
 fi
 [[ $afmt == wav || $afmt == flac ]] || { echo "-a: wav or flac"; exit 2; }
+[[ $zmode =~ ^(fit|fill|box|native)$ ]] || { echo "-z: fit, fill, box or native"; exit 2; }
+[[ -z $portrait || $portrait == cw || $portrait == ccw ]] || { echo "-P: cw or ccw"; exit 2; }
 w=${size%x*} h=${size#*x}
 command -v ffmpeg > /dev/null && command -v ffprobe > /dev/null || { echo "needs ffmpeg + ffprobe"; exit 1; }
 
@@ -156,12 +174,33 @@ n_ok=0 n_skip=0 n_fail=0 n_queued=0 bytes_in=0 bytes_out=0
 declare -a fails=()
 
 do_movie() {	# in out
-	local in=$1 o=$2 vf rate g a d note=""
-	if [ $fill = 1 ]; then
-		vf="scale=$w:$h:force_original_aspect_ratio=increase,crop=$w:$h"
+	local in=$1 o=$2 vf="" rate g a d note="" sar iw ih rot dw dh turn="" px=""
+	# the displayed size: stored size x sample aspect, a 90/270 rotation tag
+	# swaps it (ffmpeg turns such a movie by itself when it decodes)
+	iw=$(probe "$in" stream=width v:0); ih=$(probe "$in" stream=height v:0)
+	sar=$(probe "$in" stream=sample_aspect_ratio v:0)
+	rot=$(ffprobe -v error -select_streams v:0 -show_entries stream_side_data=rotation:stream_tags=rotate \
+		-of csv=p=0 "$in" 2>/dev/null | tr -d ' ,\n' | sed 's/^-//')
+	if [[ $sar =~ ^([0-9]+):([0-9]+)$ ]] && [ "${BASH_REMATCH[1]}" != "${BASH_REMATCH[2]}" ] &&
+	   [ "${BASH_REMATCH[1]}" != 0 ] && [ "${BASH_REMATCH[2]}" != 0 ]; then
+		vf="scale='trunc(iw*sar/2)*2':ih,setsar=1,"	# square pixels first
+		dw=$(( iw * BASH_REMATCH[1] / BASH_REMATCH[2] )); px=", pixels ${sar} -> square"
 	else
-		vf="scale=$w:$h:force_original_aspect_ratio=decrease,pad=$w:$h:(ow-iw)/2:(oh-ih)/2"
+		dw=${iw:-0}
 	fi
+	dh=${ih:-0}
+	[[ $rot == 90 || $rot == 270 ]] && { local t=$dw; dw=$dh; dh=$t; }
+	if [ -n "$portrait" ] && [ "$dh" -gt "$dw" ] 2>/dev/null; then
+		[ "$portrait" = cw ] && vf="${vf}transpose=1," || vf="${vf}transpose=2,"
+		turn=" (portrait ${dw}x${dh} turned $portrait)"
+		local t=$dw; dw=$dh; dh=$t
+	fi
+	case $zmode in
+	fill)   vf="${vf}scale=$w:$h:force_original_aspect_ratio=increase,crop=$w:$h" ;;
+	fit)    vf="${vf}scale=$w:$h:force_original_aspect_ratio=decrease,pad=$w:$h:(ow-iw)/2:(oh-ih)/2" ;;
+	box)    vf="${vf}scale=$w:$h:force_original_aspect_ratio=decrease:force_divisible_by=2" ;;
+	native) vf="${vf}scale='min($w,iw)':'min($h,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2" ;;
+	esac
 	vf="$vf,setsar=1,format=yuv420p"
 	rate=$(probe "$in" stream=avg_frame_rate v:0)
 	g=$(awk -v r="$rate" -v m="$fps" 'BEGIN { split(r, a, "/"); f = a[2] ? a[1] / a[2] : m;
@@ -182,7 +221,7 @@ do_movie() {	# in out
 	else
 		[ $noaudio = 1 ] && note="audio left out (-n)" || note="no audio track"
 	fi
-	echo "    ${D}${w}x${h} ${g} fps, ${note}${N}"
+	echo "    ${D}${zmode} in ${w}x${h}${turn}${px}, ${g} fps, ${note}${N}"
 	# shellcheck disable=SC2086
 	run_ffmpeg "$d" -i "$in" ${dur:+-t $dur} -map 0:v:0 -vf "$vf" -fpsmax "$fps" \
 		-c:v mpeg4 -q:v "$q" -g "$g" $a "$o"

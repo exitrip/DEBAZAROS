@@ -216,7 +216,13 @@ Tabs in the app:
   strobe (photosensitivity).
 - **Wall**: output mode (`/video/mode`), input size, crops per display on a
   tile map, manual crop sliders, a crop exerciser that counts video events.
-- **Effects**: cross-fade card, then all register fields. The page gets them
+- **Effects**: cross-fade card, Colour FX (hue, map), Colour key (own card
+  since 2026-11-20: what is tested, an eyedropper = "Grab a frame" saves the
+  tested display's slot as keypick.jpg and a click averages 5 x 5 pixels of
+  it, the tolerance shown as ± levels of 255 and %, the resulting R/G/B box,
+  per-channel ranges = /fx/key/range; a colour from the picture needs ± 15-40,
+  a pure #00ff00 is often 60-90 levels from real-video green on every
+  channel), then all register fields. The page gets them
   from `/fields`, so a new field in `dz_fields.c` shows without a change to
   the page. Mixer: a table with 9 channels (mode, K, lo, hi, stream B, 5 gains).
 - **Oscillators**: the 16 LFOs, with the audio source row (`/audio/react`).
@@ -974,8 +980,21 @@ dzctl /audio/rx/auto 0       # watchdog off (default on: replug when the rate is
 bash sw/tools/mkmedia.sh ~/show-media                 # a folder of mixed files -> ./board-media/{img,movies,audio}
 bash sw/tools/mkmedia.sh -o /tmp/out -u clip.mov a.mp3 # files; -u = upload to the board (default ebaz@10.42.0.68 or $DZ_BOARD)
 bash sw/tools/mkmedia.sh -A walk -j 85 -u shots/      # image sequence: shots/* -> anim/walk/f00001.jpg ... (-r 12: movie frames at 12 fps + timing.txt)
+bash sw/tools/mkmedia.sh -P cw -u phone-clips/         # portrait (9:16) movies turned 90 degrees clockwise to fill 1280x720
+bash sw/tools/mkmedia.sh -z box old-dvd.mp4           # scaled to the edge, no black bars (the file = the scaled size)
 bash sw/tools/mkmedia.sh -h                            # all options
 ```
+
+Movie size (2026-11-20): `-s WxH` is the box (default 1280x720); `-z fit`
+(default) scales up or down to its edge and centres with black bars - a
+smaller movie IS enlarged, never stretched; `-z fill` (= `-f`) covers and
+crops; `-z box` scales to the edge without bars (less to decode; place it
+with `/movie/<s>/pos` or a crop); `-z native` never enlarges, no bars.
+Non-square pixels (DVD-style 720x480 with SAR 109:120, as in
+sunview/luciano: shown 1.36:1) become square first in every mode (before:
+they were treated as 1.5:1, 10 % too wide). `-P cw|ccw` turns portrait
+movies (taller than wide as displayed, rotation tag counted) 90 degrees;
+landscape files are left alone, so a mixed folder can be converted at once.
 
 Movies -> MPEG-4 1280x720 at most 25 fps, audio PCM 48 kHz 16 bit (left
 out when the source has none or it is silent); audio files -> WAV (or
