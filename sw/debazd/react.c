@@ -12,6 +12,9 @@
  *            (dz_draw.c); all features. Only a movie that plays audio
  *            (/movie/<s>/play ... audio > 0) has the tap. Several = the one
  *            in use while it delivers, else the lowest slot
+ *   synth    (2026-11-20) Linux audio played through a tap PCM of
+ *            /etc/asound.conf (debaz_tap0|1|3: fluidsynth by dzsynth.sh,
+ *            aplay -D debaz_tap1): a copy in /tmp/dztap.<n>; all features
  *   auto     default (2026-11-02): while a sink asks for the data (an LFO
  *            with shape audio, a DDS audio scope, an /audio/react query):
  *            movie when a movie delivers audio, else capture when HDMI_2 has
@@ -39,7 +42,7 @@
  * no movie audio
  *
  * OSC:
- *   /audio/react/source s:auto|movie|capture|peak|off
+ *   /audio/react/source s:auto|movie|synth|capture|peak|off
  *   /audio/react/fft i:256|512|1024        (default 1024: 47 Hz per bin)
  *   /audio/react                           -> s:source i:running f:level f:peak
  *                                             (source = the setting: auto
@@ -76,12 +79,14 @@
 #include <unistd.h>
 
 #define REACT_FIFO	"/tmp/dzreact.fifo"
+#define DZ_TAP		"/tmp/dztap.%d"	/* the tap PCMs' copies (asound.conf) */
 #define PCM_STATUS	"/proc/asound/DEBAZ/pcm2c/sub0/status"
 #define RING		4096			/* samples kept: 2048 for the scope + a trigger search */
 #define NMAX		1024
 
-enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK, SRC_AUTO, SRC_MOVIE, SRC_N };
-static const char *src_names[] = { "off", "capture", "peak", "auto", "movie" };
+enum { SRC_OFF, SRC_CAPTURE, SRC_PEAK, SRC_AUTO, SRC_MOVIE, SRC_SYNTH, SRC_N };
+static const char *src_names[] = { "off", "capture", "peak", "auto", "movie", "synth" };
+#define SAMPLES(x)	((x) == SRC_CAPTURE || (x) == SRC_MOVIE || (x) == SRC_SYNTH)	/* full analysis */
 #define AUTO_LINGER_MS	5000		/* auto: capture stops this long after the last demand */
 
 typedef struct { float re, im; } cpx;
@@ -500,6 +505,65 @@ static void movie_drain(acc_t *a)
 		}
 }
 
+/* ---- the synth source: Linux audio through the tap PCMs (2026-11-20) -------
+ * /etc/asound.conf has debaz_tap0 / debaz_tap1 / debaz_tap3 = plug -> an
+ * ALSA "file" PCM -> hw:DEBAZ,<n>: the hardware plays it and a copy of
+ * every sample (S16_LE 48 kHz stereo, the card's only format) goes into
+ * /tmp/dztap.<n>. fluidsynth (sw/tools/dzsynth.sh), aplay -D debaz_tap1, ...
+ * debazd MAKES these FIFOs and keeps them open read-write: the plugin's
+ * open never blocks (a reader exists), and its writes never see EOF/EPIPE
+ * while debazd runs. Drained EVERY tick (a full pipe stops the player).
+ * A FIFO that is there already is used as it is (a debazd restart must not
+ * cut a running player off its pipe). Without debazd nobody reads: a player
+ * would block at the open (dzsynth.sh uses the tap only while debazd runs). */
+#define TAP_GONE_MS	500
+static const int tap_out[3] = { 0, 1, 3 };	/* DEBAZ playback devices: HDMI 0, HDMI 1, I2S */
+static int    tfd[3] = { -1, -1, -1 }, t_init, tslot = -1;	/* tslot = index into tap_out */
+static uint8_t tcarry[3][4];
+static int    tncarry[3];
+static long   tlast[3];
+
+static void tap_open(void)
+{
+	for (int k = 0; k < 3; k++) {
+		char p[40];
+		struct stat st;
+
+		snprintf(p, sizeof(p), DZ_TAP, tap_out[k]);
+		if (stat(p, &st) < 0 || !S_ISFIFO(st.st_mode)) {
+			unlink(p);
+			if (mkfifo(p, 0666) < 0)
+				continue;
+			chmod(p, 0666);		/* any user's player may write it */
+		}
+		tfd[k] = open(p, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+		if (tfd[k] >= 0)
+			fcntl(tfd[k], F_SETPIPE_SZ, 1 << 18);
+	}
+}
+
+static void tap_drain(acc_t *a)
+{
+	long now = ms_now();
+
+	if (!t_init) {
+		t_init = 1;
+		tap_open();
+	}
+	for (int k = 0; k < 3; k++)
+		if (tfd[k] >= 0 && drain(tfd[k], tcarry[k], &tncarry[k], src == SRC_SYNTH && k == tslot, a))
+			tlast[k] = now;
+	if (tslot >= 0 && now - tlast[tslot] <= TAP_GONE_MS)
+		return;
+	tslot = -1;
+	for (int k = 0; k < 3; k++)
+		if (tlast[k] && now - tlast[k] <= TAP_GONE_MS) {
+			tslot = k;
+			dzd_log("react: synth audio (tap %d)\n", tap_out[k]);
+			break;
+		}
+}
+
 /* ---- the peak source: PL meter -------------------------------------------- */
 static void peak_read(void)
 {
@@ -529,7 +593,7 @@ int react_samples(float *out, int n, int chan)
 	const float *r = chan == 1 ? ringl : chan == 2 ? ringr : ring;
 
 	need_ms = ms_now();
-	if ((src != SRC_CAPTURE && src != SRC_MOVIE) || !running || n > RING || rfill < (unsigned)n)
+	if (!SAMPLES(src) || !running || n > RING || rfill < (unsigned)n)
 		return 0;
 	for (int i = 0; i < n; i++)
 		out[i] = r[(rpos + RING - (unsigned)n + (unsigned)i) % RING];
@@ -552,7 +616,7 @@ int react_spectrum(float *amp, int chan)
 	float pw[NMAX / 2 + 1];
 
 	need_ms = ms_now();
-	if (chan < 0 || chan > 2 || (src != SRC_CAPTURE && src != SRC_MOVIE) || !running)
+	if (chan < 0 || chan > 2 || !SAMPLES(src) || !running)
 		return 0;
 	if (plan_n != fft_n)
 		mkplan(fft_n);
@@ -638,7 +702,7 @@ static void wave_copy(float *dst, const float *r, int n)
 static void shm_write(void)
 {
 	dz_react_shm *m = shm;
-	int on = running && src != SRC_OFF, full = on && (src == SRC_CAPTURE || src == SRC_MOVIE);
+	int on = running && src != SRC_OFF, full = on && SAMPLES(src);
 	int n = full ? (int)(rfill < DZ_REACT_WAVE ? rfill : DZ_REACT_WAVE) : 0;
 
 	m->seq++;			/* odd: being written */
@@ -684,7 +748,7 @@ static void shm_write(void)
 
 void react_tick(void)
 {
-	acc_t ma = { 0, 0, 0 };
+	acc_t ma = { 0, 0, 0 }, ta = { 0, 0, 0 };
 
 	shm_open_once();
 	if (shm && shm->poke != shm_seen) {	/* a reader (dzlua) asks: a sink */
@@ -693,16 +757,18 @@ void react_tick(void)
 	}
 
 	movie_drain(&ma);		/* always: a full tap stops the movie's sound */
-	if (want == SRC_AUTO) {		/* while a sink asks: a movie, else HDMI_2 */
+	tap_drain(&ta);			/* always: a full tap stops the synth */
+	if (want == SRC_AUTO) {		/* while a sink asks: a movie, the synth, else HDMI_2 */
 		int need = need_ms && ms_now() - need_ms < AUTO_LINGER_MS, to;
 
 		/* no HDMI_2 lock = no samples: arecord only ends with an error
 		 * (2026-11-03: restarted every ~4 s for 15 h, 3600 times).
 		 * DZ_REACT_CMD (host tests) has no input to wait for. */
-		to = !need ? SRC_OFF : mslot >= 0 ? SRC_MOVIE
+		to = !need ? SRC_OFF : mslot >= 0 ? SRC_MOVIE : tslot >= 0 ? SRC_SYNTH
 		   : (capture_plocked || getenv("DZ_REACT_CMD")) ? SRC_CAPTURE : SRC_OFF;
 		if (to != src) {
 			dzd_log("react: auto: %s\n", to == SRC_MOVIE ? "movie audio, analyse it"
+				: to == SRC_SYNTH ? "synth audio (tap), analyse it"
 				: to == SRC_CAPTURE ? "a sink asks, capture on"
 				: need ? "no movie audio, no HDMI_2 input: off"
 				: "no sink for 5 s, off");
@@ -724,6 +790,13 @@ void react_tick(void)
 		finish(&ma, mslot >= 0 ? ok : "no movie audio");
 		if (mslot < 0)
 			snprintf(status, sizeof(status), "no movie audio");
+	} else if (src == SRC_SYNTH) {
+		char ok[24];
+
+		snprintf(ok, sizeof(ok), "ok: synth tap %d", tslot >= 0 ? tap_out[tslot] : -1);
+		finish(&ta, tslot >= 0 ? ok : "no synth audio");
+		if (tslot < 0)
+			snprintf(status, sizeof(status), "no synth audio (tap)");
 	}
 	if (shm && shm_need_ms && ms_now() - shm_need_ms < AUTO_LINGER_MS)
 		shm_write();
@@ -835,7 +908,7 @@ int react_dispatch(const dz_msg *m)
 					dzd_reply("/audio/react/source", "s", src_names[want]);
 					return 1;
 				}
-			dzd_reply("/error", "ss", "/audio/react/source", "auto, movie, capture, peak or off");
+			dzd_reply("/error", "ss", "/audio/react/source", "auto, movie, synth, capture, peak or off");
 			return 1;
 		}
 		dzd_reply("/audio/react/source", "s", src_names[want]);

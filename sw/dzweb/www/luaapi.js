@@ -62,7 +62,7 @@ export const API = [
     [":pop", "t:pop()", "restore them"],
   ]],
   ["Audio (debazd analysis)", [
-    ["audio", "audio", "the audio analysis, updated each frame; the first use turns it on (source: /audio/react/source; auto = movie audio, else HDMI_2)"],
+    ["audio", "audio", "the audio analysis, updated each frame; the first use turns it on (source: /audio/react/source; auto = movie audio, the synth tap, else HDMI_2)"],
     ["audio.level", "audio.level", "RMS level 0..1 (a full-scale sine = 1)"],
     ["audio.peak", "audio.peak", "max |sample| of the frame"],
     ["audio.bass", "audio.bass", "< 250 Hz"],
@@ -83,7 +83,7 @@ export const API = [
     ["audio.bin", "audio.bin(hz)", "Hz -> bin"],
     ["audio.fft_n", "audio.fft_n", "FFT size (/audio/react/fft)"],
     ["audio.running", "audio.running", "true while samples arrive"],
-    ["audio.source", "audio.source", "\"off\" \"capture\" \"peak\" \"movie\" \"none\""],
+    ["audio.source", "audio.source", "\"off\" \"capture\" \"peak\" \"movie\" \"synth\" \"none\""],
     ["audio.age", "audio.age", "seconds since debazd wrote the data"],
   ]],
   ["MIDI out (on time)", [

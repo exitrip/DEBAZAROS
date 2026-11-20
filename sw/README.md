@@ -704,6 +704,31 @@ channels (checked with aseqdump: 48 CCs at stop, nothing after them; exit
 1 and 0 paths too). SIGKILL (0.5 s after a SIGTERM that hangs) cannot send
 it. Raw MIDI device writes (FFI) get no clean-up: use midi.*.
 
+**debazd memory: freed buffers go back (2026-11-20).** glibc raises its
+mmap threshold after a large block is freed (up to 32 MB on ARM32), so the
+5-8 MB paint buffers later came from the heap and stayed RESIDENT after
+free(): on .236 debazd held 72 MB after six freed buffers, 12 MB were left,
+new paint buffers were refused (24 MB reserve) and an ASCII run stopped
+("I crashed the ASCII renderer"). main() now sets mallopt(M_MMAP_THRESHOLD,
+1 MB) (a fixed value also turns the rise off): four full-slot buffers made
+and freed -> debazd 7 MB, 80 MB available. Check: VmRSS of debazd in
+/proc/<pid>/status vs `/surface/mem`.
+
+**Synth audio tap (2026-11-20):** /etc/asound.conf (recipe debaz-audio)
+has `debaz_tap0|1|3` = plug -> ALSA `file` PCM -> hw:DEBAZ,<n>: the output
+plays and a copy (S16_LE 48 kHz stereo) goes into /tmp/dztap.<n>. debazd
+(react.c) makes these FIFOs, keeps them open read-write (the plugin's open
+never blocks, no EOF) and drains them every tick: source `synth`
+(`/audio/react/source synth`; `auto` = movie, then synth, then HDMI_2).
+Everything audio works on it: LFO shape audio, DDS scope, Lua `audio.*`
+(audio-scope shows the synth). `dzsynth.sh` plays to the tap while debazd
+runs (else straight to hw). Any player can use it: `aplay -D debaz_tap1`.
+A debazd restart breaks the tap pipe (fluidsynth: "audio device error",
+silent; SIGPIPE is ignored so it does not die): the dzsynth watcher sees
+the output PCM stop, waits for debazd to open the FIFO again, restarts
+fluidsynth on the tap and connects VirMIDI + the scripts' ports again
+(tested on .236: back on the tap ~8 s after the restart).
+
 **Packages onto a running unit (`tools/pkgpush.sh`, laptop):** no package
 manager on the unit, so the build machine unpacks the rpm files (rpm2cpio)
 and the files go into the unit's / over ssh (top-level entries only,

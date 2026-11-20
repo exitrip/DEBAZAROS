@@ -1143,6 +1143,9 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   ALSA raw MIDI (VirMIDI card 1; no fluidsynth in the image), web editor
   highlighting + lint (vendored www/luaparse.js) + reference
   (www/luaapi.js = the prelude API as data: keep in step).
+  ⚠️ debazd memory (Nov 20): main() sets mallopt(M_MMAP_THRESHOLD, 1 MB):
+  without it freed 5-8 MB paint buffers stayed resident (glibc's rising
+  threshold), RAM ran out, paint buffers / ASCII were refused. Do not remove.
   MIDI synth (Nov 20): fluidsynth (bbappend: no PulseAudio) + recipe
   debaz-soundfonts in debaz-sw RDEPENDS; `sudo dzsynth.sh start [out]`;
   quick deploy of built packages to a RUNNING unit without an image:

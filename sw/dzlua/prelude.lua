@@ -49,14 +49,15 @@
 --   print(...)          to the script log (/lua/<s>/log; max 256 KB)
 --   audio               debazd's audio analysis, updated each frame (the
 --                       first use turns it on; source: /audio/react/source,
---                       auto = movie audio, else the HDMI_2 input):
+--                       auto = movie audio, the synth (dzsynth.sh tap), else
+--                       the HDMI_2 input):
 --     .level .peak .bass .low .mid .high .air .flux .beat   0..1 (beat 0|1)
 --     .band[0..15]      16 log bands      .running  samples arrive
 --     .n, .M[i] .L[i] .R[i]   the newest n (2048) samples, oldest first,
 --                       -1..1: mix, left, right (FFI arrays, i from 0)
 --     .nbins, .spec[k]  amplitude spectrum of the mix, k = 0..nbins-1;
 --                       .hz(k) -> Hz, .bin(hz) -> k   .fft_n (1024)
---     .source ("off" "capture" "peak" "movie" "none"), .age (s), .frame
+--     .source ("off" "capture" "peak" "movie" "synth" "none"), .age (s), .frame
 --   midi                MIDI out through the ALSA sequencer, on time: events
 --                       carry a time stamp (script time, like time()), the
 --                       kernel sends them then, whatever the frame rate.
@@ -363,7 +364,7 @@ double dzl_mono(void);
 ]])
 local asnap = ffi.new("dz_react_shm")
 local AFEAT = { "level", "peak", "bass", "low", "mid", "high", "air", "flux", "beat" }
-local ASRC = { [0] = "off", "capture", "peak", [4] = "movie" }
+local ASRC = { [0] = "off", "capture", "peak", [4] = "movie", [5] = "synth" }
 local audio_on = false
 local AU = {}
 local function audio_update()

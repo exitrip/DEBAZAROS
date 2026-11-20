@@ -51,6 +51,7 @@
  * Wildcards ? * [] {} work in addresses, e.g. /mixer/[0-8]/mode 35.
  */
 #define _GNU_SOURCE
+#include <malloc.h>
 #include "debazd.h"
 #include "dz_draw.h"
 #include "dz_fields.h"
@@ -1045,6 +1046,14 @@ int main(int argc, char **argv)
 	struct sigaction sa;
 	long next;
 	int opt;
+
+	/* every block from 1 MB up gets its own mmap and goes back to the
+	 * system at free() (2026-11-20). glibc's default threshold RISES after
+	 * a large block is freed (up to 32 MB here): the 5-8 MB paint buffers
+	 * then came from the heap and stayed resident after free - 72 MB held
+	 * after six freed buffers, 12 MB left, new paint buffers refused (an
+	 * ASCII run stopped). A fixed value also turns that rise off. */
+	mallopt(M_MMAP_THRESHOLD, 1024 * 1024);
 
 	while ((opt = getopt(argc, argv, "p:vnli:")) != -1) {
 		switch (opt) {
