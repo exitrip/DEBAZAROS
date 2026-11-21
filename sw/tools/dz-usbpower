@@ -1,0 +1,134 @@
+#!/bin/sh
+# dz-usbpower - ROOT helper of boardpower.sh (2026-11-21): switch the 5 V of
+# the laptop USB-C connector that powers a bench board. Installed root-owned
+# to /usr/local/sbin with a sudoers rule for this file only
+# (`boardpower.sh install` prints the commands).
+#
+#   dz-usbpower off|on|cycle [secs] [xhci|ucsi]   (default: cycle 3 s, $METHOD)
+#   dz-usbpower info
+#
+# The connector is found at EVERY run, never written down: the USB device
+# $ADAPTER (vendor:product, the board's console adapter, on the same
+# connector) -> its root hub port (bus-port of the first hop: a hub between
+# is switched with it) -> all hub ports at the same physical location (the
+# USB 2 and USB 3 lanes of one connector) -> the USB-C port whose partner is
+# that device (UCSI connector = typec port + 1). It accepts no paths or
+# numbers from the caller. "off" stores the ports in $STATE, because the
+# adapter disappears with the power; "on" and the end of "cycle" use them.
+#
+# Two ways, because a USB-C port's VBUS belongs to the USB-C controller
+# (UCSI), not to the xHCI host:
+#   xhci  port power off through the hub driver (usbN-portM/disable). Cuts
+#         VBUS only if the platform wires port power to the switch.
+#   ucsi  UCSI CONNECTOR_RESET with hard reset (debugfs command file): a
+#         Type-C error recovery, the source removes VBUS for ~25+ ms and
+#         attaches again. Only "cycle".
+set -eu
+
+# --- set by `boardpower.sh install` -------------------------------------------
+ADAPTER=1a86:7523	# vendor:product of the board's console adapter
+METHOD=ucsi	# xhci did not cut VBUS on the USB-C port (2026-11-21)
+# ------------------------------------------------------------------------------
+STATE=/run/dz-usbpower.ports
+
+[ "$(id -u)" = 0 ] || { echo "dz-usbpower: run as root (sudo)" >&2; exit 1; }
+cmd=${1:-cycle}
+secs=${2:-3}
+m=${3:-$METHOD}
+case $secs in *[!0-9]*|'') echo "dz-usbpower: secs must be a number" >&2; exit 2 ;; esac
+[ "$secs" -le 60 ] || secs=60
+
+# the sysfs name (e.g. 3-5.2) of the one device $ADAPTER; error if 0 or 2+
+find_adapter() {
+	vid=${ADAPTER%:*}; pid=${ADAPTER#*:}; found=""; n=0
+	for d in /sys/bus/usb/devices/[0-9]*-[0-9]*; do
+		case $(basename "$d") in *:*) continue ;; esac
+		[ "$(cat "$d/idVendor" 2>/dev/null)" = "$vid" ] &&
+		[ "$(cat "$d/idProduct" 2>/dev/null)" = "$pid" ] || continue
+		found=$(basename "$d"); n=$((n + 1))
+	done
+	[ "$n" = 1 ] && { echo "$found"; return 0; }
+	echo "dz-usbpower: $n devices $ADAPTER (need exactly 1)" >&2
+	return 1
+}
+
+# hub port names of the adapter's connector, e.g. "usb3-port5 usb2-port1"
+discover_ports() {
+	a=$(find_adapter) || return 1
+	bus=${a%%-*}; port=${a#*-}; port=${port%%.*}
+	hp=/sys/bus/usb/devices/$bus-0:1.0/usb$bus-port$port
+	[ -e "$hp/disable" ] || { echo "dz-usbpower: no $hp/disable" >&2; return 1; }
+	loc=$(cat "$hp/location" 2>/dev/null || true)
+	if [ -z "$loc" ]; then echo "usb$bus-port$port"; return 0; fi
+	out=""
+	for p in /sys/bus/usb/devices/*-0:1.0/usb*-port*; do
+		[ "$(cat "$p/location" 2>/dev/null)" = "$loc" ] && out="$out $(basename "$p")"
+	done
+	echo ${out# }
+}
+
+# the UCSI connector number of the adapter's USB-C port
+discover_connector() {
+	a=$(find_adapter) || return 1
+	for t in /sys/class/typec/port[0-9]*; do
+		case $t in *-*) continue ;; esac
+		[ -e "$t-partner/$a" ] && { echo $(( ${t##*port} + 1 )); return 0; }
+	done
+	echo "dz-usbpower: no USB-C port has $a as its partner" >&2
+	return 1
+}
+
+port_path() { ls -d /sys/bus/usb/devices/*-0:1.0/"$1" 2>/dev/null | head -1; }
+
+xhci_set() {	# $1: 1 = power off, 0 = on; $2..: port names
+	v=$1; shift
+	for n in "$@"; do
+		p=$(port_path "$n")
+		[ -n "$p" ] && [ -e "$p/disable" ] || { echo "dz-usbpower: no $n" >&2; continue; }
+		echo "$v" > "$p/disable" && echo "dz-usbpower: $n disable=$v"
+	done
+}
+
+ucsi_reset() {
+	c=$(discover_connector) || exit 1
+	d=$(ls -d /sys/kernel/debug/usb/ucsi/*/ 2>/dev/null | head -1)
+	[ -n "$d" ] || { mount -t debugfs none /sys/kernel/debug 2>/dev/null || true;
+		d=$(ls -d /sys/kernel/debug/usb/ucsi/*/ 2>/dev/null | head -1); }
+	[ -n "$d" ] && [ -e "$d/command" ] || { echo "dz-usbpower: no UCSI debugfs command file" >&2; exit 1; }
+	# CONNECTOR_RESET = 0x03, connector in bits 22:16, hard reset = bit 23
+	v=$(printf '0x%x' $(( 0x03 | (c << 16) | (1 << 23) )))
+	echo "$v" > "$d/command"
+	echo "dz-usbpower: UCSI CONNECTOR_RESET hard, connector $c ($v): $(cat "$d/response" 2>/dev/null)"
+}
+
+power_off() {
+	ports=$(discover_ports) || exit 1
+	echo "$ports" > "$STATE"
+	xhci_set 1 $ports
+}
+
+power_on() {
+	if [ -s "$STATE" ]; then ports=$(cat "$STATE"); else ports=$(discover_ports) || exit 1; fi
+	xhci_set 0 $ports
+	rm -f "$STATE"
+}
+
+case $cmd in
+info)
+	echo "adapter $ADAPTER = $(find_adapter || echo '?'), method $METHOD"
+	ports=$( [ -s "$STATE" ] && cat "$STATE" || discover_ports || true)
+	echo "ports: ${ports:-?}$( [ -s "$STATE" ] && echo ' (switched OFF by dz-usbpower)')"
+	for n in $ports; do p=$(port_path "$n") && echo "  $n: $(cat "$p/state" 2>/dev/null) disable=$(cat "$p/disable")"; done
+	c=$(discover_connector 2>/dev/null || true)
+	[ -n "$c" ] && echo "USB-C: UCSI connector $c, power_role $(cat /sys/class/typec/port$((c - 1))/power_role)"
+	;;
+off)	[ "$m" = xhci ] || { echo "dz-usbpower: off only with xhci" >&2; exit 2; }; power_off ;;
+on)	[ "$m" = xhci ] || { echo "dz-usbpower: on only with xhci" >&2; exit 2; }; power_on ;;
+cycle)
+	case $m in
+	xhci) power_off; sleep "$secs"; power_on ;;
+	ucsi) ucsi_reset ;;
+	*) echo "dz-usbpower: method xhci|ucsi" >&2; exit 2 ;;
+	esac ;;
+*) sed -n '2,25p' "$0"; exit 2 ;;
+esac

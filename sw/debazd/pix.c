@@ -129,6 +129,7 @@ static void frame_work(void)
 	ascii_tick();
 	slit_tick();
 	dz_draw_movie_tick();
+	dz_draw_flush_cleans();		/* direct paint surfaces -> DDR, once a frame */
 	dz_draw_job_end();
 }
 

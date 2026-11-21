@@ -75,6 +75,15 @@ typedef struct {
 	int       evicted;		/* shadow freed clean: rebuild from the slot */
 	int       ox, oy;		/* origin in the slot (splat buffers, else 0) */
 	unsigned  job;			/* live slot: the OSC message that read it */
+	int       direct;		/* shadow = the slot itself (dzmem write-back,
+					 * 2026-11-20): nothing to free, present =
+					 * cache clean of the dirty rectangle */
+	int       npend;		/* direct: rectangles presented but not yet
+					 * cleaned (dz_draw_flush_cleans, frame tick) */
+	dz_rect   pend[8];
+	int       ramonly;		/* a RAM buffer although direct is possible:
+					 * transforms (dz_surf_ram), until the buffer
+					 * is freed (idle trim, free, adopt) */
 } surf_t;
 
 static surf_t surf[DZ_SLOTS];
@@ -142,8 +151,8 @@ static double mono_s(void)
 /* fill the shadow from the slot memory (uncached: ~60 ms for 1920 x 1080) */
 static int adopt_rows(surf_t *s, int i)
 {
-	const uint8_t *dev = dz_slot(i, (size_t)(s->oy + s->h - 1) * s->stride +
-					   (size_t)(s->ox + s->w) * 4, NULL);
+	const uint8_t *dev = dz_slot_rd(i, (size_t)(s->oy + s->h - 1) * s->stride +
+					      (size_t)(s->ox + s->w) * 4);
 
 	if (!dev)
 		return -1;
@@ -157,13 +166,52 @@ static int adopt_rows(surf_t *s, int i)
 	return 0;
 }
 
+/*
+ * Direct surfaces (2026-11-20, ROADMAP.md section 19 step 5 part 2): with
+ * the dzmem module, a full-slot canvas (its line pitch = the slot's) with
+ * autoflush on paints STRAIGHT INTO THE SLOT through a write-back mapping:
+ * no 8 MB copy in RAM, no read of the slot to start (the slot is the
+ * picture), fades and other read-modify-write work at cached speed. The
+ * changes stay in the caches until present() cleans the dirty rectangle
+ * (the VDMA reads DDR); the cache can also write lines back earlier on
+ * its own (a change can show a moment before its present: harmless with
+ * autoflush). Autoflush off (batch: nothing shows until present) and the
+ * mode-sized canvas keep a buffer in RAM, as before. DZ_DZMEM=0 = never.
+ */
+static uint32_t *direct_ptr(int i, int w, int h, size_t st, int autoflush)
+{
+	if (!autoflush || (size_t)w * 4 != st || (size_t)h * st > DZ_SLOT_PITCH)
+		return NULL;
+	return (uint32_t *)dz_slot_wb(i);
+}
+
+/* drop the shadow: free it, or only forget the slot pointer; a direct
+ * surface's slot goes back to write-combined (the module flushes it: its
+ * lines are in DDR before anyone else maps or writes the slot) */
+static int clean_pending(surf_t *s);
+
+static void unshadow(surf_t *s)
+{
+	int direct = s->direct;
+
+	if (direct && s->npend)
+		clean_pending(s);	/* the module flushes too: this is cheaper */
+
+	if (!direct)
+		free(s->shadow);
+	s->shadow = NULL;
+	s->direct = 0;
+	if (direct)
+		dz_slot_cache((int)(s - surf), 0);
+}
+
 static void surf_release(int i)
 {
 	surf_t *s = &surf[i];
 
 	dz_draw_movie_stop(i);
-	free(s->shadow);
-	s->shadow = NULL;
+	unshadow(s);
+	s->ramonly = 0;
 	s->evicted = 0;
 	s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
 }
@@ -178,15 +226,15 @@ static void surf_release(int i)
  */
 static int evictable(const surf_t *s)
 {
-	return s->shadow && s->autoflush && (s->dx1 <= s->dx0 || s->dy1 <= s->dy0);
+	return s->shadow && !s->direct && s->autoflush && (s->dx1 <= s->dx0 || s->dy1 <= s->dy0);
 }
 
 static void evict(int i)
 {
 	surf_t *s = &surf[i];
 
-	free(s->shadow);
-	s->shadow = NULL;
+	unshadow(s);
+	s->ramonly = 0;			/* back to the slot itself when possible */
 	s->evicted = 1;			/* w, h, stride kept: adopt at that size */
 }
 
@@ -249,9 +297,11 @@ void dz_draw_adopt(int i)
 {
 	if (i < 0 || i >= DZ_SLOTS || (!surf[i].shadow && surf[i].evicted))
 		return;			/* nothing to drop (slit.c calls it each frame) */
+	surf[i].ramonly = 0;
 	if (surf[i].shadow) {
-		free(surf[i].shadow);
-		surf[i].shadow = NULL;
+		if (surf[i].direct)	/* its lines to DDR before the other writer */
+			dz_draw_present(i);
+		unshadow(&surf[i]);
 		surf[i].dx0 = surf[i].dy0 = surf[i].dx1 = surf[i].dy1 = 0;
 		surf[i].evicted = 1;
 	} else if (!surf[i].evicted) {
@@ -338,6 +388,30 @@ static surf_t *get(int i)
 		surf_release(i);
 	s->used = mono_s();
 	if (!s->shadow) {
+		/* never on a live slot: another writer (fbfeed, a script) writes
+		 * it through the write-through mapping, and dirty write-back
+		 * lines of the same memory on the other core = mismatched
+		 * cache attributes (2026-11-20: the board hung in the first
+		 * test that did that) */
+		uint32_t *d = s->ramonly || live(i) ? NULL :
+			      direct_ptr(i, w, h, st, s->evicted ? s->autoflush : 1);
+
+		if (d) {			/* the slot itself: nothing to read */
+			if (!s->evicted) {
+				s->alpha = 256;
+				s->blend = DZ_BLEND_NORMAL;
+				s->autoflush = 1;
+			}
+			s->w = w;
+			s->h = h;
+			s->stride = st;
+			s->shadow = d;
+			s->direct = 1;
+			s->evicted = 0;
+			return s;
+		}
+	}
+	if (!s->shadow) {
 		size_t bytes = (size_t)w * h * sizeof(uint32_t);
 		long kb = mem_avail_kb();
 		/* rebuilt from the slot: it was freed clean at this size */
@@ -399,7 +473,7 @@ int dz_draw_canvas_get(int i, int *w, int *h, size_t *bytes)
 	if (i < 0 || i >= DZ_SLOTS)
 		return -1;
 	canvas_size(i, w, h, &st);
-	*bytes = surf[i].shadow ? (size_t)surf[i].w * surf[i].h * 4 : 0;
+	*bytes = surf[i].shadow && !surf[i].direct ? (size_t)surf[i].w * surf[i].h * 4 : 0;
 	return canvas_mode[i];
 }
 
@@ -423,7 +497,7 @@ void dz_draw_close(void)
 {
 	for (int i = 0; i < DZ_SLOTS; i++) {
 		dz_draw_movie_stop(i);
-		free(surf[i].shadow);
+		unshadow(&surf[i]);
 		memset(&surf[i], 0, sizeof(surf[i]));
 	}
 }
@@ -451,6 +525,52 @@ int dz_draw_present(int i)
 		return -1;
 	if (s->dx1 <= s->dx0 || s->dy1 <= s->dy0)
 		return 0;
+	if (s->direct) {
+		/* the changes are in the slot already, maybe still in the caches.
+		 * The clean waits for the frame tick (dz_draw_flush_cleans): one
+		 * pass over all rectangles of the frame instead of a SYNC ioctl
+		 * per op (sw/SLOTMEM.md T4: +0.1-0.6 ms per small op). Autoflush
+		 * = on screen within a frame. */
+		dz_rect r = { s->dx0, s->dy0, s->dx1 - s->dx0, s->dy1 - s->dy0 };
+		int k;
+
+		s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
+		for (k = 0; k < s->npend; k++) {	/* overlaps or touches: merge */
+			dz_rect *q = &s->pend[k];
+
+			if (r.x <= q->x + q->w && q->x <= r.x + r.w &&
+			    r.y <= q->y + q->h && q->y <= r.y + r.h) {
+				int x0 = r.x < q->x ? r.x : q->x, y0 = r.y < q->y ? r.y : q->y;
+				int x1 = r.x + r.w > q->x + q->w ? r.x + r.w : q->x + q->w;
+				int y1 = r.y + r.h > q->y + q->h ? r.y + r.h : q->y + q->h;
+
+				*q = (dz_rect){ x0, y0, x1 - x0, y1 - y0 };
+				return 0;
+			}
+		}
+		if (s->npend < (int)(sizeof(s->pend) / sizeof(s->pend[0]))) {
+			s->pend[s->npend++] = r;
+			return 0;
+		}
+		for (k = 1; k < s->npend; k++) {	/* full: one bounding box */
+			dz_rect *q = &s->pend[k], *b = &s->pend[0];
+			int x0 = b->x < q->x ? b->x : q->x, y0 = b->y < q->y ? b->y : q->y;
+			int x1 = b->x + b->w > q->x + q->w ? b->x + b->w : q->x + q->w;
+			int y1 = b->y + b->h > q->y + q->h ? b->y + b->h : q->y + q->h;
+
+			*b = (dz_rect){ x0, y0, x1 - x0, y1 - y0 };
+		}
+		s->npend = 1;
+		{
+			dz_rect *b = &s->pend[0];
+			int x0 = b->x < r.x ? b->x : r.x, y0 = b->y < r.y ? b->y : r.y;
+			int x1 = b->x + b->w > r.x + r.w ? b->x + b->w : r.x + r.w;
+			int y1 = b->y + b->h > r.y + r.h ? b->y + b->h : r.y + r.h;
+
+			*b = (dz_rect){ x0, y0, x1 - x0, y1 - y0 };
+		}
+		return 0;
+	}
 	dev = dz_slot(i, (size_t)(s->oy + s->h - 1) * s->stride + (size_t)(s->ox + s->w) * 4, NULL);
 	if (!dev)
 		return -1;
@@ -462,6 +582,39 @@ int dz_draw_present(int i)
 	__sync_synchronize();
 	s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
 	return 0;
+}
+
+/* clean the pending rectangles of direct surface s (row by row when that
+ * touches much less than one range over all rows: a call costs ~2 KB) */
+static int clean_pending(surf_t *s)
+{
+	int rc = 0;
+
+	for (int k = 0; k < s->npend; k++) {
+		dz_rect *r = &s->pend[k];
+		const uint8_t *b = (const uint8_t *)s->shadow;
+		size_t rb = (size_t)r->w * 4, rows = (size_t)r->h;
+		size_t all = (rows - 1) * s->stride + rb;
+
+		if (!s->shadow || !rows || !rb)
+			continue;
+		b += (size_t)r->y * s->stride + (size_t)r->x * 4;
+		if (rows * (rb + 2048) < all)
+			for (size_t y = 0; y < rows; y++)
+				rc |= dz_slot_clean(b + y * s->stride, rb);
+		else
+			rc |= dz_slot_clean(b, all);
+	}
+	s->npend = 0;
+	return rc;
+}
+
+/* the frame tick (pix.c): the presents of this frame reach DDR */
+void dz_draw_flush_cleans(void)
+{
+	for (int i = 0; i < DZ_SLOTS; i++)
+		if (surf[i].direct && surf[i].npend)
+			clean_pending(&surf[i]);
 }
 
 int dz_draw_present_all(int i)
@@ -504,8 +657,21 @@ void dz_draw_set_auto(int i, int on)
 {
 	surf_t *s = get(i);
 
-	if (s)
-		s->autoflush = on != 0;
+	if (!s || rd.on)
+		return;
+	on = on != 0;
+	if (on == s->autoflush)
+		return;
+	/* a direct surface shows its changes (cache write-backs): batch mode
+	 * needs a buffer in RAM; back to autoflush = back to the slot */
+	if (s->direct || (on && direct_ptr(i, s->w, s->h, s->stride, 1))) {
+		dz_draw_present(i);
+		unshadow(s);
+		s->evicted = 1;		/* get(): the slot's picture */
+	}
+	if (on)
+		s->ramonly = 0;
+	s->autoflush = on;
 }
 
 /* ---- pixels --------------------------------------------------------------- */
@@ -732,7 +898,7 @@ uint32_t *dz_surf_splat_area(int i, int *w, int *h, int x0, int y0, int x1, int 
 	if (y0 < 0) y0 = 0;
 	if (x1 > cw) x1 = cw;
 	if (y1 > ch) y1 = ch;
-	dev = dz_slot(i, (size_t)(ch - 1) * st + (size_t)cw * 4, NULL);
+	dev = dz_slot_rd(i, (size_t)(ch - 1) * st + (size_t)cw * 4);
 	if (dev && x1 > x0)
 		for (int y = y0; y < y1; y++)
 			memcpy(s->shadow + (size_t)y * cw + x0, dev + (size_t)y * st + (size_t)x0 * 4,
@@ -1193,6 +1359,15 @@ int dz_draw_fade(int i, float amount, dz_color to)
 	amount = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
 	a = (unsigned)(amount * 128.0f + 0.5f);	/* 7 bit: products fit in int16 */
 	t = pack(to);
+	if (s->direct) {
+		/* the paint buffer is the slot (write-back): fade in place, the
+		 * present cleans it (one memory type per slot: the old store
+		 * through a write-through alias lost writes, sw/SLOTMEM.md) */
+		fade_buf((uint8_t *)s->shadow, (size_t)s->w * 4 * s->h, t, a);
+		dirty(s, 0, 0, s->w, s->h);
+		finish(s, i);
+		return 0;
+	}
 	if (s->autoflush) {
 		/* fade + present in one pass: copy each row while it is in cache */
 		size_t rowb = (size_t)s->w * 4;
@@ -1230,10 +1405,10 @@ int dz_draw_grab(int i, int src)
 
 	if (!s || src < 0 || src >= DZ_SLOTS)
 		return -1;
-	dev = dz_slot(src, (size_t)(s->h - 1) * s->stride + (size_t)s->w * 4, NULL);
+	dev = dz_slot_rd(src, (size_t)(s->h - 1) * s->stride + (size_t)s->w * 4);
 	if (!dev)
 		return -1;
-	for (int y = 0; y < s->h; y++) {
+	for (int y = 0; dev != (const uint8_t *)s->shadow && y < s->h; y++) {
 		uint32_t *row = s->shadow + (size_t)y * s->w;
 
 		memcpy(row, dev + (size_t)y * s->stride, (size_t)s->w * 4);
@@ -1373,7 +1548,7 @@ uint32_t *dz_surf_swap(int i, uint32_t *buf)
 	surf_t *s = get(i);
 	uint32_t *old;
 
-	if (!s || !buf)
+	if (!s || !buf || s->direct)	/* the slot itself: never swapped out */
 		return NULL;
 	old = s->shadow;
 	s->shadow = buf;
@@ -1396,6 +1571,54 @@ void dz_surf_clean(int i)
 
 	if (s)
 		s->dx0 = s->dy0 = s->dx1 = s->dy1 = 0;
+}
+
+/* transforms (dz_xform.c): a direct surface gets a RAM buffer again (read
+ * from the slot once), when RAM allows: the transform then writes each
+ * row to the slot while it is in cache and swaps buffers, as before
+ * (2026-11-20: from the slot itself, a full frame into a spare buffer
+ * and one copy at the end, rotozoom 95 ms against 73). The idle trim
+ * frees the buffer after 60 s and the surface is direct again. */
+void dz_surf_ram(int i)
+{
+	surf_t *s = get(i);
+	long kb, need;
+
+	if (!s || !s->direct || rd.on)
+		return;
+	need = (long)((size_t)s->w * s->h * 4 / 1024);
+	kb = mem_avail_kb();
+	if (kb >= 0 && kb - need < SURF_RESERVE_KB + 16 * 1024)
+		return;			/* stay direct: the transform copes */
+	dz_draw_present(i);
+	unshadow(s);
+	s->evicted = 1;			/* get(): read the slot into the buffer */
+	s->ramonly = 1;
+}
+
+/* the paint buffer is the slot (write-back, see direct_ptr) */
+/* another writer takes slot i over (anim ring slots, slit targets, a dzlua
+ * script): stop a movie there, put a direct surface's picture into DDR and
+ * the slot back to write-combined (one memory type per slot) */
+void dz_draw_takeover(int i)
+{
+	if (i < 0 || i >= DZ_SLOTS)
+		return;
+	dz_draw_movie_stop(i);
+	if (surf[i].shadow && surf[i].direct) {
+		dz_draw_present(i);
+		unshadow(&surf[i]);
+		surf[i].dx0 = surf[i].dy0 = surf[i].dx1 = surf[i].dy1 = 0;
+		surf[i].evicted = 1;
+	}
+	dz_slot_cache(i, 0);
+}
+
+int dz_surf_direct(int i)
+{
+	surf_t *s = get(i);
+
+	return s && s->direct;
 }
 
 int dz_surf_plain(int i)
@@ -1502,6 +1725,8 @@ static dz_rect own_size(const surf_t *s, int w, int h)
 	return r;
 }
 
+static dz_rect img_last;	/* where the last dz_draw_image put its picture */
+
 int dz_draw_image(int i, const char *name, dz_rect r)
 {
 	surf_t *s = get(i);
@@ -1552,6 +1777,7 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 				finish(s, i);
 				if (own)
 					snprintf(s->iname, sizeof(s->iname), "%s", name);
+				img_last = r;
 				return 0;
 			}
 			free(pic);
@@ -1604,6 +1830,7 @@ int dz_draw_image(int i, const char *name, dz_rect r)
 	finish(s, i);
 	if (own)
 		snprintf(s->iname, sizeof(s->iname), "%s", name);
+	img_last = (dz_rect){ r.x, r.y, r.w, rows };
 	return 0;
 }
 
@@ -1846,6 +2073,11 @@ static surf_t *movie_surf(int i)
 	canvas_size(i, &w, &h, &st);
 	if (s->shadow && (s->w != w || s->h != h || s->stride != st))
 		surf_release(i);
+	if (s->shadow && s->direct) {	/* fbfeed maps it next (write-combined): */
+		dz_draw_present(i);	/* back to WC first, else its mmap is refused */
+		unshadow(s);
+		s->evicted = 1;
+	}
 	if (!s->shadow) {
 		if (!s->evicted) {
 			s->alpha = 256;
@@ -1934,7 +2166,9 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 	 * movies at once: 7 fps each with bgra, 12.5 fps each with this).
 	 * slot 0 lies inside /dev/fb0: use its write-combined mapping.
 	 */
-	if (i == DZ_SLOT_FB0)
+	if (dz_slot_cached()[0])	/* dzmem: fbfeed maps the slot write-combined */
+		snprintf(dst, sizeof(dst), "-d /dev/dzmem -o $((%u + o))", (unsigned)(i * DZ_SLOT_PITCH));
+	else if (i == DZ_SLOT_FB0)
 		snprintf(dst, sizeof(dst), "-d /dev/fb0 -o $o");
 	else
 		snprintf(dst, sizeof(dst), "-a $((%u + o))", (unsigned)DZ_SLOT_ADDR(i));
@@ -2675,7 +2909,7 @@ int dz_draw_buffers(int *n, long *kb)
 	*n = 0;
 	*kb = 0;
 	for (int i = 0; i < DZ_SLOTS; i++)
-		if (surf[i].shadow) {
+		if (surf[i].shadow && !surf[i].direct) {
 			(*n)++;
 			*kb += (long)((size_t)surf[i].w * surf[i].h * 4 / 1024);
 		}
@@ -2956,9 +3190,27 @@ int dz_draw_dispatch(const dz_msg *m, int verbose)
 					if (s) {
 						int af = s->autoflush;
 
+						/* the image first, then black only around
+						 * it (2026-11-20): on a direct surface the
+						 * buffer is the slot and the cache writes
+						 * lines back on its own - a black fill
+						 * first flashed black over the picture */
 						s->autoflush = 0;
-						rc = dz_draw_solid(i, DZ_RGB8(0, 0, 0), DZ_ALL) ||
-						     dz_draw_image(i, a[0].s, DZ_ALL);
+						rc = dz_draw_image(i, a[0].s, DZ_ALL);
+						if (!rc) {
+							dz_rect r = img_last, o[4] = {
+								{ 0, 0, s->w, r.y },
+								{ 0, r.y + r.h, s->w, s->h - r.y - r.h },
+								{ 0, r.y, r.x, r.h },
+								{ r.x + r.w, r.y, s->w - r.x - r.w, r.h } };
+							char keep[sizeof(s->iname)];
+
+							memcpy(keep, s->iname, sizeof(keep));
+							for (int k = 0; k < 4; k++)
+								if (o[k].w > 0 && o[k].h > 0)
+									dz_draw_solid(i, DZ_RGB8(0, 0, 0), o[k]);
+							memcpy(s->iname, keep, sizeof(keep));
+						}
 						s->autoflush = af;
 						if (dz_draw_present(i) < 0)
 							rc = -1;

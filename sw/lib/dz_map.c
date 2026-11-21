@@ -4,6 +4,7 @@
 #define _GNU_SOURCE
 #include "dz_map.h"
 #include "dz_hw.h"
+#include "dzmem.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -412,6 +413,8 @@ typedef struct {
 	void    *map;		/* own mmap, NULL when inside fb0     */
 	size_t   len;		/* bytes mapped from the slot start   */
 	char     via[8];
+	int      cached;	/* dzmem: 1 = the mapping is write-back (dz_slot_cache),
+				 * 0 = write-combined (non-cacheable) */
 } slotmap;
 
 static slotmap slots[DZ_SLOTS];
@@ -446,6 +449,157 @@ fail:
 }
 
 static uint8_t *slot_locked(slotmap *s, int n, size_t len);
+
+/* ---- dzmem (cached slots, v2: ONE memory type per slot, sw/SLOTMEM.md) ----
+ * Each slot has ONE mapping in this process, at a fixed address: WC
+ * (non-cacheable, like /dev/mem and fb0) by default; dz_slot_cache(n, 1)
+ * makes it write-back IN PLACE (MAP_FIXED over the same address, so the
+ * pointers that threads hold stay valid). The module refuses a type that
+ * differs from another live mapping of the slot (another process), and
+ * flushes the slot when its last cached mapping closes. */
+static int dz_fd_wc = -1, dz_fd_wb = -1, dz_tried;
+
+static int dzmem_open(void)
+{
+	struct dzmem_info inf;
+	const char *e = getenv("DZ_DZMEM");
+	uint32_t wc = DZMEM_WC, wb = DZMEM_WB;
+
+	if (dz_tried)
+		return dz_fd_wc;
+	dz_tried = 1;
+	if (sim || (e && !strcmp(e, "0")))
+		return -1;
+	dz_fd_wc = open("/dev/dzmem", O_RDWR | O_CLOEXEC);
+	if (dz_fd_wc < 0)
+		return -1;
+	if (ioctl(dz_fd_wc, DZMEM_IOC_INFO, &inf) < 0 || inf.base != DZ_SLOT_BASE ||
+	    inf.size < (uint64_t)DZ_SLOTS * DZ_SLOT_PITCH || inf.version < 2) {
+		fprintf(stderr, "dz_map: /dev/dzmem is not the slot region or older than v2: "
+			"not used\n");
+		goto fail;
+	}
+	/* one open file per memory type: the type is set before mmap */
+	dz_fd_wb = open("/dev/dzmem", O_RDWR | O_CLOEXEC);
+	if (ioctl(dz_fd_wc, DZMEM_IOC_MODE, &wc) < 0 || dz_fd_wb < 0 ||
+	    ioctl(dz_fd_wb, DZMEM_IOC_MODE, &wb) < 0)
+		goto fail;
+	return dz_fd_wc;
+fail:
+	close(dz_fd_wc);
+	if (dz_fd_wb >= 0)
+		close(dz_fd_wb);
+	dz_fd_wc = dz_fd_wb = -1;
+	return -1;
+}
+
+const char *dz_slot_cached(void)
+{
+	return dz_fd_wc >= 0 ? "dzmem" : "";
+}
+
+uint8_t *dz_slot_rd(int n, size_t len)
+{
+	return dz_slot(n, len, NULL);	/* one mapping per slot (v2) */
+}
+
+/* live mappings of slot n in the module (all processes), -1 = unknown */
+static int live_other_class(int n, int want_cached)
+{
+	FILE *f = fopen("/sys/class/misc/dzmem/slots", "r");
+	char line[96];
+	int rc = -1;
+
+	if (!f)
+		return -1;
+	rc = 0;
+	while (fgets(line, sizeof(line), f)) {
+		unsigned s, wb, wt, nc;
+
+		if (sscanf(line, "slot %u WB %u WT %u NC %u", &s, &wb, &wt, &nc) == 4 && (int)s == n)
+			rc = want_cached ? (int)nc - 1 : (int)wb - 1 + (int)wt;	/* minus our own */
+	}
+	fclose(f);
+	return rc;
+}
+
+int dz_slot_cache(int n, int on)
+{
+	slotmap *s;
+	void *m;
+	int rc = 0;
+
+	on = !!on;
+	if (n < 0 || n >= DZ_SLOTS || !dz_slot(n, DZ_SLOT_PITCH, NULL))
+		return -EINVAL;
+	s = &slots[n];
+	if (strcmp(s->via, "dzmem") || (on && n == DZ_SLOT_CAPTURE))
+		return on ? -ENOTSUP : 0;
+	pthread_mutex_lock(&map_mu);
+	if (s->cached == on)
+		goto out;
+	if (live_other_class(n, on) > 0) {	/* another process maps it the other way */
+		rc = -EBUSY;
+		goto out;
+	}
+	/* MAP_FIXED: the old mapping goes first (the module flushes it if it was
+	 * cached), the new one takes the same address */
+	m = mmap(s->map, DZ_SLOT_PITCH, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED,
+		 on ? dz_fd_wb : dz_fd_wc, (off_t)n * DZ_SLOT_PITCH);
+	if (m == MAP_FAILED) {
+		rc = -errno;
+		/* the address range is empty now: put the old type back at once */
+		m = mmap(s->map, DZ_SLOT_PITCH, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED,
+			 on ? dz_fd_wc : dz_fd_wb, (off_t)n * DZ_SLOT_PITCH);
+		if (m == MAP_FAILED) {
+			fprintf(stderr, "dz_map: slot %d LOST its mapping (%s): abort\n", n, strerror(errno));
+			abort();
+		}
+		goto out;
+	}
+	s->cached = on;
+out:
+	pthread_mutex_unlock(&map_mu);
+	return rc;
+}
+
+int dz_slot_is_cached(int n)
+{
+	return n >= 0 && n < DZ_SLOTS && __atomic_load_n(&slots[n].cached, __ATOMIC_ACQUIRE);
+}
+
+uint8_t *dz_slot_wb(int n)
+{
+	if (dz_fd_wb < 0 || n == DZ_SLOT_CAPTURE || dz_slot_cache(n, 1) < 0)
+		return NULL;
+	return dz_slot(n, DZ_SLOT_PITCH, NULL);
+}
+
+static uint64_t clean_ns, clean_bytes;
+static unsigned clean_calls;
+
+int dz_slot_clean(const void *addr, size_t len)
+{
+	struct dzmem_sync sy = { .addr = (uintptr_t)addr, .len = len, .dir = DZMEM_TO_DEVICE };
+
+	if (dz_fd_wb < 0 || !len)
+		return 0;
+	if (ioctl(dz_fd_wb, DZMEM_IOC_SYNC, &sy) < 0) {
+		__sync_synchronize();
+		return -1;
+	}
+	__atomic_add_fetch(&clean_ns, sy.ns, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&clean_bytes, len, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&clean_calls, 1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+void dz_slot_clean_stats(uint64_t *ns, uint64_t *bytes, unsigned *calls)
+{
+	*ns = __atomic_load_n(&clean_ns, __ATOMIC_RELAXED);
+	*bytes = __atomic_load_n(&clean_bytes, __ATOMIC_RELAXED);
+	*calls = __atomic_load_n(&clean_calls, __ATOMIC_RELAXED);
+}
 
 /* A slot is mapped once with its full pitch when the reservation covers it
  * (2026-11-03): before, a longer request unmapped the slot and mapped it
@@ -502,6 +656,29 @@ static uint8_t *slot_locked(slotmap *s, int n, size_t len)
 		snprintf(s->via, sizeof(s->via), "sim");
 		__atomic_store_n(&s->ptr, (uint8_t *)s->map, __ATOMIC_RELEASE);
 		return s->ptr;
+	}
+
+	/* dzmem: the whole slot write-combined (in the module's type guard);
+	 * dz_slot_cache() makes it write-back in place */
+	if (dzmem_open() >= 0 && dz_reserved(phys, DZ_SLOT_PITCH)) {
+		m = mmap(NULL, DZ_SLOT_PITCH, PROT_READ | PROT_WRITE, MAP_SHARED, dz_fd_wc,
+			 (off_t)n * DZ_SLOT_PITCH);
+		if (m != MAP_FAILED) {
+			s->map = m;
+			s->len = DZ_SLOT_PITCH;
+			s->cached = 0;
+			snprintf(s->via, sizeof(s->via), "dzmem");
+			__atomic_store_n(&s->ptr, (uint8_t *)m, __ATOMIC_RELEASE);
+			return s->ptr;
+		}
+		if (errno == EBUSY) {	/* another process maps it with the other type:
+					 * /dev/mem would be a third type on it */
+			fprintf(stderr, "dz_map: slot %d is mapped write-back by another process "
+				"(dzmem refused): not mapped\n", n);
+			return NULL;
+		}
+		fprintf(stderr, "dz_map: dzmem mmap slot %d: %s (falls back to /dev/mem)\n",
+			n, strerror(errno));
 	}
 
 	fb_probe();

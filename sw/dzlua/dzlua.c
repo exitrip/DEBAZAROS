@@ -66,7 +66,8 @@ extern const char dzl_prelude[];
 
 static uint32_t *fb;			/* the canvas (RAM) */
 static int W, H;
-static uint8_t *slot;			/* the slot (uncached / write-combined) */
+static uint8_t *slot;			/* the slot, written (write-through with dzmem, else uncached) */
+static const uint8_t *slot_rd;		/* the slot, read (write-back with dzmem: 2x faster) */
 static size_t stride = DZ_STRIDE;
 static int dx0, dy0, dx1 = -1, dy1 = -1;	/* changed area, dx1 < dx0 = none */
 static int blend, galpha = 256;
@@ -622,7 +623,7 @@ DZL void dzl_grab(void)
 	for (int y = 0; y < H; y++) {
 		uint32_t *r = fb + (size_t)y * W;
 
-		memcpy(r, slot + (size_t)y * stride, (size_t)W * 4);
+		memcpy(r, slot_rd + (size_t)y * stride, (size_t)W * 4);
 		for (int x = 0; x < W; x++)
 			r[x] |= 0xFF000000u;
 	}
@@ -1091,7 +1092,8 @@ int main(int argc, char **argv)
 	if (W > (int)(stride / 4))
 		W = (int)(stride / 4);
 	slot = dz_slot(s, stride * (size_t)H, &via);
-	if (!slot) {
+	slot_rd = slot ? dz_slot_rd(s, stride * (size_t)H) : NULL;
+	if (!slot || !slot_rd) {
 		fprintf(stderr, "dzlua: slot %d is not in reserved memory\n", s);
 		return 1;
 	}
@@ -1100,7 +1102,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	for (int y = 0; y < H; y++) {		/* start on the slot's picture */
-		memcpy(fb + (size_t)y * W, slot + (size_t)y * stride, (size_t)W * 4);
+		memcpy(fb + (size_t)y * W, slot_rd + (size_t)y * stride, (size_t)W * 4);
 		for (int x = 0; x < W; x++)
 			fb[(size_t)y * W + x] |= 0xFF000000u;
 	}

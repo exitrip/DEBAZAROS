@@ -1038,7 +1038,7 @@ static int start(int d, const char *name, float fps, char *err, size_t errlen)
 	p->ne = p->nslots;
 	for (int k = 0; k < p->ne; k++) {
 		pix_lock();	/* the pixel thread owns the movies */
-		dz_draw_movie_stop(p->slots[k]);
+		dz_draw_takeover(p->slots[k]);	/* + a direct paint surface back to WC */
 		pix_unlock();
 		memset(&p->e[k], 0, sizeof(entry));
 		p->e[k].slot = p->slots[k];
@@ -1108,7 +1108,7 @@ static int start_onion(int d, const char *name, float op, int frames, int src, c
 	p->ne = p->nslots;
 	for (int k = 0; k < p->ne; k++) {
 		pix_lock();	/* the pixel thread owns the movies */
-		dz_draw_movie_stop(p->slots[k]);
+		dz_draw_takeover(p->slots[k]);	/* + a direct paint surface back to WC */
 		pix_unlock();
 		memset(&p->e[k], 0, sizeof(entry));
 		p->e[k].slot = p->slots[k];

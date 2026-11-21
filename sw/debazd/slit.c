@@ -107,13 +107,15 @@ static uint8_t *row_at(const plane_t *pl, int y)
 	return pl->p[k] + off % DZ_SLOT_PITCH;
 }
 
-static int plane_slot(plane_t *pl, int slot, int w, int h, size_t stride, int two)
+/* rd = the source: read through the write-back mapping (dz_slot_rd, the
+ * cached path; the capture slot stays uncached), else the write mapping */
+static int plane_slot(plane_t *pl, int slot, int w, int h, size_t stride, int two, int rd)
 {
 	pl->slot = slot;
 	pl->w = w;
 	pl->h = h;
 	pl->stride = stride;
-	pl->p[0] = dz_slot(slot, DZ_SLOT_PITCH, NULL);
+	pl->p[0] = rd ? dz_slot_rd(slot, DZ_SLOT_PITCH) : dz_slot(slot, DZ_SLOT_PITCH, NULL);
 	pl->p[1] = two && slot + 1 < DZ_SLOTS ? dz_slot(slot + 1, DZ_SLOT_PITCH, NULL) : NULL;
 	return pl->p[0] && (!two || pl->p[1]) ? 0 : -1;
 }
@@ -130,9 +132,9 @@ static int source(const slit_t *s, plane_t *pl)
 			return -1;
 		return plane_slot(pl, (int)((a - DZ_SLOT_BASE) / DZ_SLOT_PITCH),
 				  (int)(r.hsize & 0xFFFF) / DZ_BPP, (int)(r.vsize & 0x1FFF),
-				  r.stride & 0xFFFF, 0);
+				  r.stride & 0xFFFF, 0, 1);
 	}
-	return plane_slot(pl, s->src, dz_geom_w(), dz_geom_h(), dz_geom_stride(), 0);
+	return plane_slot(pl, s->src, dz_geom_w(), dz_geom_h(), dz_geom_stride(), 0, 1);
 }
 
 static void copy_px(uint8_t *d, const uint8_t *s, size_t n)
@@ -354,7 +356,7 @@ static int frame(int d)
 	int wf = s->mode == S_ROW && s->scroll;
 	double old = s->w;
 
-	if (source(s, &src) < 0 || plane_slot(&dst, d, W, H, dz_geom_stride(), wf) < 0)
+	if (source(s, &src) < 0 || plane_slot(&dst, d, W, H, dz_geom_stride(), wf, 0) < 0)
 		return -1;
 	switch (s->mode) {
 	case S_ROW:
@@ -417,7 +419,7 @@ static void clear(int d, int rows)
 {
 	plane_t dst;
 
-	if (plane_slot(&dst, d, dz_geom_w(), rows, dz_geom_stride(), rows > dz_geom_h()) < 0)
+	if (plane_slot(&dst, d, dz_geom_w(), rows, dz_geom_stride(), rows > dz_geom_h(), 0) < 0)
 		return;
 	for (int y = 0; y < rows; y++) {
 		uint32_t *r = (uint32_t *)row_at(&dst, y);

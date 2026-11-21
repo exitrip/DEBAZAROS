@@ -233,6 +233,10 @@ int  dz_draw_movie_play(int s, const char *name);
 int  dz_draw_movie_play_fps(int s, const char *name, float fps);	/* 0 = no cap */
 int  dz_draw_movie_play_av(int s, const char *name, float fps, int audio);	/* + audio to DEBAZ */
 int  dz_draw_movie_stop(int s);
+/* another writer takes slot s over (anim ring slots, slit targets, a dzlua
+ * script): movie stop + a direct (write-back) paint surface into DDR and
+ * the slot back to write-combined. Call it before writing the slot. */
+void dz_draw_takeover(int s);
 /* called by dz_draw_movie_stop(slot), i.e. whenever a draw, an image, a
  * movie or a slit effect takes the slot: another program that writes the
  * slot (debazd lua.c: a dzlua script) stops (2026-11-20) */
@@ -246,6 +250,9 @@ int  dz_draw_live(int slot);
 /* after each OSC message on the pixel thread: frees the buffers read from
  * live slots during the message */
 void dz_draw_job_end(void);
+/* direct (write-back) surfaces: clean what was presented since the last
+ * call (once per frame, pix.c frame_work) */
+void dz_draw_flush_cleans(void);
 int  dz_draw_movie_running(int s);	/* reaps a finished player */
 int  dz_draw_movie_ctl(int s, const char *line);	/* to its dzmosh; -1 = none */
 int  dz_draw_movie_pause(int s, int on);

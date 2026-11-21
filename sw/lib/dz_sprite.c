@@ -211,7 +211,7 @@ int dz_sprite_grab(int id, int slot, int x, int y, int w, int h)
 	if (!sp(id) || w <= 0 || h <= 0 || x < 0 || y < 0 ||	/* inside the slot */
 	    (size_t)(x + w) * DZ_BPP > st || (size_t)(y + h) * st > DZ_SLOT_PITCH)
 		return -1;
-	dev = dz_slot(slot, DZ_SLOT_PITCH, NULL);
+	dev = dz_slot_rd(slot, DZ_SLOT_PITCH);
 	px = dev ? malloc((size_t)w * h * 4) : NULL;
 	if (!px)
 		return -1;

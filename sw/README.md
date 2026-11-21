@@ -15,7 +15,7 @@ no BSP.
 | `dzlua/` | LuaJIT scripts that draw into one frame slot (`dzlua.c` = drawing in C + LuaJIT by dlopen, `prelude.lua` = the script API, built in). debazd starts it (`/lua/<s>/...`, `debazd/lua.c`). See "Lua scripts" below. |
 | `dzmosh/` | Live datamosh in the movie pipe (MPEG-4 Part 2 only): drops key frames, repeats P frames, flips bits, pauses; sets the frame pace. Commands on `/tmp/dzmosh.<slot>` (debazd `/movie/<s>/mosh\|bloom\|corrupt\|pause`). |
 | `include/hw_map.h` | Register base addresses, GENERATED from the block design (`make hwmap`). Must match the bitstream that runs. |
-| `tools/` | Board scripts (`dzstart.sh`, `plreload.sh`, `dzsetup.sh`, `capstat.sh`, ...), laptop scripts (`mkmedia.sh`, `pushfonts.sh`), `selftest.sh`, `image/` (the image's systemd unit and default config), `vscode/` (debug setup). |
+| `tools/` | Board scripts (`dzstart.sh`, `plreload.sh`, `dzsetup.sh`, `capstat.sh`, ...), laptop scripts (`mkmedia.sh`, `pushfonts.sh`, `boardpower.sh` = reboot / USB-C power cycle / serial log of a bench board, root helper `dz-usbpower`), `selftest.sh`, `image/` (the image's systemd unit and default config), `vscode/` (debug setup). |
 
 ## Build and install
 
@@ -309,6 +309,22 @@ invisible characters (C0, DEL, C1, zero width, BOM, soft hyphen) are not
 drawn (they were `?` or boxes); the pixel font draws ONE `?` for each
 non-ASCII character (it drew one per UTF-8 byte). Applies to
 `/draw/<s>/text|ttf` (also rotated) and text sprites.
+
+Scripts (2026-11-21): when the chosen font has no glyph, TrueType text
+takes the font of the character's Unicode block (`script_font` in
+`lib/dz_text.c`: Lohit for the Indic scripts, Hangul cut from Noto Sans CJK
+KR, Thai, Lao, Tibetan, Myanmar, Ethiopic, Khmer, Sinhala), then DejaVu
+Sans (Greek, Cyrillic, Armenian, Georgian, Hebrew, Arabic), FreeSerif and
+Droid Sans Fallback (kanji, kana). `tools/pushfonts.sh` sends all of them
+(~22 MB on disk; a font is loaded into RAM only when used), plus, when the
+zips are in ~/Downloads (`DZ_TYPODERMIC_ZIP`, `DZ_PASTOR_ZIP`), 731 Ray
+Larabie display fonts (Typodermic public-domain archive, CC0) and Pastor of
+Muppets into /usr/share/fonts/debaz/typodermic (+36 MB, names made safe:
+`Baileys-Car.otf`). Latin only, mostly: other scripts use the fallbacks. ⚠️ No text
+shaping and no right-to-left (stb_truetype maps one character to one
+glyph): Hebrew and Arabic come out reversed, Arabic letters do not join,
+and Indic conjuncts and vowel signs, Thai, Khmer and Myanmar are wrong.
+Greek, Cyrillic, Armenian, Georgian, kanji, kana and Hangul are correct.
 
 Plus the older fills, gradients, images and movies (`lib/dz_draw.h`).
 Every operation stops a movie that plays into the same slot.
@@ -814,6 +830,51 @@ Script frame (turtle flower, trails, 1280 x 1024): opaque 41 ms, layer
 over a movie is seen only between the movie's frames: persistent drawing
 over a movie = ROADMAP section 19 step 4 (fbfeed overlay, only as a
 cheap toggle).
+
+## Cached slot memory: dzmem (2026-11-20, EXPERIMENT)
+
+⚠️ The WT + WB design below is WRONG on this CPU: the Cortex-A9 L1
+treats write-through pages as non-cacheable, so WB lines in the L1 do not
+see WT writes (stale reads, lost writes). Do not load dzmem except for
+tests. Problem statement, target architecture (one memory type per slot,
+enforced by the module) and the new test plan: `sw/SLOTMEM.md`.
+
+ROADMAP.md section 19 step 5. The kernel module dzmem (recipe
+`recipes-modules/dzmem`, not in the image) maps the slot region cached.
+Load it by hand: `sh tools/pkgpush.sh kernel-module-dzmem` (laptop), then
+`sudo insmod /lib/modules/$(uname -r)/extra/dzmem.ko` on the board, then
+restart debazd. When /dev/dzmem is there, libdz uses it:
+
+- `dz_slot()` = write-through (WT): writes go to DDR at once, the VDMA
+  needs no cache clean. Reads are cached.
+- `dz_slot_rd()` = write-back (WB), READ ONLY: the fastest reads. Use it
+  for every read of slot memory (grab, splat reads, ASCII, slit, dzlua
+  grab). Never write through it (a WB write stays in the cache, the VDMA
+  does not see it).
+- The capture slot stays uncached in both (the capture VDMA writes it;
+  a cached read would show stale lines).
+- fbfeed writes through `-d /dev/dzmem -o <offset>` (WT).
+- `DZ_DZMEM=0` in the environment = the old uncached path (/dev/mem,
+  fb0). debazd logs which path it uses at start.
+- `rmmod dzmem` fails while debazd (or fbfeed) holds the device.
+- Tool: `sudo dzmemtest bench|check|show|capture` (`tools/dzmemtest.c`).
+
+Measured gains (A/B on .236): full grab -18 %, sprite grab -28 %, rect
+splat 2.5-3x, stroke splat -12 %; movies, scripts, brush, text, ASCII,
+slit about equal. No visual artifacts in USB captures of the output.
+
+Part 2 (2026-11-20, EXPERIMENT, retest pending after a board hang):
+debazd paints straight into the slot. A full-slot surface with autoflush
+on uses `dz_slot_wb()` (the write-back mapping, writable) as its buffer:
+no 8 MB RAM copy; present = `dz_slot_clean()` of the dirty rectangle.
+Batch mode (`/surface/<s>/auto 0`), `canvas mode` and live slots (movie,
+capture, script) keep a RAM buffer; transforms move the surface to RAM
+until the idle trim. `/surface/mem` and `/surface/<s>/canvas` count RAM
+buffers only. Rule: never leave dirty write-back lines in a slot that
+another mapping writes at the same time (see ROADMAP.md section 19).
+Check: `sudo dzmemtest -s <slot> ddr` (read only) = the cached view
+against DDR. Bench: `tools/bench/bench-direct.lua` (copy to
+/media/debaz/scripts) + `tools/bench/ab2.sh`.
 
 ## Image sequences (stop motion, drawn animation)
 

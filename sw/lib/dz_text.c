@@ -115,7 +115,7 @@ static void bm_render(sink_t *k, uint32_t *base, int x, int y, const char *s, in
 }
 
 /* ---- TrueType -------------------------------------------------------------------- */
-#define N_FONTS	8	/* the fallbacks below + the fonts in use */
+#define N_FONTS	16	/* the fallbacks below + script fonts + the fonts in use */
 static struct {
 	char           name[100];
 	unsigned char *data;
@@ -207,15 +207,54 @@ static stbtt_fontinfo *font_get(const char *name)
 #endif
 static const char *const fallback[] = { DZ_FONT_FALLBACK };
 
-/* The font that draws cp: name if it has the glyph, else the first fallback
- * that has it, else name (its "missing" box) or NULL. Only valid until the
- * next font_get (a load can evict a cached font): look up per character. */
+/* Script fonts (2026-11-21, sw/tools/pushfonts.sh): the font for a Unicode
+ * block, tried before the general fallbacks when the chosen font lacks the
+ * glyph. One lookup = at most one extra font load, not a walk through all of
+ * them. Greek, Cyrillic, Armenian, Georgian, Hebrew and Arabic are in
+ * DejaVuSans / FreeSerif, kanji and kana in DroidSansFallbackFull. */
+static const struct { uint32_t lo, hi; const char *font; } script_font[] = {
+	{ 0x0900, 0x097F, "Lohit-Devanagari.ttf" },
+	{ 0x0980, 0x09FF, "Lohit-Bengali.ttf" },
+	{ 0x0A00, 0x0A7F, "Lohit-Gurmukhi.ttf" },
+	{ 0x0A80, 0x0AFF, "Lohit-Gujarati.ttf" },
+	{ 0x0B00, 0x0B7F, "Lohit-Odia.ttf" },
+	{ 0x0B80, 0x0BFF, "Lohit-Tamil.ttf" },
+	{ 0x0C00, 0x0C7F, "Lohit-Telugu.ttf" },
+	{ 0x0C80, 0x0CFF, "Lohit-Kannada.ttf" },
+	{ 0x0D00, 0x0D7F, "Lohit-Malayalam.ttf" },
+	{ 0x0D80, 0x0DFF, "lklug.ttf" },
+	{ 0x0E00, 0x0E7F, "Loma.ttf" },
+	{ 0x0E80, 0x0EFF, "Phetsarath_OT.ttf" },
+	{ 0x0F00, 0x0FFF, "TibetanMachineUni.ttf" },
+	{ 0x1000, 0x109F, "Padauk-Regular.ttf" },
+	{ 0x1100, 0x11FF, "NotoSansKR-Hangul.otf" },
+	{ 0x1200, 0x139F, "AbyssinicaSIL-Regular.ttf" },
+	{ 0x1780, 0x17FF, "KhmerOS.ttf" },
+	{ 0x3130, 0x318F, "NotoSansKR-Hangul.otf" },
+	{ 0xA8E0, 0xA8FF, "Lohit-Devanagari.ttf" },
+	{ 0xA960, 0xA97F, "NotoSansKR-Hangul.otf" },
+	{ 0xAA60, 0xAA7F, "Padauk-Regular.ttf" },
+	{ 0xAC00, 0xD7FF, "NotoSansKR-Hangul.otf" },
+};
+
+/* The font that draws cp: name if it has the glyph, else the script font of
+ * its block, else the first fallback that has it, else name (its "missing"
+ * box) or NULL. Only valid until the next font_get (a load can evict a
+ * cached font): look up per character. */
 static stbtt_fontinfo *font_with(const char *name, uint32_t cp)
 {
 	stbtt_fontinfo *f = font_get(name);
 
 	if (f && stbtt_FindGlyphIndex(f, (int)cp))
 		return f;
+	for (size_t i = 0; i < sizeof(script_font) / sizeof(script_font[0]); i++)
+		if (cp >= script_font[i].lo && cp <= script_font[i].hi) {
+			stbtt_fontinfo *g = font_get(script_font[i].font);
+
+			if (g && stbtt_FindGlyphIndex(g, (int)cp))
+				return g;
+			break;
+		}
 	for (size_t i = 0; i < sizeof(fallback) / sizeof(fallback[0]); i++) {
 		stbtt_fontinfo *g = font_get(fallback[i]);
 

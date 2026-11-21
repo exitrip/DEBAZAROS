@@ -82,6 +82,14 @@ and /lib/modules/5.15.36-xilinx-v2022.2.os-20261105 = -Os, *.O2-20261105 = -O2;
 rootfs still Dropbear). A/B results: PetaLinux/README.md (2026-11-05).
 Never swap only uImage: the tracing options change struct module, and the
 loader checks only the version string (old modules could corrupt memory).
+.236 bench rig (Nov 21): powered from the laptop's USB-C port 0, console
+ttyPS0 = CH340 /dev/ttyUSB0 on the same connector. `sw/tools/boardpower.sh
+reboot [-S|-H]` = ssh -> serial login (ebaz, no password) -> power cycle;
+`log start` = timestamped serial log ~/debaz-serial/10.42.0.236.log. Power
+cycle = root helper /usr/local/sbin/dz-usbpower (sudoers NOPASSWD), UCSI
+CONNECTOR_RESET hard (xhci port power off does NOT cut USB-C VBUS); the
+connector is found at run time from the adapter id 1a86:7523. tainted 4096
+(out-of-tree module) is normal at boot.
 Fleet page `www/fleet.html` (Nov 4): the browser connects to each unit's
 dzweb itself (no hub relay); dzweb `/units` works again (replies are bundles).
 
@@ -1151,6 +1159,33 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   quick deploy of built packages to a RUNNING unit without an image:
   `sh sw/tools/pkgpush.sh pkg...` (laptop; rpm2cpio on the build machine,
   never unpacks "." over /; lists in /var/lib/debaz-pkgpush).
+  Cached slots (Nov 20, EXPERIMENT, ROADMAP §19 step 5): kernel module
+  dzmem (recipes-modules/dzmem, not in the image; sw/include/dzmem.h,
+  sw/tools/dzmemtest) maps the slot region WB/WT/WC/UC + SYNC by range.
+  ⚠️ Never call outer_flush_all() from a module (BUG_ON irqs on: oopsed).
+  libdz uses it when loaded (sw/README.md "Cached slot memory"): dz_slot()
+  = WT (writers unchanged, no clean), dz_slot_rd() = WB READ ONLY (all
+  slot reads; never write through it), capture slot uncached, fbfeed -d
+  /dev/dzmem; DZ_DZMEM=0 = old path (use it for A/B: rmmod fails while
+  debazd holds the device). A/B: grab -18 %, rect splat 3x, rest equal;
+  USB-captured output clean. Part 2 (debazd paint buffer = dz_slot_wb(),
+  present = dz_slot_clean): RAM 24 MB -> 0, first draw 88 -> 0.7 ms; then
+  .236 HUNG in a test with dirty write-back lines in a live slot that
+  fbfeed wrote write-through. ⚠️ Never dirty write-back lines in a slot
+  another mapping writes at the same time (now: no direct on live slots;
+  untested after the hang, ROADMAP test backlog).
+  ⚠️ (found after the hang) the Cortex-A9 L1 treats WRITE-THROUGH pages
+  as NON-CACHEABLE (TRM 7.4.3): WT and WB mappings of one slot are NOT
+  coherent (stale WB reads, lost writes), so the whole part 1 + part 2
+  design is wrong. Target: one memory type per slot at a time (STILL = WB,
+  STREAM / capture = WC, no WT), enforced by dzmem v2; problem statement +
+  test plan with rules for trusted numbers: `sw/SLOTMEM.md`. Keep dzmem
+  UNLOADED on boards until that plan's step 4 passes. MEASURED Nov 21
+  (dzmemtest coh): every two-type mix loses writes (WB+WT 5 %, WB+WC,
+  WT+WC); same-type pairs 0. dzmem v2 (guard, flush on last close,
+  nocache slot 4, WT refused) + libdz v2 (one mapping per slot, WC by
+  default, dz_slot_cache() swaps WB in place with MAP_FIXED; libdz needs
+  module v2, else /dev/mem) are BUILT; board tests in SLOTMEM.md section 7.
   sw/README.md "Lua scripts into a slot" (API, costs: DDR bound, trails()).
 - **Shared slots (Nov 20 2026, ON .236, ROADMAP §19 / task 26):** a slot is
   LIVE while a movie plays there, it is the capture slot, or a script runs

@@ -30,8 +30,13 @@ void dz_surf_dirty(int i, int x0, int y0, int x1, int y1);
 void dz_surf_finish(int i);
 /* 1 if the surface draws plainly (alpha 1, blend normal): copy without put. */
 int dz_surf_plain(int i);
+/* 1 if the painting buffer IS the slot (dzmem write-back, 2026-11-20):
+ * dz_surf_swap refuses, and the slot changes under a reader of it. */
+int dz_surf_direct(int i);
+/* a direct surface back to a buffer in RAM (transforms; RAM permitting) */
+void dz_surf_ram(int i);
 /* Replace the painting buffer of surface i with buf (same size); returns the
- * old buffer, which the caller now owns. */
+ * old buffer, which the caller now owns. NULL for a direct surface. */
 uint32_t *dz_surf_swap(int i, uint32_t *buf);
 /* Slot memory of surface i when auto-present is on (row-wise present while a
  * row is in cache), else NULL. Also flushes pending dirty work first. */

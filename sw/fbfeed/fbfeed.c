@@ -43,6 +43,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -50,6 +51,7 @@
 #include <unistd.h>
 
 #include "dz_yuv.h"
+#include "dzmem.h"
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -517,6 +519,19 @@ int main(int argc, char **argv)
 	if (fd < 0) {
 		fprintf(stderr, "fbfeed: open %s: %s\n", dev, strerror(errno));
 		return 1;
+	}
+	/* /dev/dzmem (v2, sw/SLOTMEM.md): -o = the offset in the slot region;
+	 * map it WRITE-COMBINED, the type every user of a streamed slot has
+	 * (one memory type per slot: the module refuses the mmap while debazd
+	 * still maps the slot write-back) */
+	if (strcmp(dev, "/dev/dzmem") == 0) {
+		uint32_t wc = DZMEM_WC;
+
+		if (ioctl(fd, DZMEM_IOC_MODE, &wc) < 0) {
+			fprintf(stderr, "fbfeed: /dev/dzmem mode: %s\n", strerror(errno));
+			close(fd);
+			return 1;
+		}
 	}
 
 	uint8_t *map = mmap(NULL, map_len, PROT_READ | PROT_WRITE, MAP_SHARED,

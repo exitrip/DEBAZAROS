@@ -52,6 +52,29 @@ static inline void dz_wr(uint32_t base, uint32_t off, uint32_t v)
  * (fast to write, very slow to read). via = "fb0", "mem" or "sim".
  * NULL if the slot is not completely inside reserved memory (dz_reserved). */
 uint8_t *dz_slot(int n, size_t len, const char **via);
+/* Cached slots (dzmem v2, 2026-11-21, sw/SLOTMEM.md): ONE memory type per
+ * slot at a time, in every process (two types on the same bytes lose
+ * writes: measured, dzmemtest coh). With /dev/dzmem (v2+, DZ_DZMEM not "0")
+ * every slot is mapped write-combined, as uncached as /dev/mem; the owner
+ * of a still slot (debazd paint) may make it write-back with
+ * dz_slot_cache(): reads 2x, read-modify-write 5x, but its writes reach
+ * DDR (the VDMA) only after dz_slot_clean() of the changed range. The
+ * address never changes (remapped in place). The capture slot is never
+ * cached. EBUSY = another process (fbfeed, dzlua) maps the slot WC. */
+int dz_slot_cache(int n, int on);	/* 0 ok, -errno */
+int dz_slot_is_cached(int n);
+/* = dz_slot(): one mapping per slot since v2 (kept for the read sites) */
+uint8_t *dz_slot_rd(int n, size_t len);
+/* debazd paint: make slot n write-back and return it (NULL: no module,
+ * capture slot, or EBUSY) */
+uint8_t *dz_slot_wb(int n);
+/* clean [addr, addr + len) of a cached slot to DDR (dzmem SYNC TO_DEVICE,
+ * ~3 us per KB); 0 = done (or no module) */
+int dz_slot_clean(const void *addr, size_t len);
+/* totals since start (debazd /stats): time in the kernel, bytes, calls */
+void dz_slot_clean_stats(uint64_t *ns, uint64_t *bytes, unsigned *calls);
+/* "dzmem" when the cached path is in use, else "" (logs, /stats) */
+const char *dz_slot_cached(void);
 
 /*
  * Reserved memory of the RUNNING kernel (reserved-memory nodes in

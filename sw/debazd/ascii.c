@@ -403,7 +403,7 @@ static int render(int d)
 	dst = dz_surf(d, &W, &H);	/* stops a movie that plays into d */
 	if (!dst)
 		return -1;
-	sp = dz_slot(a->src, (size_t)(H - 1) * sstride + (size_t)W * 4, NULL);
+	sp = dz_slot_rd(a->src, (size_t)(H - 1) * sstride + (size_t)W * 4);
 	if (!sp)
 		return -1;
 	int cols = a->cols < 4 ? 4 : a->cols > W / 2 ? W / 2 : a->cols;
@@ -422,7 +422,12 @@ static int render(int d)
 		return -1;
 	int plain = dz_surf_plain(d);
 	uint8_t *dev = plain ? dz_surf_dev(d, &stride) : NULL;
-
+	/* the painting buffer IS the slot (dzmem write-back, one mapping): the
+	 * cells are drawn into it once, no copy; the changed rows are cleaned
+	 * to DDR at the end (the VDMA does not see the caches) */
+	int direct = dev && dz_surf_direct(d) && stride == (size_t)W * 4 &&
+		     (uint8_t *)dst == dev;
+	int cy0 = H, cy1 = 0;
 	if (dev) {
 		/* changed cells only, drawn straight into the painting buffer and
 		 * copied to the slot; everything again after a change of the
@@ -439,6 +444,8 @@ static int render(int d)
 		}
 		full = !a->ckvalid || ++a->frames % 120 == 0;
 		if (full) {
+			cy0 = 0;
+			cy1 = H;
 			for (int y = 0; y < H; y++) {
 				uint32_t *row = dst + (size_t)y * W;
 				int inside = y >= oy && y < oy + rows * ch;
@@ -446,6 +453,8 @@ static int render(int d)
 				for (int x = 0; x < W; x++)
 					if (!inside || x < ox || x >= ox + cols * cw)
 						row[x] = bg;
+				if (direct)
+					continue;
 				if (!inside)
 					memcpy(dev + (size_t)y * stride, row, (size_t)W * 4);
 				else {
@@ -465,11 +474,17 @@ static int render(int d)
 					continue;
 				*ck = c.key;
 				cell_draw(&c, dst + (size_t)y0 * W + x0, W, cw, ch);
-				for (int y = y0; y < y0 + ch; y++)
+				if (y0 < cy0)
+					cy0 = y0;
+				if (y0 + ch > cy1)
+					cy1 = y0 + ch;
+				for (int y = y0; !direct && y < y0 + ch; y++)
 					memcpy(dev + (size_t)y * stride + (size_t)x0 * 4,
 					       dst + (size_t)y * W + x0, (size_t)cw * 4);
 			}
 		a->ckvalid = 1;
+		if (direct && cy1 > cy0)
+			dz_slot_clean(dev + (size_t)cy0 * stride, (size_t)(cy1 - cy0) * stride);
 		__sync_synchronize();
 		dz_surf_clean(d);
 		a->ms = (float)(now_ms() - t0);

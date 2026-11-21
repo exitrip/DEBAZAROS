@@ -65,6 +65,11 @@ tiles / waterfall. Not tried: a movie with loop 0 that ends by itself (stale
 "load" line?).
 
 Built 2026-11-19/20, tested only by readback, host tests or briefly:
+- [ ] Cached slots (dzmem): the test plan is now `sw/SLOTMEM.md` section 5
+  (T0-T6, fresh boot + serial console + bench mode, a correctness test
+  must fail on a known-bad setup first). The old part 2 retest is
+  CANCELLED: the WT + WB design is wrong on the A9 (WT = non-cacheable in
+  L1). Keep dzmem unloaded until SLOTMEM.md step 4 passes.
 - [ ] Crops outside the slot (task 27): only VDMA addresses were checked.
   Look at a monitor: crop y -360 (the slot before bleeds in), Wall tab
   "Centre" with a 640x480 movie, an LFO on /disp/0/crop/y (film strip), a
@@ -146,7 +151,7 @@ wedge (avoid: CLAUDE.md).
 | 23 | Fleet: 2-12+ units on a LAN, network control, time sync (Fleet, FLEET.md) | 6, 11 | TODO: design only |
 | 24 | Slit scan and sample-and-hold effects (section 18) | 6 | DOING: analysis + measurements 2026-11-19; the cheap set (debazd slit.c: row / column slit, waterfall, scanner bands, tile hold) built; open: banded time displacement, capture-DMA tests with a live input |
 | 25 | LuaJIT scripts into a slot: between the C effects and the OSC API (sw/dzlua, debazd lua.c, web Console tab Lua) | 6 | DONE on .236 2026-11-20: turtle / lines / circles / text / raw FB, live params, cue state, claim by other writers, log + errors in the web; + osc()/osc_get() from scripts, MIDI by FFI raw MIDI, `audio` (features, spectrum, samples: debazd shared memory /dev/shm/dzreact), 12 templates incl. an oscilloscope, web editor with highlighting + luaparse lint + API reference (sw/README.md); fluidsynth + TimGM6mb soundfont in the image recipe (2026-11-20, pushed to .236 with tools/pkgpush.sh, dzsynth.sh, template midi-arp; synth audio tap = react source synth via asound.conf debaz_tap<n>); open: not in an image yet, a vsync-locked frame clock (now a timer: may tear), a faster fade (DDR bound) |
-| 26 | Shared slots: paint, scripts, movies and the capture write one slot together (section 19) | 25 | DOING: steps 1-2 DONE on .236 2026-11-20 (splat on live slots, dzlua layer mode + grab, measured); NEXT on the build machine: the cached-slot experiment (u-dma-buf, section 19 step 5); step 4 only as a cheap toggle |
+| 26 | Shared slots: paint, scripts, movies and the capture write one slot together (section 19) | 25 | DOING: steps 1-2 DONE on .236 2026-11-20 (splat on live slots, dzlua layer mode + grab, measured); step 5 cached slots: module dzmem BUILT + MEASURED 2026-11-20 (WB fade 5.4x, reads 2x, WT writes need no clean; section 19); INTEGRATED in libdz 2026-11-20 (dz_slot WT, dz_slot_rd WB, fbfeed via dzmem; A/B: grab -18 %, splat rect 3x, others equal; visual clean); part 2 (paint buffer = the slot) built + benched, then the BOARD HUNG in a live-slot test: rule changed, retest with the user (section 19); step 4 only as a cheap toggle |
 | 27 | Crops outside the slot: negative / large `/disp/<d>/crop` x, y (2026-11-20) | - | DONE on .236 2026-11-20 (disp.c at(): reserved-memory clamp at every switch; Wall tab "outside the slot" + Centre; sw/README.md "Video mode and video wall"). Design notes: The VDMA start = slot base + y x 7680 + x x 4 and the 12 slots are one strip of 1080-row slots: y < 0 shows the bottom of slot n-1, y past the bottom the top of slot n+1 (real neighbour bleed; an LFO on crop/y scrolls the stack like a film strip). x < 0 is NOT the left neighbour: each line starts with the end of the row above in the same slot (x past 1920 - w wraps the same way), so a small movie at the top left can be centred (crop x = -(w_mode - w_movie)/2) when the slot's right margin is black. Rules: the VDMA only reads (no corruption), but clamp the start address and the last line to the reserved memory (else Linux RAM is shown); x stays even; VSIZE recommit + fsync as now (frame exact). Work: disp.c clamp, the capture slot size rule, Wall tab ranges, check state / cues / LFO targets with negative ints, docs (x vs y differ). Side-by-side neighbours would need another slot layout (wider pitch): not part of it |
 | | **Done** | | |
 | 0 | **URGENT: reserved memory** (`PetaLinux/dtb/README.md`): 16 MB was too small; 128 MB is rejected by the kernel; 96 MB DTB installed | reboot | DONE, verified 2026-10-24: iomem hole, /dev/fb0, 6 usable slots, capture in slot 4, movie into slot 3 without corruption |
@@ -2401,4 +2406,119 @@ script in layer mode when the slot is live, `layer()` in the script or
    - if it works: shadows go away (debazd draws into the slot + flushes
      the dirty rectangle), dzlua's canvas = the slot, saves / ASCII /
      slit / grab read at cached speed, memory frees ~8 MB per painted slot.
+   BUILT + MEASURED on .236 2026-11-20 (not u-dma-buf: it allocates from a
+   DMA pool, our slots need fixed addresses): kernel module **dzmem**
+   (recipe recipes-modules/dzmem, NOT in the image, not loaded at boot;
+   sw/include/dzmem.h; push: `pkgpush.sh kernel-module-dzmem dzmem`,
+   `sudo insmod /lib/modules/$(uname -r)/extra/dzmem.ko`). /dev/dzmem maps
+   the 96 MB region per open file as WB / WT / WC / UC (remap_pfn_range, no
+   kernel alias); ioctl SYNC = L1 by address on the caller's mapping
+   (__cpuc_flush_dcache_area, broadcast to the other core) + PL310 by
+   physical range (outer_*_range). Tool: `sudo dzmemtest bench|check|show|
+   capture` (sw/tools/dzmemtest.c).
+   - check PASS (64 KB window): TO_DEVICE before sync 15208 / 16384 words
+     not in DDR, after 0; FROM_DEVICE before 16352 / 16384 stale, after 0;
+     WT writes reach DDR with no clean.
+   - bench (slot 10, 8.3 MB): /dev/mem write 296 MB/s, read 127, fade
+     1280x720 in place 106 ms; WB write 209, read 238, fade 19.5 ms (5.4x);
+     WT write 327, read 132, fade 74; WC write 329, read 153, fade 91; UC
+     76 / 53 / 206. Sync WB: clean of a full slot 18.5 ms, invalidate 17.6,
+     768 KB (100 rows) 2.4 ms, a 100 px rect row by row 0.3 ms (~3 us/KB:
+     PL310 line operations). show (full 720p frame per step): WB + clean 29
+     fps (13 ms sync), WT 46 fps (0 ms: WT needs only the write buffer).
+   - an oops on the way: the first SYNC had an "L2 all ways" option =
+     outer_flush_all, which is BUG_ON(!irqs_disabled()) (single-core
+     suspend/kexec only): process killed, kernel tainted, board kept
+     running. Removed (the flag returns -EOPNOTSUPP).
+   - reading it: CPU-to-CPU sharing is free when every CPU user maps the
+     slot cacheable (WB or WT: one PIPT L1 + physical L2), so only the DMA
+     side needs maintenance. Full-frame writers (fbfeed, anim, a full
+     dzlua present) -> WT: as fast as WC and no clean. Read-heavy or
+     read-modify-write work (fades, grab, save, ASCII, slit, splat reads)
+     -> WB: 2-5x, but a clean of what changed before the VDMA scans it
+     (fine for dirty rectangles, 13 ms for a whole frame). A WB reader of a
+     slot that a DMA (the capture) or a non-cacheable writer filled needs
+     FROM_DEVICE first.
+   - capture test PASSED 2026-11-20 (laptop HDMI-1 -> HDMI_2, 1280x1024,
+     an animated window): slot 4 read through WB without FROM_DEVICE =
+     STALE (cached checksum != uncached), with FROM_DEVICE before each read
+     = identical; the capture kept running (only reads, no dirty lines).
+   - INTEGRATED in libdz 2026-11-20 (tested on .236, NOT committed yet;
+     step 1 of the integration = same code paths, only the memory type):
+     dz_map opens /dev/dzmem twice when it is loaded (INFO base must be
+     DZ_SLOT_BASE): `dz_slot()` = a WT mapping (writes reach DDR: the VDMA
+     needs no clean, nothing changes for the writers), new `dz_slot_rd()`
+     = a WB mapping, READ ONLY (never dirty, so never a clean; L1/L2 are
+     physical, so it sees the WT writes of every process at once). The
+     capture slot stays uncached (a DMA writes it). Read sites on
+     dz_slot_rd: dz_draw adopt + splat read + grab, sprite grab, ASCII
+     source, slit source, dzlua grab + first canvas read. fbfeed writes
+     through `-d /dev/dzmem -o <offset>` (WT by ioctl). `DZ_DZMEM=0` in the
+     environment = the old path (/dev/mem, fb0); debazd logs "slot memory
+     CACHED" or "uncached" at start.
+   - A/B (interleaved rounds, debazd restarted with DZ_DZMEM=0 / unset,
+     1280x1024, a 720p movie on slot 6): grab full slot 125/122 -> 102/100
+     ms; sprite grab 4.2/4.3 -> 3.0/3.1 ms; splat rect 6.7/6.3 -> 2.0/2.7
+     ms; splat stroke 95/99 -> 87/81 ms; brush, text, ASCII, slit about
+     equal; dzlua flower alone 45-46 -> 47-49 ms (writes: WT = same as
+     before); movie 22.5-23 fps at ~177 % CPU both ways; flower layer over
+     the movie 99-134 ms both ways (noisy). dzmemtest scattered 20000 x
+     32 B: write /dev/mem 1.61, WT 1.77, WB 4.70 ms; read /dev/mem 14.5,
+     WT 8.95, WB 6.95 ms. Small gains: today's hot paths are writes, and
+     debazd's shadows already hide most reads.
+   - visual (USB capture of HDMI_1 on the laptop, effects off: LFOs off,
+     xfade 0, osc gains 0, then /state/recall): movie + rect splats and the
+     flower script = clean frames, no stale stripes, no tearing.
+   - lessons: debazd resume restarts the scripts of the last state after
+     every restart (clean up before you measure); rmmod fails while
+     debazd holds /dev/dzmem (use DZ_DZMEM=0, not rmmod, for A/B).
+   - PART 2 (2026-11-20, debazd paint buffer = the slot, NOT committed):
+     with dzmem, a full-slot canvas with autoflush on is DIRECT: its
+     buffer pointer is the slot's write-back mapping (`dz_slot_wb()`), no
+     RAM buffer, no read of the slot to start; present() = dzmem clean of
+     the dirty rectangle (`dz_slot_clean()`, row by row when that touches
+     much less). Autoflush off (batch), the mode-sized canvas and live
+     slots keep a RAM buffer. Fade on a direct surface reads each row
+     through write-back and stores it through the write-through alias (no
+     dirty lines, no clean: a full-slot clean walks 260k lines, 16.5 ms).
+     Transforms move a direct surface back to RAM (dz_surf_ram, RAM
+     permitting; the idle trim makes it direct again after 60 s).
+     /img/<s>/file draws the image first, then black only around it (a
+     black fill first would reach DDR through cache write-backs = a black
+     flash). dzmemtest ddr = cached view vs DDR word by word.
+     Bench (tools/bench/bench-direct.lua + ab2.sh, slot 9, 2 interleaved
+     rounds each, uncached vs direct): RAM in paint buffers 24.3 MB -> 0
+     (8.1 MB after a transform); first draw after a restart 88 -> 0.7 ms;
+     clear full 40 -> 26; fade 62 -> 53; grab another slot 125 -> 79-103;
+     grab own slot 90 -> 0.2; rect 0.5 -> 1.0, brush 0.34 -> 0.47 (the
+     clean ioctl); stroke, text, scroll, image load, saves equal;
+     rotozoom 72 -> 85-89 for 5 calls (the first moves to RAM, ~150 ms).
+     dzmemtest ddr after every direct run: cached view = DDR.
+   - ⚠️ BOARD HUNG (2026-11-20 ~04:00, .236; no ping v4/v6, HDMI picture
+     frozen; needs a power cycle) in the first run of bench-mem with
+     part 2: the first test where debazd had dirty WRITE-BACK lines in a
+     slot (slot 6, text splat into the direct buffer of a LIVE slot)
+     while fbfeed wrote the same slot WRITE-THROUGH on the other core,
+     and ASCII wrote cells through write-back and copied them through the
+     write-through alias. Different cache attributes for the same memory
+     are not coherent by the architecture ("mismatched memory
+     attributes"); not proven to be the cause (the kernel was tainted by
+     the earlier oops too). Changed after the hang, NOT yet tested: no
+     direct surface on a live slot (get(); dz_surf_splat_area back to
+     its RAM buffer), a movie start cleans and drops a direct surface,
+     dz_draw_adopt cleans first, ASCII on a direct surface writes only
+     through write-through. RULE: never dirty write-back lines in a slot
+     that anyone writes through another mapping at the same time.
+   - ⚠️ REVIEW 2026-11-20 (after the hang): the Cortex-A9 L1 treats
+     write-through pages as NON-CACHEABLE (TRM 7.4.3). A WT store does
+     not update a line that the WB mapping holds in the L1: part 1 can
+     read stale pixels, part 2 can lose writes (a dirty WB line evicted
+     over newer WT data). The design above is replaced by
+     `sw/SLOTMEM.md`: one memory type per slot at a time (STILL = WB,
+     STREAM / capture = WC, no WT), enforced and flushed by dzmem v2,
+     plus a new test plan. The NEXT line below is superseded.
+   - NEXT (with the user): power cycle .236, reload dzmem, run bench-mem
+     + bench-direct with the rule above, a long soak (movie + splats +
+     ASCII + slit + a script) watched on the USB capture; then the dzlua
+     canvas = the slot; dzmem into the image + loaded at boot.
 

@@ -405,6 +405,8 @@ static int list_fonts(const char *dir, int depth)
 }
 
 static void handle_pix(dz_msg *m);
+static void opt_reply(const char *prefix);
+static void opt_reset(void);
 
 static void handle(dz_msg *m, void *ctx)
 {
@@ -422,6 +424,15 @@ static void handle(dz_msg *m, void *ctx)
 	}
 	if (!strcmp(m->path, "/ping")) {
 		reply("/pong", "");
+		return;
+	}
+	if (!strcmp(m->path, "/stats/op")) {	/* [prefix] */
+		opt_reply(m->n > 0 && m->a[0].type == 's' ? m->a[0].s : NULL);
+		return;
+	}
+	if (!strcmp(m->path, "/stats/op/reset")) {
+		opt_reset();
+		reply("/stats/op/reset", "");
 		return;
 	}
 	if (!strcmp(m->path, "/info")) {
@@ -588,10 +599,102 @@ static void handle_pix_msg(dz_msg *m);
 
 /* one pixel-domain message; then the buffers read from live slots go
  * (shared slots, ROADMAP.md section 19) */
+/* ---- op timing (sw/SLOTMEM.md rule 6, 2026-11-21): every pixel message is
+ * timed IN the process (handler + job end), keyed by its path with the slot
+ * number as "*" (/draw/9/fade -> /draw/ * /fade without spaces); the last
+ * OPT_N durations per key give median / p95 / min / max for /stats/op. */
+#define OPT_KEYS	96
+#define OPT_N		256
+static struct {
+	char  key[40];
+	unsigned long count;
+	float ms[OPT_N];
+} opt[OPT_KEYS];
+static int opt_n;
+static pthread_mutex_t opt_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static double opt_now(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+}
+
+static void opt_key(const char *path, char *k, size_t n)
+{
+	size_t o = 0;
+
+	for (const char *p = path; *p && o + 2 < n; p++) {
+		if (*p >= '0' && *p <= '9' && p > path && p[-1] == '/') {
+			while (p[1] >= '0' && p[1] <= '9')
+				p++;
+			k[o++] = '*';
+			continue;
+		}
+		k[o++] = *p;
+	}
+	k[o] = 0;
+}
+
+static void opt_add(const char *path, double ms)
+{
+	char k[40];
+	int i;
+
+	opt_key(path, k, sizeof(k));
+	pthread_mutex_lock(&opt_mu);
+	for (i = 0; i < opt_n && strcmp(opt[i].key, k); i++)
+		;
+	if (i == opt_n && opt_n < OPT_KEYS)
+		snprintf(opt[opt_n++].key, sizeof(opt[0].key), "%s", k);
+	if (i < opt_n)
+		opt[i].ms[opt[i].count++ % OPT_N] = (float)ms;
+	pthread_mutex_unlock(&opt_mu);
+}
+
+static int fcmp(const void *a, const void *b)
+{
+	float x = *(const float *)a, y = *(const float *)b;
+
+	return (x > y) - (x < y);
+}
+
+static void opt_reset(void)
+{
+	pthread_mutex_lock(&opt_mu);
+	opt_n = 0;
+	memset(opt, 0, sizeof(opt));
+	pthread_mutex_unlock(&opt_mu);
+}
+
+/* /stats/op [prefix]: one reply per key: key count median p95 min max (ms) */
+static void opt_reply(const char *prefix)
+{
+	float v[OPT_N];
+
+	pthread_mutex_lock(&opt_mu);
+	for (int i = 0; i < opt_n; i++) {
+		unsigned long c = opt[i].count;
+		int n = c < OPT_N ? (int)c : OPT_N;
+
+		if (!n || (prefix && strncmp(opt[i].key, prefix, strlen(prefix))))
+			continue;
+		memcpy(v, opt[i].ms, (size_t)n * sizeof(float));
+		qsort(v, (size_t)n, sizeof(float), fcmp);
+		reply("/stats/op", "siffff", opt[i].key, (int)c, v[n / 2], v[(n * 95) / 100 < n ? (n * 95) / 100 : n - 1],
+		      v[0], v[n - 1]);
+	}
+	pthread_mutex_unlock(&opt_mu);
+}
+
 static void handle_pix(dz_msg *m)
 {
+	double t0 = opt_now();
+
 	handle_pix_msg(m);
 	dz_draw_job_end();
+	opt_add(m->path, opt_now() - t0);
 }
 
 static void handle_pix_msg(dz_msg *m)
@@ -1110,6 +1213,9 @@ int main(int argc, char **argv)
 			(unsigned)dz_disp_addr(d), dz_disp_slot(d));
 	fprintf(stderr, "debazd: %d of %d slots inside reserved memory\n",
 		dz_slots_usable(), DZ_SLOTS);
+	dz_slot(DZ_SLOT_BLANK, 4, NULL);	/* opens /dev/dzmem when it is there */
+	fprintf(stderr, "debazd: slot memory %s\n", dz_slot_cached()[0] ?
+		"dzmem v2 (write-combined, write-back for still paint slots)" : "uncached (/dev/mem, fb0)");
 	if (!sim && dz_capture_addr() &&
 	    !dz_reserved(dz_capture_addr(), DZ_SLOT_PITCH))
 		fprintf(stderr, "debazd: WARNING capture writes 0x%08X, OUTSIDE reserved "

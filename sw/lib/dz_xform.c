@@ -21,7 +21,7 @@ static size_t    spare_n;
  * when src == dst).
  */
 typedef struct {
-	int             dst, w, h, plain;
+	int             dst, w, h, plain, direct;
 	const uint32_t *src;
 	uint32_t       *out;
 	uint8_t        *dev;
@@ -49,7 +49,10 @@ static int ensure_spare(size_t n)
 static int xf_begin(xf_t *x, int dst, int src)
 {
 	int sw, sh;
-	uint32_t *d = dz_surf(dst, &x->w, &x->h), *s;
+	uint32_t *d, *s;
+
+	dz_surf_ram(dst);		/* direct surface -> RAM buffer (faster here) */
+	d = dz_surf(dst, &x->w, &x->h);
 
 	if (!d)
 		return -1;
@@ -60,10 +63,13 @@ static int xf_begin(xf_t *x, int dst, int src)
 		return -1;
 	x->dst = dst;
 	x->plain = dz_surf_plain(dst);
+	x->direct = dz_surf_direct(dst);
 	if (x->plain) {
 		x->src = s;
 		x->out = spare;
-		x->dev = dz_surf_dev(dst, &x->stride);
+		/* direct (the buffer is the slot): no rows into the slot while
+		 * the source may be that same slot; one copy at the end */
+		x->dev = x->direct ? NULL : dz_surf_dev(dst, &x->stride);
 	} else {
 		if (s == d) {			/* blending needs the old target too */
 			memcpy(spare, d, (size_t)x->w * x->h * 4);
@@ -93,6 +99,29 @@ static void xf_row(xf_t *x, int y)
 
 static void xf_end(xf_t *x)
 {
+	if (x->plain && x->direct) {
+		/* the frame into the slot through the write-through mapping
+		 * (reaches DDR: no clean; full canvas = contiguous rows) */
+		size_t st;
+		uint8_t *dev = dz_surf_dev(x->dst, &st);
+
+		if (dev && st == (size_t)x->w * 4) {
+			memcpy(dev, x->out, (size_t)x->w * x->h * 4);
+			__sync_synchronize();
+			dz_surf_clean(x->dst);
+			return;
+		}
+		{
+			int w, h;
+			uint32_t *d = dz_surf(x->dst, &w, &h);
+
+			if (d)
+				memcpy(d, x->out, (size_t)x->w * x->h * 4);
+		}
+		dz_surf_dirty(x->dst, 0, 0, x->w, x->h);
+		dz_surf_finish(x->dst);
+		return;
+	}
 	if (x->plain) {
 		uint32_t *old = dz_surf_swap(x->dst, x->out);
 
