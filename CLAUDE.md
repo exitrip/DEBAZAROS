@@ -17,7 +17,9 @@ artifacts/..._dsp). `signed-mixer`, `global-pclk`, `dsp-pipe` are all in main.
 point; `nuMix` and the other branches are old.
 Current work plan and status: `ROADMAP.md` (task 17 = cues/scenes/shows, DOING Nov 2026).
 Untested work: ONE list, ROADMAP.md "Test backlog" (consolidated 2026-11-20; add new
-untested items there). XADC reads 0 = hardware (VDDA needs 1V8, rework TBD).
+untested items there). XADC reads 0 = hardware (VDDA needs 1V8): .137 has the
+1V8 rework and its XADC WORKS (2026-11-21, iio:device0, debazd /stats temp_c,
+web status chip); the other boards still read 0.
 
 ⚠️ **The Vivado project is fragile.** Recent history includes a broken/recovered build
 ("recovered a decent build... after breaking trying out frame buffer read IP").

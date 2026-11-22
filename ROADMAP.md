@@ -59,7 +59,44 @@ Done / settled on 2026-11-20 (user):
 - [x] HDMI_1 audio out: heard in several configurations (all USB-dongle
   audio goes out of HDMI_1).
 - XADC: every channel reads 0 = HARDWARE: VDDA needs a 1V8 supply (board
-  rework, TBD). No software work until then.
+  rework). 2026-11-21: .137 (debaz-88d0e3) has the 1V8 rework and its XADC
+  WORKS (Linux xadc driver, /sys/bus/iio/devices/iio:device0; 5 samples,
+  load 1.1 = dzlua 70 % + debazd + dzaudio): die 69.3-69.6 C, VCCINT /
+  VCCBRAM / VCCPINT 1.00-1.02 V, VCCAUX / VCCPAUX 1.80-1.81 V, VCCO_DDR
+  1.50-1.52 V, VREFP 1.25 V, VREFN 5 mV (all nominal). debazd /stats
+  temp_c and the web status chip show it already (no change needed).
+  Alarm thresholds are all off (temp rising 4095, events disabled).
+  OPEN: temperature at idle and under full load (0-85 C commercial part,
+  no heat sink?); an over-temperature warning (IIO threshold event or a
+  debazd check at ~80 C); rework the other boards.
+  External XADC inputs (traced 2026-11-21: Vivado pin list + the unofficial
+  EBAZ4205 KiCad + pcb/3xHDMI; the DATA headers are MIRRORED between the two
+  schematics: EBAZ pin n = adapter pin n+1 (odd) / n-1 (even), checked
+  against every XDC pin): VP/VN are tied to GND, VREFP = GNDADC by 0R =
+  internal reference. Of the 16 VAUX pairs (bank 35) only 3 pairs have both
+  balls routed on the EBAZ, and all go to the adapter: VAUX11 = K19 (P,
+  HDMI1 DDC SCL, FPGA side of the Q4 shifter, R24 2K2 to 3V3, NOT in the
+  design) + J19 (N, HDMI1 CEC, R5 27K to 3V3, driven by an xlconstant); VAUX4
+  = J18 (HDMI1 HPD input) + H18 (HDMI0 CEC); the rest are TMDS. NO free pin
+  takes ADC readings as is. Best candidate = VAUX11 (both functions unused):
+  remove R24 + Q4 and R5 on the adapter, free K19/J19 in the BD/XDC,
+  instantiate the XADC in the PL with VAUXP/N[11] (hard block, no slices;
+  check that the PS-XADC / Linux driver still works next to it), DT
+  xlnx,channels for vaux11; input 0-1 V (divider), J19 = signal ground.
+  The unofficial schematic says XC7Z010-1CLG400I (industrial, Tj 100 C):
+  check the chip marking.
+  Second channel VAUX4 = J18 (P, HDMI1 HPD) + H18 (N, HDMI0 CEC): move HPD1
+  to K18 (HDMI1 SDA line, MRCC): cut /HDMI1_HPD (all B.Cu, 25 mm, no via)
+  between J8.5 and the Q8/R41 node, remove Q3 + R21, wire the Q8/R41 node
+  to J8.12 (K18); remove R6 (27K on HDMI0 CEC). XDC: HDMI_HPD[1] -> K18
+  (same GPIO bit). The headers are full (each: 2 x 5V, 3 x GND, 15
+  signals, EBAZ pin 10 NC); lines with unused functions: H16/H17 (HDMI0
+  DDC, MRCC), K18/K19 (HDMI1 DDC), H18/J19/R19 (CEC 0/1/2).
+  ⚠️ HDMI0 cannot be a TMDS INPUT: its clock pins F19/F20 are
+  IO_L15_DQS, not clock-capable (HDMI1 L16/L17 and HDMI2 N20/P20 are
+  SRCC). A 2-input variant uses HDMI1 + HDMI2 as inputs, and an HDMI1
+  input needs K18/K19 for its EDID and J18 for HPD: it conflicts with
+  VAUX11 / VAUX4 unless HDMI1's DDC shifters are rewired to H16/H17.
 - Fan ports / PL_KEY function select / events: DEFERRED (user), see the
   gateware group below.
 

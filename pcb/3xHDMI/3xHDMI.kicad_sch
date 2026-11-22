@@ -6662,6 +6662,27 @@
 		)
 		(uuid "ff9e8864-faa5-4470-b125-fdab365eaf45")
 	)
+	(text_box "XADC requires jumping C327-VADC to C2354-VDDA (or another 1V8 source, VDDA's noise has not been quantified)\n\nXADC BREAKOUT PLAN + TMDS CLOCK LIMITS (notes 2026-11-21, from the Vivado pin list of XC7Z010-CLG400,\nthe unofficial EBAZ4205 KiCad and this schematic; pins below = THIS board's J7/J8/J9 numbers)\n\nHEADER NUMBERING: EBAZ4205 DATAn pin p = adapter pin p+1 (p odd) / p-1 (p even). Checked against every XDC pin.\nHeaders are full: 2x +5V, 3x GND, 15 signals each; EBAZ pin 10 is NC on all three.\n\nTMDS CLOCK PINS (an INPUT TMDS clock must enter an MMCM on dedicated clock routing):\n  HDMI0  F19/F20 = IO_L15_T2_DQS_AD12_35  NOT clock-capable -> HDMI0 is OUTPUT ONLY. Never an input.\n  HDMI1  L16/L17 = IO_L11_T1_SRCC_35      clock-capable -> input or output\n  HDMI2  N20/P20 = IO_L14_T2_SRCC_34      clock-capable -> input or output (data split over banks 34/35)\n  A 2-input variant = HDMI1 + HDMI2 in, HDMI0 out. An HDMI1 input needs K18/K19 (EDID) and an HPD line.\n\nXADC: VP/VN (K9/L10) are tied to GND on the EBAZ4205; VREFP = GNDADC by 0R (internal reference).\nOf the 16 VAUX pairs (all bank 35) only VAUX11 and VAUX4 have BOTH balls routed to a header without TMDS:\n  VAUX11  P = K19  J8.14  HDMI1_SCL (FPGA side of Q4, R24 2K2 to 3V3; not used in the gateware)\n          N = J19  J8.10  HDMI1_CEC (R5 27K to 3V3; driven by a constant)\n  VAUX4   P = J18  J8.5   HDMI1_HPD (FPGA side of Q8, R41 2K2 to 3V3)\n          N = H18  J9.16  HDMI0_CEC (R6 27K to 3V3)\n  Not usable: VAUX0/2/3/5/8/10/12/13 = TMDS pairs; VAUX1 and VAUX9 have only the N ball routed\n  (D18 = HDMI0_HPD J9.13, E19 = PL_KEY5 J9.17); VAUX6/7/14/15 balls are not routed on the EBAZ4205.\n\nREWORK ON THIS REV (v2):\n  VAUX11: remove R24, Q4, R5. Signal on J8.14, its ground/reference on J8.10.\n  VAUX4:  move HDMI1 HPD to K18 (J8.12, HDMI1_SDA line, MRCC): cut HDMI1_HPD (B.Cu only, no via) between\n          J8.5 and the Q8/R41 node, remove Q3 + R21, wire the Q8/R41 node to J8.12. Remove R6.\n          Signal on J8.5, its ground/reference on J9.16. XDC: HDMI_HPD[1] -> K18 (same GPIO bit).\n  Lost: HDMI1 DDC and CEC 0/1 (not used). Gateware: XADC instance in the PL with VAUXP/N[4] and [11].\n\nNEXT REV: route J8.14/J8.10 and J8.5/J9.16 as analog pairs, K18 = HDMI1_HPD. Front end before the\nheader: buffer + anti-alias filter, selectable 0-1.8 / 3.3 / 5 V and +/-12 V ranges -> 0-1 V at the pin\n(unipolar; VN = local reference; never above 3.3 V on the ball). The sample-and-hold needs a low source\nimpedance (buffer, or about 100R + 1-10 nF at the pin).\nRATE: 2 ADCs, about 1 MSPS each, shared by the channels in the sequence (default: 8 internal + 2 aux\n= about 95 kSPS each; independent mode, ADC B external only = about 480 kSPS each). Simultaneous mode\npairs VAUXn with VAUXn+8 (4 with 12, 3 with 11). Linux PS-XADC reads are much slower: stream from the PL.\nOther free lines (unused functions): H16/H17 (HDMI0 DDC, MRCC, behind Q2/Q1), R19 (HDMI2_CEC, bank 34)."
+		(exclude_from_sim no)
+		(at 421.64 88.9 0)
+		(size 118.11 82.7392)
+		(margins 1.5 1.5 1.5 1.5)
+		(stroke
+			(width 0.254)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(face "KiCad Font")
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "5faadac0-d28b-48f5-badf-866a91ca988f")
+	)
 	(junction
 		(at 109.22 186.69)
 		(diameter 0)
