@@ -49,10 +49,12 @@ const DEF = { slot: 6, tool: "brush", color: "#ff9a3c", color2: "#2040ff", fill:
   alpha: 1, blend: "normal", text: "DEBAZAROS", ttf: 64, scale: 2, sprite: 0, sscale: 1, angle: 0,
   gangle: 45, tl: "#ff0000", tr: "#00ff00", bl: "#0000ff", br: "#ffffff",
   rz: 3, zoom: 1.04, dx: 8, dy: 0, waxis: 0, wamp: 12, wper: 90,
-  rot: 0, sfill: "solid", sides: 5, pstyle: "star", inner: 0, skip: 2, gtype: "linear", batch: false, tol: 32 };
+  rot: 0, sfill: "solid", sides: 5, pstyle: "star", inner: 0, skip: 2, gtype: "linear", batch: false, tol: 32,
+  ltext: "", lfont: "ttf", lerase: true, llive: false, lafter: "keep" };
 const s = { ...DEF, ...store.get("paint", {}) };
+if (!s.lver) { s.lafter = "keep"; s.lver = 2; } // 2026-11-21: Shift+Enter keeps the text and the caret
 const SHAPES = ["rect", "ellipse", "shape"]; // rotatable, gradient-filled (dz_shape.c)
-const DRAG = ["line", "gradient", ...SHAPES]; // tools that use press-drag-release
+const DRAG = ["line", "gradient", "live", ...SHAPES]; // tools that use press-drag-release
 let cv, cx, ov, ox, gv, drawing = false, start = null, pending = [], last = null, raf = false;
 let end = null, rotating = null, rotOut = null, rotEl = null; // drag state, rotation slider
 let setTool = () => {}, toolKeys = {};
@@ -299,6 +301,7 @@ function setRot(v) {
   s.rot = Math.round(((v + 540) % 360) - 180);
   if (rotEl) { rotEl.value = s.rot; rotOut.textContent = s.rot; }
   save();
+  if (lbox && !drawing) liveRedraw();
 }
 // rubber band on the overlay while a drag tool is down
 function band(a, b, lock) {
@@ -307,6 +310,7 @@ function band(a, b, lock) {
   ox.setLineDash([12, 8]);
   ox.lineWidth = 3;
   if (SHAPES.includes(s.tool)) return drawShape(ox, s.tool, geom(a, b, lock), false);
+  if (s.tool === "live") return drawShape(ox, "rect", geom(a, b, lock), false);
   ox.beginPath();
   if (s.tool === "gradient" && s.gtype === "radial") ox.arc(a[0], a[1], Math.hypot(b[0] - a[0], b[1] - a[1]), 0, Math.PI * 2);
   else { ox.moveTo(...a); ox.lineTo(...b); }
@@ -321,6 +325,161 @@ function previewRadial(x, y, r) {
   cx.fillRect(0, 0, W, H);
 }
 const dragAngle = (a, b) => Math.round((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI);
+
+// ---- live text (2026-11-21): drag a box (Shift: rotate = the rotation
+// slider), type into it, Shift+Enter (or Ctrl+Enter) draws it on the board.
+// The text wraps at the box width and shrinks until it fits the box height
+// (max = the ttf px / pixel × slider). "live" = draw every change at once (the
+// box is erased with colour 2 first). The board measures ttf text with its
+// own font; the wrap here uses the browser's sans-serif with a 6 % margin, so
+// a ttf line can end a little short or long. The pixel font is exact (8 × 16).
+let lbox = null, livein = null, liveInfo = null;
+const mctx = document.createElement("canvas").getContext("2d");
+const TTF_LH = 1.17; // line height / px of LiberationSans (dz_text.c line_metrics)
+// lines + where each line starts in the text (out.starts: for the caret)
+function liveWrap(text, maxW, width) {
+  const out = [], starts = [];
+  let pos = 0;
+  for (const para of text.split("\n")) {
+    let line = "", ls = pos;
+    for (const word of para.split(/(?<= )/)) { // keep the spaces at the word ends
+      if (width(line + word) <= maxW || !line) { line += word; } else { out.push(line.trimEnd()); starts.push(ls); ls += line.length; line = word; }
+      while (width(line) > maxW && line.length > 1) { // a word longer than the box: break it
+        let k = line.length - 1;
+        while (k > 1 && width(line.slice(0, k)) > maxW) k--;
+        out.push(line.slice(0, k)); starts.push(ls);
+        ls += k;
+        line = line.slice(k);
+      }
+    }
+    out.push(line.trimEnd()); starts.push(ls);
+    pos += para.length + 1;
+  }
+  out.starts = starts;
+  return out;
+}
+function liveLayout() {
+  const pix = s.lfont === "pixel", t = normText(s.ltext || "", pix);
+  if (pix) {
+    for (let sc = Math.max(1, s.scale | 0); ; sc--) {
+      const cols = Math.max(1, Math.floor(lbox.w / (8 * sc)));
+      const lines = liveWrap(t, cols, (x) => [...x].length);
+      if (lines.length * 16 * sc <= lbox.h || sc === 1) {
+        const tw = Math.max(1, ...lines.map((l) => [...l].length)) * 8 * sc;
+        return { pix, lines, size: sc, lh: 16 * sc, tw, th: lines.length * 16 * sc, font: `${16 * sc}px monospace` };
+      }
+    }
+  }
+  for (let px = Math.max(8, s.ttf | 0); ; px = Math.max(8, Math.floor(px * 0.94))) {
+    mctx.font = `${px}px sans-serif`;
+    const width = (x) => mctx.measureText(x).width;
+    const lines = liveWrap(t, lbox.w * 0.94, width), lh = Math.ceil(px * TTF_LH);
+    if (lines.length * lh <= lbox.h || px === 8) {
+      const tw = Math.max(1, ...lines.map(width));
+      return { pix, lines, size: px, lh, tw, th: lines.length * lh, font: `${px}px sans-serif` };
+    }
+  }
+}
+// the board's x y: the top-left of the unrotated text, rotated about its centre;
+// put that centre where the box's top-left corner keeps the text in the box
+function livePos(L) {
+  const a = rad(s.rot), vx = -lbox.w / 2 + L.tw / 2, vy = -lbox.h / 2 + L.th / 2;
+  const cxw = lbox.cx + vx * Math.cos(a) - vy * Math.sin(a), cyw = lbox.cy + vx * Math.sin(a) + vy * Math.cos(a);
+  return [Math.round(cxw - L.tw / 2), Math.round(cyw - L.th / 2)];
+}
+function liveMsgs(erase) {
+  const L = liveLayout(), [r, g, b] = rgb(), m = [];
+  if (erase) {
+    m.push(net.message(`${D()}/fill`, "solid"));
+    m.push(net.message(`${D()}/rect`, ...rgb2(), Math.round(lbox.cx - lbox.w / 2), Math.round(lbox.cy - lbox.h / 2),
+      Math.round(lbox.w), Math.round(lbox.h), 0, net.float(s.rot)));
+  }
+  // a backslash typed stays one (the board reads \n \t \\ as escapes)
+  const txt = L.lines.join("\n").replaceAll("\\", "\\\\"), [x, y] = livePos(L);
+  if (txt.trim()) {
+    if (L.pix) m.push(net.message(`${D()}/text`, r, g, b, x, y, txt, L.size, 16, net.float(s.rot)));
+    else if (s.font) m.push(net.message(`${D()}/ttf`, r, g, b, x, y, L.size, txt, s.font, net.float(s.rot)));
+    else m.push(net.message(`${D()}/ttf`, r, g, b, x, y, L.size, txt, net.float(s.rot)));
+  }
+  return { m, L };
+}
+// draw the box text (the preview canvas, or the overlay with a caret)
+function liveDraw(ctx, L, erase, caret) {
+  ctx.save();
+  ctx.translate(lbox.cx, lbox.cy);
+  ctx.rotate(rad(s.rot));
+  if (erase) { ctx.fillStyle = s.color2; ctx.fillRect(-lbox.w / 2, -lbox.h / 2, lbox.w, lbox.h); }
+  ctx.font = L.font;
+  ctx.textBaseline = "top";
+  ctx.fillStyle = s.color;
+  const x0 = -lbox.w / 2, y0 = -lbox.h / 2;
+  L.lines.forEach((l, k) => ctx.fillText(l, x0, y0 + k * L.lh));
+  if (caret) {
+    ctx.strokeStyle = "#fff";
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2;
+    // the caret where the edit point is (the text before it, normalised as the board does)
+    const n = normText(livein.value.slice(0, livein.selectionEnd), L.pix).length, st = L.lines.starts;
+    let k = st.length - 1;
+    while (k > 0 && st[k] > n) k--;
+    const before = L.lines[k].slice(0, Math.max(0, n - st[k]));
+    const cxp = x0 + (L.pix ? [...before].length * L.lh / 2 : ctx.measureText(before).width) + 2;
+    ctx.beginPath(); ctx.moveTo(cxp, y0 + k * L.lh); ctx.lineTo(cxp, y0 + (k + 1) * L.lh); ctx.stroke();
+  }
+  ctx.restore();
+}
+function liveOverlay() {
+  if (!lbox || s.tool !== "live") return;
+  const L = liveLayout();
+  ox.save();
+  ox.translate(lbox.cx, lbox.cy);
+  ox.rotate(rad(s.rot));
+  ox.setLineDash([10, 6]);
+  ox.lineWidth = 2;
+  ox.strokeStyle = document.activeElement === livein ? "rgba(255,154,60,0.95)" : "rgba(255,255,255,0.6)";
+  ox.strokeRect(-lbox.w / 2, -lbox.h / 2, lbox.w, lbox.h);
+  ox.restore();
+  ox.globalAlpha = s.llive ? 0.35 : 0.8;
+  liveDraw(ox, L, false, document.activeElement === livein);
+  ox.globalAlpha = 1;
+  if (liveInfo) liveInfo.textContent = `${L.pix ? "pixel ×" + L.size : L.size + " px"}, ${L.lines.length} line${L.lines.length === 1 ? "" : "s"}` +
+    (L.th > lbox.h ? " (does not fit)" : "");
+}
+function liveInside(p) {
+  if (!lbox) return false;
+  const a = -rad(s.rot), dx = p[0] - lbox.cx, dy = p[1] - lbox.cy;
+  return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) <= lbox.w / 2 && Math.abs(dx * Math.sin(a) + dy * Math.cos(a)) <= lbox.h / 2;
+}
+function liveRedraw() { ox.clearRect(0, 0, W, H); liveOverlay(); }
+function liveFocus() { if (lbox && livein) { livein.focus({ preventScroll: true }); liveRedraw(); } }
+// every change in live mode: erase the box, draw the text (one bundle per frame)
+function liveSendNow() {
+  if (!lbox || !s.llive) return;
+  net.throttled("livetext", () => net.bundle(...liveMsgs(true).m));
+}
+function liveCommit() {
+  if (!lbox) return toast("drag a box on the canvas first (⌨ live tool)", true);
+  const erase = s.llive || s.lerase, { m, L } = liveMsgs(erase);
+  if (s.llive) net.send(net.bundle(...m));
+  else { beginOp(); m.forEach(bsend); endOp(); }
+  prevAllDraw(() => liveDraw(cx, L, erase, false));
+  if (s.lafter === "next") { // the box moves one box height down its own axis
+    const a = rad(s.rot);
+    lbox.cx -= Math.sin(a) * lbox.h;
+    lbox.cy += Math.cos(a) * lbox.h;
+  }
+  if (s.lafter !== "keep") { s.ltext = ""; livein.value = ""; save(); } // keep: the caret stays where it is
+  liveRedraw();
+}
+function liveErase() {
+  if (!lbox) return;
+  const m = [net.message(`${D()}/fill`, "solid"), net.message(`${D()}/rect`, ...rgb2(), Math.round(lbox.cx - lbox.w / 2),
+    Math.round(lbox.cy - lbox.h / 2), Math.round(lbox.w), Math.round(lbox.h), 0, net.float(s.rot))];
+  if (s.llive) net.send(net.bundle(...m)); else { beginOp(); m.forEach(bsend); endOp(); }
+  prevAllDraw(() => { cx.save(); cx.translate(lbox.cx, lbox.cy); cx.rotate(rad(s.rot)); cx.fillStyle = s.color2;
+    cx.fillRect(-lbox.w / 2, -lbox.h / 2, lbox.w, lbox.h); cx.restore(); });
+}
+function prevAllDraw(fn) { cx.globalAlpha = 1; cx.globalCompositeOperation = "source-over"; fn(); }
 
 // ---- sending strokes, batched per animation frame ----
 function flush() {
@@ -389,7 +548,7 @@ function pickAt(p) {
 // brush outline under the pointer (the overlay; drag tools draw their band there)
 function cursorAt(p) {
   ox.clearRect(0, 0, W, H);
-  if (!p) return;
+  if (!p) return liveOverlay();
   ox.setLineDash([]);
   ox.lineWidth = 2;
   ox.strokeStyle = "rgba(255,255,255,0.9)";
@@ -413,6 +572,7 @@ function cursorAt(p) {
     ox.moveTo(p[0], p[1] - 12); ox.lineTo(p[0], p[1] + 12);
     ox.stroke();
   }
+  liveOverlay();
 }
 
 function down(e) {
@@ -420,6 +580,7 @@ function down(e) {
   const p = toBoard(e);
   const [r, g, b] = rgb();
   if (e.altKey || s.tool === "pick") return pickAt(p);
+  if (s.tool === "live" && liveInside(p)) { e.preventDefault(); return liveFocus(); }
   beginOp();
   if (s.tool === "fill") {
     bsend(fillMsg());
@@ -469,7 +630,7 @@ function move(e) {
   if (!(drawing && DRAG.includes(s.tool))) cursorAt(toBoard(e));
   if (drawing && start && DRAG.includes(s.tool)) {
     const p = toBoard(e), lock = e.ctrlKey || e.metaKey;
-    if (e.shiftKey && SHAPES.includes(s.tool)) {	// Shift: rotate about the centre
+    if (e.shiftKey && (SHAPES.includes(s.tool) || s.tool === "live")) {	// Shift: rotate about the centre
       const g = geom(start, end, lock), a = (Math.atan2(p[1] - g.cy, p[0] - g.cx) * 180) / Math.PI;
       if (!rotating) rotating = { base: a, rot0: s.rot };
       const v = rotating.rot0 + a - rotating.base;
@@ -514,6 +675,13 @@ function up(e) {
       drawShape(cx, s.tool, g, true);
     }
     start = rotating = null;
+  } else if (s.tool === "live" && start) {
+    const g = geom(start, rotating ? end : toBoard(e), e.ctrlKey || e.metaKey);
+    start = rotating = null;
+    if (g.w > 8 && g.h > 8) { lbox = { cx: g.cx, cy: g.cy, w: g.w, h: g.h }; liveSendNow(); }
+    endOp();
+    // the pointer up gives the focus to the canvas: take it back after it
+    return setTimeout(liveFocus, 0);
   } else if (s.tool === "gradient" && s.gtype === "radial" && start) {
     const p = toBoard(e), r = Math.round(Math.hypot(p[0] - start[0], p[1] - start[1]));
     if (r > 8) {
@@ -533,6 +701,44 @@ function up(e) {
     flush();
   }
   endOp();
+}
+
+// the Live text card and the (invisible) input that takes the typing
+function liveCard() {
+  livein = h("textarea.livein", { spellcheck: false, autocomplete: "off", "aria-label": "live text",
+    oninput: () => { s.ltext = livein.value; save(); liveRedraw(); liveSendNow(); },
+    onfocus: liveRedraw, onblur: liveRedraw, onkeyup: liveRedraw, onselect: liveRedraw, onclick: liveRedraw,
+    onkeydown: (e) => {
+      if (e.key === "Enter" && (e.shiftKey || e.ctrlKey || e.metaKey)) { e.preventDefault(); liveCommit(); }
+      else if (e.key === "Escape") { e.preventDefault(); livein.blur(); }
+      else if (e.key === "Tab") {
+        e.preventDefault();
+        const a = livein.selectionStart;
+        livein.setRangeText("\t", a, livein.selectionEnd, "end");
+        s.ltext = livein.value; save(); liveRedraw(); liveSendNow();
+      }
+    } });
+  livein.value = s.ltext;
+  const sel = (key, opts, title, on) => h("select", { title, onchange: (e) => { s[key] = e.target.value; save(); on?.(); liveRedraw(); } },
+    opts.map(([v, l]) => h("option", { value: v, selected: v === s[key] }, l)));
+  const chk = (key, title, on) => h("input", { type: "checkbox", checked: s[key], title, onchange: (e) => { s[key] = e.target.checked; save(); on?.(); liveRedraw(); } });
+  liveInfo = h("span.hint", {}, "no box");
+  return card("Live text", livein,
+    row("font", sel("lfont", [["ttf", "TrueType (font above)"], ["pixel", "pixel font"]],
+      "TrueType: the font of the Text card, max size = ttf px; pixel: max size = pixel ×"), liveInfo),
+    row("erase", chk("lerase", "fill the box with colour 2 before the text is drawn (always on in live mode)"),
+      h("span.hint", {}, "box with colour 2 first")),
+    row("live", chk("llive", "draw every change at once (erase + text, up to one per frame); " +
+      "also in batch mode", () => { if (s.llive) liveSendNow(); }), h("span.hint", {}, "every key goes to the board")),
+    row("after send", sel("lafter", [["keep", "keep the text and caret"], ["clear", "clear the text"], ["next", "clear, box one line down"]],
+      "what Shift+Enter does after it draws: 'box one line down' moves the box by its height (along its rotation)")),
+    row(null,
+      h("button.primary", { title: "draw the box text (Shift+Enter or Ctrl+Enter while typing)", onclick: () => { liveCommit(); liveFocus(); } }, "Send ⇧⏎"),
+      h("button", { title: "fill the box with colour 2", onclick: liveErase }, "Erase box"),
+      h("button", { title: "remove the box (Esc)", onclick: () => { lbox = null; ox.clearRect(0, 0, W, H); if (liveInfo) liveInfo.textContent = "no box"; } }, "Drop box")),
+    h("p.hint", {}, "⌨ tool [K]: drag a box (Shift while dragging: rotate, or the rotation slider), " +
+      "then type - Backspace, Delete, arrows, Enter = new line. Shift+Enter draws it. Click in the box to type again. " +
+      "The text wraps at the box width and gets smaller until it fits."));
 }
 
 // the sprite the ◰ tool draws (the selected number, shared with the Media
@@ -591,10 +797,14 @@ export function init(root) {
     ["fill", "🪣 fill", "F", "/draw/<slot>/flood: the area of similar colour around the click (solid, linear or radial: the shape fill)"],
     ["pick", "💧 pick", "I", "take a colour from the preview (Alt+click with any tool)"],
     ["text", "A text", "T", "/draw/<slot>/text (pixel font)"], ["ttf", "Aa ttf", "", "/draw/<slot>/ttf (TrueType, UTF-8)"],
-    ["sprite", "◰ sprite", "", "/sprite/<id>/draw <slot> x y ..."]];
+    ["sprite", "◰ sprite", "", "/sprite/<id>/draw <slot> x y ..."],
+    ["live", "⌨ live text", "K", "live text: drag a box (Shift: rotate), type, Shift+Enter draws it (/draw/<slot>/ttf or /text, fitted to the box)"]];
   const tools = TOOLS.map(([t, label, key, tip]) =>
     h("button", { title: tip + (key ? `  [${key}]` : ""), onclick: () => setTool(t) }, label));
-  setTool = (t) => { s.tool = t; save(); tools.forEach((b, i) => b.classList.toggle("on", TOOLS[i][0] === t)); };
+  setTool = (t) => {
+    s.tool = t; save(); tools.forEach((b, i) => b.classList.toggle("on", TOOLS[i][0] === t));
+    if (ox) { ox.clearRect(0, 0, W, H); if (t === "live") liveFocus(); }
+  };
   toolKeys = Object.fromEntries(TOOLS.filter((x) => x[2]).map((x) => [x[2].toLowerCase(), x[0]]));
   setTool(s.tool);
   const pick = (key, title) => {
@@ -823,7 +1033,8 @@ export function init(root) {
         slider("ttf", 8, 300, 1, "ttf px"),
         spriteRow(),
         slider("sscale", 0.05, 4, 0.05, "sprite ×"),
-        slider("angle", -180, 180, 1, "angle")))));
+        slider("angle", -180, 180, 1, "angle")),
+      liveCard())));
   // board-side operations under the canvas, where there is room
   left.append(h("div.grid.paint-ops", {},
       card("Surface",
@@ -907,7 +1118,8 @@ export function init(root) {
     if (k === "enter" && s.batch) { e.preventDefault(); sendBatch(); }
     else if (k === "[" || k === "]") brushSet.size(k === "]" ? Math.max(s.size + 1, Math.round(s.size * 1.25)) : Math.min(s.size - 1, Math.round(s.size * 0.8)));
     else if (k === "x") picker.swap();
-    else if (k === "escape" && drawing && DRAG.includes(s.tool)) { drawing = false; start = null; ox.clearRect(0, 0, W, H); endOp(); }
+    else if (k === "escape" && drawing && DRAG.includes(s.tool)) { drawing = false; start = null; ox.clearRect(0, 0, W, H); endOp(); liveOverlay(); }
+    else if (k === "escape" && lbox && s.tool === "live") { lbox = null; ox.clearRect(0, 0, W, H); }
     else if (toolKeys[k]) setTool(toolKeys[k]);
   });
 }

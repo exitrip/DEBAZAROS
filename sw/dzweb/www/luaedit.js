@@ -732,7 +732,7 @@ than fade(); FB[] loops are the fastest pixel writes. MIDI: midi.* (the ALSA seq
 Full API: the top of sw/dzlua/prelude.lua.`;
 
 let ed, nameIn, slotSel, list, logEl, statEl, pkey, pval, timer = 0, polls = 0;
-let hl, band, diagEl, helpEl, lintRes = null, lintTimer = 0, lintGen = 0;
+let hl, gut, band, diagEl, helpEl, lintRes = null, lintTimer = 0, lintGen = 0;
 let runEl, runSeen = null, runMap = new Map(), listTimer = 0;	// scripts running on ANY slot (/lua/list)
 
 function listRunning() {
@@ -776,6 +776,18 @@ function paint() {
   }
   hl.scrollTop = ed.scrollTop;
   hl.scrollLeft = ed.scrollLeft;
+  gutter();
+}
+
+// line numbers: a column left of the text, rebuilt when the count changes
+let gutN = 0;
+function gutter() {
+  const n = ed.value.split("\n").length;
+  if (n !== gutN) {
+    gutN = n;
+    gut.textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n") + "\n";
+  }
+  gut.scrollTop = ed.scrollTop;
 }
 
 function diagRow(line, text, cls) {
@@ -949,7 +961,7 @@ export function init(root) {
   ed = h("textarea.code", { spellcheck: false, rows: 24, wrap: "off",
     title: "the script (Ctrl+Enter: save + run, Ctrl+S: save; Tab inserts 2 spaces)",
     oninput: changed,
-    onscroll: () => { hl.scrollTop = ed.scrollTop; hl.scrollLeft = ed.scrollLeft; },
+    onscroll: () => { hl.scrollTop = ed.scrollTop; hl.scrollLeft = ed.scrollLeft; gut.scrollTop = ed.scrollTop; },
     onkeyup: showHelp, onclick: showHelp,
     onkeydown: (e) => {
       if (e.key === "Tab" && !e.ctrlKey && !e.altKey) {
@@ -990,11 +1002,12 @@ export function init(root) {
   logEl = h("div.log.lualog", { role: "log" });
   runEl = h("div.row.lua-running", {}, h("span.hint", {}, "…"));
   hl = h("pre.luahl", { "aria-hidden": "true" });
+  gut = h("pre.luagut", { "aria-hidden": "true" });
   band = h("div.luaerr");
   diagEl = h("div.luadiag");
   helpEl = h("div.hint.luahelp", {}, "the help for the word at the cursor shows here");
   // the textarea keeps the size (resizable); the pre follows it
-  new ResizeObserver(() => { hl.style.height = `${ed.offsetHeight}px`; }).observe(ed);
+  new ResizeObserver(() => { hl.style.height = gut.style.height = `${ed.offsetHeight}px`; }).observe(ed);
 
   root.append(
     h("div.row", {}, nameIn, list,
@@ -1010,7 +1023,7 @@ export function init(root) {
       h("button", { title: "send /lua/<slot>/p/<key> value (also an LFO target)", onclick: setParam }, "Set"),
       statEl),
     runEl,
-    h("div.luaed", {}, hl, ed),
+    h("div.luaed", {}, hl, gut, ed),
     helpEl,
     diagEl,
     logEl,

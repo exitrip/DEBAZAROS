@@ -316,6 +316,7 @@ takes the font of the character's Unicode block (`script_font` in
 KR, Thai, Lao, Tibetan, Myanmar, Ethiopic, Khmer, Sinhala), then DejaVu
 Sans (Greek, Cyrillic, Armenian, Georgian, Hebrew, Arabic), FreeSerif and
 Droid Sans Fallback (kanji, kana). `tools/pushfonts.sh` sends all of them
+(or, with `-o`, packs them for the image recipe `debaz-fonts`, 2026-11-21)
 (~22 MB on disk; a font is loaded into RAM only when used), plus, when the
 zips are in ~/Downloads (`DZ_TYPODERMIC_ZIP`, `DZ_PASTOR_ZIP`), 731 Ray
 Larabie display fonts (Typodermic public-domain archive, CC0) and Pastor of
@@ -703,10 +704,39 @@ state). MIDI: a script opens an ALSA raw MIDI device with the FFI
 (card 1, clients 20-23) and aconnect/amidi/aseqdump; tested in and out
 through VirMIDI 1-0 (template `midi-io`).
 
+**dzaudio: audio engine, routing matrix (2026-11-21, `dzaudio/`):** the
+base for a mixer / router (later sources: movie audio, the HDMI_2 input,
+Lua; later outputs: 8-channel HDMI gateware, I2S). ONE fluidsynth
+(libfluidsynth by dlopen) renders each MIDI channel to its own stereo pair
+(`synth.audio-groups` 16) + reverb / chorus returns = 18 stereo inputs;
+a mono gain matrix maps them to the output channels of all sinks (ALSA
+PCMs, any channel count: `-o 0,1` = hw:DEBAZ,0 + hw:DEBAZ,1 = 4 channels,
+the default; `-o 0,1,3` adds I2S; `-o hw:X,Y:8` = an 8-channel device).
+MIDI in: sequencer client "FLUID Synth (debaz-synth)" (the old name: Lua
+midi.* and the VirMIDI wiring are unchanged). OSC on UDP 9002
+(`dzctl -p 9002 ...`): `/mix/route <in> <pair> [gain]` (in 0-15 = MIDI
+1-16, 16 rev, 17 cho; pair p = output channels 2p, 2p+1),
+`/mix/route/mono <inch> <outch> g`, `/mix/preset both|split|off|pair<N>`
+(both = default: everything on every pair; split = MIDI 1-8 -> pair 0,
+9-16 -> pair 1), `/mix/gain`, `/mix/pair/<p>/gain`, `/mix/routes`,
+`/mix/status`, `/mix/sf file`, `/mix/panic`. It writes debazd's copy into
+/tmp/dztap.<n> itself (react source synth; a debazd restart = 0 xruns, no
+watcher). Outputs: the first open sink paces the loop; the others take
+what fits (a sink without a clock, e.g. I2S with no master, is closed after
+500 ms and retried after 2, 4 .. 30 s; never stops the others: tested with
+`-o 0,1,3` on .137, HDMI xruns 0). Measured on .137 (period 256 = 5.3 ms):
+idle 5.4 % of a core (old fluidsynth program ~7 %), 12 voices 18 %
+(fluidsynth 15 %, mix NEON 3 %), RSS 18 MB. Not in debazd's state / cues
+yet. `sudo dzsynth.sh start [outs] [sf] [fx] [routing]` starts it;
+dzstart.conf `SYNTH="0,1"` at boot.
+
 **MIDI out to a synth (2026-11-20):** fluidsynth 2.2.2 (meta-multimedia,
 ALSA only: a bbappend removes PulseAudio) + the TimGM6mb General MIDI
 soundfont (recipe debaz-soundfonts, /usr/share/soundfonts/default.sf2) are in
-the image recipe; on .236 by `tools/pkgpush.sh` (below). `sudo dzsynth.sh
+the image recipe; on .236 by `tools/pkgpush.sh` (below). At boot (images
+after 2026-11-21): `SYNTH="1"` in dzstart.conf starts it after debazd (on
+the tap). By hand (in /home/ebaz/bin only: `sudo sh /home/ebaz/bin/dzsynth.sh
+start`): `sudo dzsynth.sh
 start [out 0|1|3] [soundfont] [fx]` starts it on a DEBAZ output and connects
 the four VirMIDI ports. Measured (48 kHz, 2 cores, reverb + chorus off):
 idle ~7 % of a core, 8 piano notes 12 %, 20 string notes 67 % (fx on: 25 %
@@ -833,15 +863,18 @@ cheap toggle).
 
 ## Cached slot memory: dzmem (2026-11-20, EXPERIMENT)
 
-⚠️ The WT + WB design below is WRONG on this CPU: the Cortex-A9 L1
-treats write-through pages as non-cacheable, so WB lines in the L1 do not
-see WT writes (stale reads, lost writes). Do not load dzmem except for
-tests. Problem statement, target architecture (one memory type per slot,
-enforced by the module) and the new test plan: `sw/SLOTMEM.md`.
+⚠️ REPLACED Nov 21 by dzmem v2 + libdz v2 (`sw/SLOTMEM.md`): one memory
+type per slot. Every slot is mapped write-combined; debazd makes a still
+paint slot write-back in place (`dz_slot_cache`) and cleans the presented
+rectangles once per frame; fbfeed / dzlua / anim / slit use WC. Module
+parameter `guard` (runtime): 0 = mixes allowed + logged (default), 1 =
+refused. Loaded at boot on .236 and .137 (/etc/modules-load.d/dzmem.conf).
+The text below describes the first (WT + WB) version.
 
 ROADMAP.md section 19 step 5. The kernel module dzmem (recipe
-`recipes-modules/dzmem`, not in the image) maps the slot region cached.
-Load it by hand: `sh tools/pkgpush.sh kernel-module-dzmem` (laptop), then
+`recipes-modules/dzmem`; in the image and loaded at boot since the
+2026-11-21 recipes, debaz-sw RDEPENDS) maps the slot region cached.
+On an older card, load it by hand: `sh tools/pkgpush.sh kernel-module-dzmem` (laptop), then
 `sudo insmod /lib/modules/$(uname -r)/extra/dzmem.ko` on the board, then
 restart debazd. When /dev/dzmem is there, libdz uses it:
 

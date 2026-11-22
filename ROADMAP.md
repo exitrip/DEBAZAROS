@@ -41,6 +41,19 @@ What is built but not yet exercised by hand. Bench board .236 (debaz-7130d5,
 HEAD software by hand). Tick an item with the date when it passes; add new
 untested work here, not in other sections.
 
+- [ ] dzaudio (2026-11-21, sw/dzaudio): HEARD on both HDMI outputs?
+  (tested only by status / tap / xrun counts on .137: no listening yet);
+  `/mix/preset split` puts MIDI 1-8 / 9-16 on HDMI 0 / HDMI 1; reverb with
+  `dzsynth.sh start 0,1 default.sf2 1`; a soak with movie video + synth.
+  Next: movie audio as a dzaudio source (today a synth on both outputs
+  blocks movie audio), /mix in debazd's state / cues, web mixer card.
+- [ ] Image `debazaros-20261121-dzaudio.wic.xz` (2026-11-21, not booted):
+  burn a card; check first boot (partitions, example scripts in
+  /media/debaz/scripts), `lsmod | grep dzmem` + debazd "slot memory dzmem
+  v2", /usr/share/fonts/debaz (784 files), `SYNTH="1"` in
+  /data/debaz/dzstart.conf -> dzaudio on HDMI 0 + 1 after boot, Lua
+  midi-arp plays.
+
 Done / settled on 2026-11-20 (user):
 - [x] LED_RED (W14) works.
 - [x] HDMI_1 audio out: heard in several configurations (all USB-dongle
@@ -69,7 +82,9 @@ Built 2026-11-19/20, tested only by readback, host tests or briefly:
   (T0-T6, fresh boot + serial console + bench mode, a correctness test
   must fail on a known-bad setup first). The old part 2 retest is
   CANCELLED: the WT + WB design is wrong on the A9 (WT = non-cacheable in
-  L1). Keep dzmem unloaded until SLOTMEM.md step 4 passes.
+  L1). DONE Nov 21: T0-T5 passed (SLOTMEM.md section 7); cached path is
+  the default on .236 and .137 (user). Open: T5 x2 per mode (movie fps
+  -1?), T6 2 h soak, improvement 2, dzmem in the image.
 - [ ] Crops outside the slot (task 27): only VDMA addresses were checked.
   Look at a monitor: crop y -360 (the slot before bleeds in), Wall tab
   "Centre" with a 640x480 movie, an LFO on /disp/0/crop/y (film strip), a
@@ -632,8 +647,8 @@ to `/data` (DEBAZDATA): `/data/shows`, `/data/debaz/dzstart.conf` (the old
 state in `/run/debaz` (autosave, video mode), logs in the volatile journal.
 Still written to `/` today (inventory for the switch): dev installs
 `/home/ebaz/{bin,www}` (`make install`: remount rw, or move to `/data/opt`),
-`/usr/share/fonts/debaz` (pushfonts.sh: put the fonts in the image), units
-copied by hand to `/etc/systemd/system` (the image has them), ssh host keys
+`/usr/share/fonts/debaz` (in the image since the 2026-11-21 recipe
+debaz-fonts), units copied by hand to `/etc/systemd/system` (the image has them), ssh host keys
 (`/etc/ssh`), `/etc/machine-id`, the hostname (debaz-firstboot), ALSA mixer
 state (`alsactl store`), `/boot/uEnv.txt` (first boot only, FAT).
 

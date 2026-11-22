@@ -100,6 +100,13 @@ folders() {
 	mkdir -p "$MEDIA"
 	mkdir -p "$MEDIA/scripts" "$MEDIA/soundfonts"	# LuaJIT scripts (debazd /lua), large SF2 soundfonts
 	mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA/scripts" "$MEDIA/soundfonts" 2>/dev/null
+	# example Lua scripts of the image (/usr/share/debaz/scripts), only into
+	# an empty scripts folder: a reflash keeps the card's own scripts
+	if [ -d /usr/share/debaz/scripts ] && [ -z "$(ls -A "$MEDIA/scripts" 2>/dev/null)" ]; then
+		cp /usr/share/debaz/scripts/*.lua "$MEDIA/scripts/" 2>/dev/null &&
+			log "example scripts -> $MEDIA/scripts"
+		mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA/scripts"/*.lua 2>/dev/null
+	fi
 	for k in img movies audio; do
 		mkdir -p "$MEDIA/$k"
 		mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA" "$MEDIA/$k" 2>/dev/null

@@ -24,6 +24,10 @@
 #   CUE="main 1"               load): load this show and go to this cue (an
 #                              installation comes back by itself; a debazd
 #                              restart resumes instead: debazd/resume.c)
+#   SYNTH="0,1"                (2026-11-21) start the MIDI synth (dzaudio,
+#                              dzsynth.sh start $SYNTH: outs [soundfont] [fx]
+#                              [routing]) after debazd; empty = off. Those
+#                              outputs are then the synth's: no movie audio
 # At boot: debaz.service (image) runs this with DZSTART_BG=1 (no detach,
 # the output goes to the journal: journalctl -u debaz).
 #
@@ -66,6 +70,7 @@ HDMI2_ARGS="-r 1280x720"
 WEB=1
 SHOW=
 CUE=
+SYNTH=
 [ -f $CONF ] && . $CONF
 load=1
 if [ "${1:-}" = -n ]; then
@@ -170,6 +175,16 @@ elif [ "$WEB" = 1 ] && ! pgrep -x dzweb > /dev/null; then
 		--init-groups $D/dzweb > /tmp/dzweb.log 2>&1 < /dev/null &)
 	echo "  started dzweb"
 	sleep 1
+fi
+
+# ---- 2b. the MIDI synth (before the show: its scripts may play MIDI) -------------------
+# after debazd answers (dzaudio finds debazd's tap FIFOs by itself and
+# follows debazd restarts)
+if [ -n "$SYNTH" ] && ! pgrep -x dzaudio > /dev/null && ! pgrep -x fluidsynth > /dev/null; then
+	i=0
+	while [ $i -lt 50 ] && ! $D/dzctl -t 200 /ping > /dev/null 2>&1; do sleep 0.1; i=$((i + 1)); done
+	# shellcheck disable=SC2086
+	echo "  synth: $(sh $D/dzsynth.sh start $SYNTH 2>&1 | tail -1)"
 fi
 
 # ---- 3. the boot show (fresh start only) ---------------------------------------------

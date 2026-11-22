@@ -71,3 +71,5 @@ board-media/
 
 #now the python
 __pycache__
+# fonts tarball for recipe debaz-fonts (sw/tools/pushfonts.sh -o, 32 MB)
+PetaLinux/project-spec/meta-user/recipes-graphics/debaz-fonts/files/debaz-fonts.tar.gz

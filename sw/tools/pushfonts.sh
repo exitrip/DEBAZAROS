@@ -5,6 +5,10 @@
 # DZ_FONT_DIR = /usr/share/fonts (and its subfolders).
 #
 #   bash sw/tools/pushfonts.sh [-u ebaz@host]     (default: $DZ_BOARD)
+#   bash sw/tools/pushfonts.sh -o fonts.tar.gz    the same set as a tarball
+#        (2026-11-21) for the image recipe debaz-fonts: write it to
+#        PetaLinux/project-spec/meta-user/recipes-graphics/debaz-fonts/files/
+#        debaz-fonts.tar.gz (git-ignored, ~58 MB; copy it to the build machine)
 #
 # The set (with the licence file of each package, into
 # /usr/share/fonts/debaz/LICENSES/):
@@ -42,13 +46,15 @@
 set -euo pipefail
 
 board=${DZ_BOARD:-}
-while getopts "u:h" o; do
+out=
+while getopts "u:o:h" o; do
 	case $o in
 	u) board=$OPTARG ;;
-	*) sed -n '2,42p' "$0"; exit 2 ;;
+	o) out=$OPTARG ;;
+	*) sed -n "2,46p" "$0"; exit 2 ;;
 	esac
 done
-[ -n "$board" ] || { echo "pushfonts: no board: -u ebaz@host or DZ_BOARD" >&2; exit 2; }
+[ -n "$board" ] || [ -n "$out" ] || { echo "pushfonts: no board: -u ebaz@host or DZ_BOARD" >&2; exit 2; }
 
 F=/usr/share/fonts/truetype
 fonts=(
@@ -119,6 +125,13 @@ for p in "${lic[@]}"; do
 	cp "/usr/share/doc/$p/copyright" "$stage/LICENSES/$p.txt"
 done
 
+if [ -n "$out" ]; then
+	# fixed owner, mode and time: the same fonts give the same tarball
+	tar -C "$stage" --sort=name --owner=0 --group=0 --numeric-owner \
+		--mode='u=rwX,go=rX' --mtime='2026-11-21 00:00Z' -cf - . | gzip -n > "$out"
+	echo "pushfonts: $(find "$stage" -type f | wc -l) files, $(du -h "$out" | cut -f1) -> $out"
+	exit 0
+fi
 opt=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5)
 ssh_() { sshpass -p '' ssh "${opt[@]}" "$board" "$@"; }
 echo "pushfonts: $(du -sh "$stage" | cut -f1) to $board:/usr/share/fonts/debaz"

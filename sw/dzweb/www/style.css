@@ -253,6 +253,12 @@ textarea.code { width: 100%; box-sizing: border-box; font: 13px/1.45 var(--mono)
 .luahl .nu { color: #f78c6c; } .luahl .api { color: #82aaff; } .luahl .lib { color: #89ddff; }
 .luahl .wv { text-decoration: underline wavy #f5a524; text-underline-offset: 3px; }
 .luahl .luaerr { position: absolute; left: 0; width: 100000px; background: rgba(255, 70, 70, 0.22); }
+/* line numbers (luaedit.js gutter): text and colours start right of it */
+.luaed textarea.code, .luaed pre.luahl { padding-left: 52px; }
+.luaed pre.luagut { position: absolute; left: 1px; top: 1px; width: 40px; margin: 0; overflow: hidden;
+  pointer-events: none; z-index: 2; box-sizing: border-box; font: 13px/1.45 var(--mono); padding: 10px 6px 10px 0;
+  text-align: right; color: #4c5464; background: #0b0d11; border-right: 1px solid #1c2029;
+  border-radius: 8px 0 0 8px; white-space: pre; user-select: none; }
 .luahelp { min-height: 1.4em; margin: 6px 0 2px; } .luahelp code { color: var(--text); font-family: var(--mono); }
 .luadiag { font: 12px/1.5 var(--mono); } .luadiag div { cursor: pointer; } .luadiag .err { color: var(--bad); }
 .luaref { max-height: 40vh; overflow: auto; margin: 6px 0; font-size: 12px; }
@@ -281,3 +287,6 @@ textarea.code { width: 100%; box-sizing: border-box; font: 13px/1.45 var(--mono)
 .lua-run { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 1px; }
 .lua-run.on { border-color: var(--accent); }
 .lua-run button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
+/* paint: the live text input takes the keys but is not seen (the canvas shows the text) */
+textarea.livein { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0;
+  resize: none; overflow: hidden; pointer-events: none; }

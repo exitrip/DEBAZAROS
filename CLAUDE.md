@@ -68,7 +68,16 @@ started by hand over ssh (setsid too: debazd restart, dzstart.sh,
 plreload.sh, dzweb) was stopped at the logout. Fix: /etc/systemd/logind.conf.d/
 debaz.conf KillUserProcesses=no (sw/tools/image/debaz-logind.conf, recipe
 debaz-sw; set by hand on .236 - cards burnt from the Nov 5 image lack it).
-NEWEST image (Nov 19): `debazaros-20261119-data.wic.xz` (build machine
+NEWEST image (Nov 21): `debazaros-20261121-dzaudio.wic.xz` (build machine
+~/dz-sandbox/, laptop build/images/; sha256 a08c4315a9f311d4…; = the
+`-fonts` image of the same evening (5faa93fc…) + dzaudio; same kernel
+and BOOT.BIN 26dd6362) = main + the cached-slot software, dzmem v2 in the
+image and autoloaded, recipe debaz-fonts (pushfonts -o tarball, git-ignored,
+in recipes-graphics/debaz-fonts/files/), the 14 Lua examples
+(/usr/share/debaz/scripts, seeded into an empty /media/debaz/scripts at
+first boot), dzstart.conf SYNTH= (fluidsynth after debazd), the tap
+asound.conf; contents checked in rootfs.ext4, NOT yet booted from a card.
+Previous: Nov 19 `debazaros-20261119-data.wic.xz` (build machine
 ~/dz-sandbox/, laptop build/images/; sha256 3881f6e2f1573c21…) = the Nov 18
 modes image + the systemd units / resume / memory / cut-gate / show-bundle
 software of Nov 19 + /data config + text rules (same kernel); contents
@@ -82,6 +91,24 @@ and /lib/modules/5.15.36-xilinx-v2022.2.os-20261105 = -Os, *.O2-20261105 = -O2;
 rootfs still Dropbear). A/B results: PetaLinux/README.md (2026-11-05).
 Never swap only uImage: the tracing options change struct module, and the
 loader checks only the version string (old modules could corrupt memory).
+.137 = debaz-88d0e3 (Nov 21): a card burnt from the Nov 18 image (same
+kernel, BOOT.BIN 26dd6362 and dtb as .236), brought to .236's state by
+hand on Nov 21: software from main + the uncommitted cached-slots work
+in /home/ebaz/bin + www (wins over /usr/bin), dzmem v2 autoloaded,
+fonts (785, pushfonts), fluidsynth + soundfonts (pkgpush), .236's 14
+example Lua scripts. BOTH .236 and .137 (Nov 21): /usr/bin/dzstart.sh,
+plreload.sh, dzrun.sh, dzsetup.sh = repo versions and the units in
+/etc/systemd/system, so boot now runs debazd / debaz-video / dzweb AS
+UNITS (Restart, watchdog, resume; logs: journalctl -u debazd).
+Nov 21 (both): dzaudio (sw/dzaudio: fluidsynth + routing matrix, OSC UDP
+9002, default HDMI 0 + 1 = 4 ch; sw/README.md "dzaudio") in /home/ebaz/bin;
+dzsynth.sh starts it (running on .137, stopped on .236: it owns both HDMI
+audio outputs = no movie audio while it runs).
+/usr/bin/dzstart.sh with SYNTH= (repo), /usr/bin/dzsynth.sh
+(sudo dzsynth.sh works), /etc/debaz/dzstart.conf = repo; no
+/data/debaz/dzstart.conf yet (SYNTH off at boot). .137 /etc/asound.conf =
+repo (taps; image file kept as asound.conf.image). Before,
+the image's old /usr/bin/dzstart.sh ignored the units (setsid start).
 .236 bench rig (Nov 21): powered from the laptop's USB-C port 0, console
 ttyPS0 = CH340 /dev/ttyUSB0 on the same connector. `sw/tools/boardpower.sh
 reboot [-S|-H]` = ssh -> serial login (ebaz, no password) -> power cycle;
@@ -1179,8 +1206,11 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   coherent (stale WB reads, lost writes), so the whole part 1 + part 2
   design is wrong. Target: one memory type per slot at a time (STILL = WB,
   STREAM / capture = WC, no WT), enforced by dzmem v2; problem statement +
-  test plan with rules for trusted numbers: `sw/SLOTMEM.md`. Keep dzmem
-  UNLOADED on boards until that plan's step 4 passes. MEASURED Nov 21
+  test plan with rules for trusted numbers: `sw/SLOTMEM.md`. Since Nov 21
+  (T3/T4/T5 passed, user) the CACHED path is the DEFAULT on .236 and
+  .137: dzmem v2 loads at boot (/etc/modules-load.d/dzmem.conf, set by
+  hand; not in an image yet), guard=0; DZ_DZMEM=0 in debazd's
+  environment = the old uncached path. MEASURED Nov 21
   (dzmemtest coh): every two-type mix loses writes (WB+WT 5 %, WB+WC,
   WT+WC); same-type pairs 0. dzmem v2 (guard, flush on last close,
   nocache slot 4, WT refused) + libdz v2 (one mapping per slot, WC by

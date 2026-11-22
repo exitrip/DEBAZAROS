@@ -50,6 +50,7 @@ do_install() {
 FILES:${PN} += "${datadir}/debaz ${sysconfdir}/debaz ${systemd_system_unitdir}/debaz.service \
                 ${systemd_system_unitdir}/debazd.service ${systemd_system_unitdir}/debaz-video.service \
                 ${systemd_system_unitdir}/dzweb.service \
+                ${datadir}/debaz/scripts \
                 ${nonarch_base_libdir}/firmware ${sysconfdir}/udev/rules.d/99-debaz-hw.rules \
                 ${sysconfdir}/systemd/logind.conf.d/debaz.conf ${sysconfdir}/sysctl.d/debaz.conf"
 CONFFILES:${PN} = "${sysconfdir}/debaz/dzstart.conf"
@@ -73,7 +74,13 @@ RDEPENDS:${PN} += "luajit"
 # sequencer MIDI; SF2 only: no libsndfile) with a General MIDI soundfont, and the
 # ALSA MIDI tools (aconnect, aplaymidi, amidi, aseqdump: already in the image).
 # A script sends MIDI to it through VirMIDI (sw/README.md "MIDI").
+# dzaudio (2026-11-21, the audio engine) opens libfluidsynth.so.3 and
+# libasound.so.2 with dlopen: both come with these packages / alsa-utils.
 RDEPENDS:${PN} += "fluidsynth fluidsynth-bin debaz-soundfonts"
+# cached slot memory (2026-11-21, sw/SLOTMEM.md): kernel module dzmem v2,
+# loaded at boot, udev rule (group video). Display / script fonts (pushfonts
+# set: scripts, Typodermic, Pastor of Muppets) in /usr/share/fonts/debaz.
+RDEPENDS:${PN} += "dzmem debaz-fonts"
 
 # bitstreams are data, not ELF for this machine
 INSANE_SKIP:${PN} += "arch"
