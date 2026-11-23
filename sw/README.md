@@ -499,6 +499,14 @@ k's settings into this card in the page only (all but target and on / off;
 a sync to itself becomes off); Update (marked ● while a copy is not sent)
 sends all the card's settings. Copy into several cards, tweak, then Update
 each (or "Send all settings").
+Load from board (2026-11-23): the cards read the LFO settings back with
+`/state "/lfo/"` on connect, when the tab is shown, when the board's on /
+off differs from a card (a cue, recall or resume changed it; not within
+1.5 s of a send from this page) and with the "Load from board" button.
+Only the LFO's settings (what cues record), never its target's value:
+the LFO still writes over what a cue sets. Cards with an unsent copy
+(Update ●) and the card being edited are kept. Floats are compared at 6
+digits (32-bit on the board).
 Measured (Cortex-A9): all 16 LFOs 13 us per frame on the slowest path
 (cos + pow), 1024 steps with glide 3 us; a field target costs nothing
 measurable, the same value from a 60 fps Lua osc() ~2.6 % of a core.
@@ -1048,7 +1056,8 @@ Each save reports the file size (quality slider: smaller = faster). Laptop:
 ## Cues, scenes and shows
 
 `debazd/state.c` + `debazd/cue.c` (ROADMAP.md section 15): `/state` dumps
-every target as one OSC message (~540); `/state/snap|recall|diff`. A show is
+every target as one OSC message (~540; `/state "/lfo/"` = only the keys
+with that prefix); `/state/snap|recall|diff`. A show is
 a folder `/data/shows/<show>/` (`show.json`, `baseline.json`,
 `looks/*.json`, hand-editable). Cues are keyframes (everything) or deltas
 (tracking from the cue before); `/cue/record`, `/cue/go <scene> <n> [secs]

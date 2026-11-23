@@ -83,7 +83,7 @@ function expandTarget(t, i) {
   return t + " " + [...msgTargets.get(t)].map((ty) => (ty === "i" ? `$${i}` : `$f${i}`)).join(" ");
 }
 const meters = [];
-const unsent = [], updPaint = [], lastFrom = []; // per LFO: settings copied in the page, not sent yet (Update)
+const unsent = [], updPaint = [], lastFrom = [], cardEl = [], sentAt = []; // per LFO: settings copied in the page, not sent yet (Update)
 // the settings Copy takes: all but the target (two LFOs on one target fight)
 // and on / off (the destination keeps its own)
 const NOCOPY = new Set(["target", "pslot", "on"]);
@@ -131,6 +131,7 @@ function apply(i, keys) {
     else if (k === "release") m.push(net.message(`${p}/release`, net.float(c.release)));
   }
   if (m.length) net.send(m.length === 1 ? m[0] : net.bundle(...m));
+  sentAt[i] = performance.now();
   save();
   if (seqUi[i] && !seqUi[i].sec.hidden) seqUi[i].draw(); // step clock / fast / rate change the shortest step
 }
@@ -412,7 +413,7 @@ function lfoCard(i) {
       if (cfg[i].sync === i) cfg[i].sync = -1;          // no sync to itself
       unsent[i] = true;
       save();
-      el.replaceWith(lfoCard(i));                       // rebuild: the inputs hold the old values
+      rebuild(i);                                       // the inputs hold the old values
     } }, "Copy");
   const el = card([`LFO ${i}`, onBtn],
     meter, val,
@@ -446,7 +447,63 @@ function lfoCard(i) {
             onclick: () => { c.target = expandTarget(target.value.trim(), i); target.value = c.target; apply(i, ["target"]); } }, "Set"),
           h("button", { title: `/lfo/${i}/target  (no argument = no target)`, onclick: () => { c.target = ""; target.value = ""; apply(i, ["target"]); } }, "Clear")),
         h("div.row", {}, preset, h("label", {}, "slot ", pslot)))));
+  cardEl[i] = el;
   return el;
+}
+const rebuild = (i) => cardEl[i]?.replaceWith(lfoCard(i));
+
+// ---- the cards from the board (2026-11-23) ----
+// Cues, state recalls and resume change LFO settings on the board, so the page
+// reads them back (/state "/lfo/") on connect, when the tab is shown, when the
+// board's on / off differs from a card, and with "Load from board". Only the
+// LFO's own settings: what it writes into its target is not touched. Cards
+// with an unsent copy (Update ●) and the card being edited are kept.
+const num0 = (v) => { const x = typeof v === "number" ? v : Number(v) || 0; return +x.toPrecision(6); }; // board floats are 32-bit
+const listOf = (a) => (a.length === 1 && typeof a[0] === "string" ? a[0].split(/[\s,]+/).filter(Boolean).map(Number) : a.map(num0));
+function fromRows(rows) {
+  const got = [];
+  for (const r of rows) {
+    const mm = /^\/lfo\/(\d+)\/(\w+)$/.exec(r[0] || "");
+    if (!mm || +mm[1] >= N) continue;
+    const i = +mm[1], k = mm[2], a = r.slice(2), o = (got[i] ||= {});
+    switch (k) {
+      case "seq": if (a.length) o.seq = listOf(a); break;
+      case "dur": o.dur = a.length ? listOf(a) : []; break;
+      case "step": o.smode = a[0] || "off";
+        if (a[0] === "bpm") { o.sval = num0(a[1]); o.sdiv = num0(a[2]) || 1; } else if (a.length > 1) o.sval = num0(a[1]); break;
+      case "sync": o.sync = a[0] === "off" || !a.length ? -1 : num0(a[0]); break;
+      case "every": if (typeof a[0] === "string") o.emode = a[0]; else { o.emode = "frames"; o.every = num0(a[0]) || 1; } break;
+      case "min": o.lo = num0(a[0]); break;
+      case "max": o.hi = num0(a[0]); break;
+      case "mode": o.once = a[0] === "once" ? 1 : 0; break;
+      case "target": o.target = a.length ? String(a[0]) : ""; break;
+      case "shape": case "ease": case "audio": o[k] = String(a[0]); break;
+      default: if (k in DEF && a.length) o[k] = num0(a[0]);
+    }
+  }
+  return got;
+}
+function applyRows(rows) {
+  const got = fromRows(rows);
+  let changed = 0;
+  got.forEach((o, i) => {
+    if (!o || unsent[i] || !cardEl[i]) return;
+    if (cardEl[i].contains(document.activeElement) && document.activeElement !== document.body) return;
+    const next = { ...cfg[i], ...o };
+    if (JSON.stringify(next) === JSON.stringify(cfg[i])) return;
+    cfg[i] = next;
+    rebuild(i);
+    changed++;
+  });
+  if (changed) save();
+  return changed;
+}
+let loading = null;
+function loadFromBoard() {
+  if (loading || !net.connected()) return loading;
+  loading = net.collect(net.message("/state", "/lfo/"), "/state/target", "/state/end", 3000)
+    .then((rows) => applyRows(rows)).finally(() => { loading = null; });
+  return loading;
 }
 
 // the fast thread's rate (all fast LFOs share it) and what it reaches
@@ -487,6 +544,8 @@ export function init(root) {
     h("div.row", {},
       h("button", { title: "/lfo/reset", onclick: () => { net.msg("/lfo/reset"); cfg = cfg.map(() => ({ ...DEF })); save(); root.replaceChildren(); init(root); } }, "Reset all"),
       h("button", { title: "/lfo/<n>/shape, /rate, /range, ... for all 16", onclick: () => cfg.forEach((_, i) => { apply(i, ALL); unsent[i] = false; updPaint[i]?.(); }) }, "Send all settings"),
+      h("button", { title: "read every LFO's settings from the board (/state \"/lfo/\"): after a cue, a recall or another page. Cards with an unsent copy (Update ●) are kept",
+        onclick: async (e) => { const n = await loadFromBoard(); e.target.textContent = `Load from board (${n ?? 0} changed)`; setTimeout(() => (e.target.textContent = "Load from board"), 2000); } }, "Load from board"),
       fastRow(),
       h("span.hint", {}, "$k = value of LFO k (int), $fk = float. Targets run once per frame (every n).")),
     audioRow(),
@@ -512,6 +571,7 @@ export function init(root) {
     const [v, on, step] = m.args;
     if (step !== undefined && seqUi[i] && !seqUi[i].sec.hidden) seqUi[i].step(on ? step : -1);
     const c = cfg[i];
+    if (!!on !== !!c.on && !unsent[i] && performance.now() - (sentAt[i] || 0) > 1500) loadFromBoard(); // a cue / recall changed it
     const span = c.hi - c.lo || 1;
     meters[i].meter.firstChild.style.width = `${Math.max(0, Math.min(1, (v - c.lo) / span)) * 100}%`;
     meters[i].val.textContent = `${on ? "running" : "off"} · ${Number(v).toFixed(3)}`;
@@ -529,6 +589,7 @@ export function connected() {
   // every other single-value target debazd tracks (/state: ASCII, crops, movie
   // effects, anim, DDS, LFOs ...): numeric ones only
   net.collect(net.message("/state"), "/state/target", "/state/end", 3000).then((ts) => {
+    applyRows(ts);                      // the LFO cards = what the board runs
     for (const t of ts) {
       const addr = t[1], types = (t.tags || "").slice(2);
       if (!addr || fieldPaths.has(addr) || msgTargets.has(addr) || !types || /[^if]/.test(types)) continue;
@@ -539,6 +600,7 @@ export function connected() {
 }
 
 export function show() {
+  loadFromBoard();
   clearInterval(timer);
   timer = setInterval(() => {
     if (document.getElementById("tab-lfo").classList.contains("active")) poll();

@@ -48,8 +48,10 @@ untested work here, not in other sections.
   <= 12, then 1 step/s (headless check on .236: 1/3/6/11/30 steps/s as
   planned). Flip button + values / lengths boxes (headless: board /state
   matches). Per-card Copy from LFO k (page only) + Update (headless:
-  nothing sent before Update, board /state right after). On .236 / .137,
-  not tried by hand.
+  nothing sent before Update, board /state right after). Cards load from
+  the board (`/state "/lfo/"` prefix filter, debazd): on connect / tab
+  show / on-off mismatch / button (headless: a cue-like change followed,
+  a 2nd load = 0 changed). On .236 / .137, not tried by hand.
 - [ ] dzaudio (2026-11-21, sw/dzaudio): HEARD on both HDMI outputs?
   (tested only by status / tap / xrun counts on .137: no listening yet);
   `/mix/preset split` puts MIDI 1-8 / 9-16 on HDMI 0 / HDMI 1; reverb with

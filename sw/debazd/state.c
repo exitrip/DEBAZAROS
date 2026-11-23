@@ -25,8 +25,9 @@
  * The /fx/hue and /fx/key settings are not targets: they only compute
  * mixer fields, which are.
  *
- *   /state                 -> /state/target s:key s:address args..., one per
- *                             target, then /state/end i:count
+ *   /state [s:prefix]      -> /state/target s:key s:address args..., one per
+ *                             target, then /state/end i:count; prefix = only
+ *                             the keys that start with it ("/lfo/")
  *   /state/snap [s:name]   store the state now in memory (8 names; default
  *                          "a") -> /state/snap s:name i:targets
  *   /state/recall [s:name] dispatch it in order -> /state/recall s:name i:n
@@ -488,10 +489,13 @@ void st_reply_target(const char *path, const char *key, const dz_msg *m)
 }
 
 static int dump_count;
+static const char *dump_prefix;
 
 static void reply_cb(const char *key, const dz_msg *m, void *ctx)
 {
 	(void)ctx;
+	if (dump_prefix && strncmp(key, dump_prefix, strlen(dump_prefix)))
+		return;
 	st_reply_target("/state/target", key, m);
 	dump_count++;
 }
@@ -505,7 +509,9 @@ int state_dispatch(const dz_msg *m)
 		return 0;
 	if (!strcmp(p, "/state")) {
 		dump_count = 0;
+		dump_prefix = m->n >= 1 && m->a[0].type == 's' && m->a[0].s[0] ? m->a[0].s : NULL;
 		state_dump(reply_cb, NULL);
+		dump_prefix = NULL;
 		dzd_reply("/state/end", "i", dump_count);
 		return 1;
 	}
