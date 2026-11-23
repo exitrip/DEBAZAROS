@@ -11,6 +11,7 @@
 #include "dz_hw.h"
 #include "dz_map.h"
 #include "dz_vdma.h"
+#include "dz_ain.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -2097,6 +2098,14 @@ static surf_t *movie_surf(int i)
  * MB: free paint buffers for it, refuse when RAM stays short */
 #define MOVIE_WANT_KB	(40 * 1024)
 #define MOVIE_MIN_KB	(24 * 1024)
+/* a movie's processes take ~11 MB (12.7 with audio; measured on .236
+ * 2026-11-22) within 1-3 s of the start. 12 movies started at once all saw
+ * the same free memory, passed the guard and the OOM killer ran for a
+ * minute (the board did not answer ssh). A movie started in the last
+ * MOVIE_CLAIM_S counts as MOVIE_COST_KB already used. */
+#define MOVIE_COST_KB	(12 * 1024)
+#define MOVIE_CLAIM_S	3.0
+static double movie_t0[DZ_SLOTS];
 
 int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 {
@@ -2109,16 +2118,23 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 	if (!s || !name_ok(name))
 		return -1;
 	{
-		long kb = mem_avail_kb();
+		long kb = mem_avail_kb(), pend = 0;
+		double now = mono_s();
 
-		if (kb >= 0 && kb < MOVIE_WANT_KB)
-			kb = dz_draw_trim(MOVIE_WANT_KB, -1, 1.0, 0);
+		for (int k = 0; k < DZ_SLOTS; k++)
+			if (k != i && movie_t0[k] > 0.0 && now - movie_t0[k] < MOVIE_CLAIM_S)
+				pend += MOVIE_COST_KB;
+		if (kb >= 0 && kb - pend < MOVIE_WANT_KB)
+			kb = dz_draw_trim(MOVIE_WANT_KB + pend, -1, 1.0, 0);
+		if (kb >= 0)
+			kb -= pend;
 		if (kb >= 0 && kb < MOVIE_MIN_KB) {
 			fprintf(stderr, "dz_draw: movie on slot %d refused: %ld kB free\n", i, kb);
 			surf_err = "no RAM for a movie: /surface/<s>/free paint buffers or stop a movie";
 			return -1;
 		}
 	}
+	movie_t0[i] = mono_s();
 	snprintf(mname, sizeof(mname), "%s", name);	/* name may be s->mname */
 	dz_draw_movie_stop(i);
 	s->iname[0] = 0;
@@ -2192,13 +2208,38 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 	 * pipe copy or conversion (DDR traffic at 1080p60, CLAUDE.md) */
 	if (fps > 0.0f && fps <= 120.0f)
 		snprintf(cap, sizeof(cap), "fps=%.3f,", fps);
+	/*
+	 * Where the sound goes (2026-11-22): while dzaudio runs it owns the
+	 * DEBAZ PCMs, so the audio goes into its stream input for this slot
+	 * (FIFO /tmp/dzin.<slot>, lib/dz_ain.h) and /mix/stream routes it to the
+	 * chosen outputs; the mixer adds it to the synth. Without dzaudio: the
+	 * PCMs straight, as before, and a busy PCM is now logged (the audio
+	 * ffmpeg's errors go to /dev/null: a busy PCM played nothing, silently).
+	 */
+	unsigned devmask = 0;
+	int ain;
+
 	for (int k = 0; k < 3; k++)
 		if (audio & (1 << k))
-			snprintf(aud + strlen(aud), sizeof(aud) - strlen(aud),
-				 " -map 0:a:0%s%s%s -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d",
-				 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "", pcm_of[k]);
+			devmask |= 1u << pcm_of[k];
+	ain = devmask && dz_ain_ready(i);
+	if (ain)
+		snprintf(aud, sizeof(aud), " -map 0:a:0%s%s%s -ac 2 -ar 48000 -f s16le pipe:4",
+			 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "");
+	else
+		for (int k = 0; k < 3; k++)
+			if (audio & (1 << k)) {
+				char who[48];
+
+				if (dz_pcm_owner(pcm_of[k], who, sizeof(who)))
+					fprintf(stderr, "dz_draw: slot %d movie audio: hw:DEBAZ,%d is busy (pid %s), "
+						"no sound there\n", i, pcm_of[k], who);
+				snprintf(aud + strlen(aud), sizeof(aud) - strlen(aud),
+					 " -map 0:a:0%s%s%s -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d",
+					 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "", pcm_of[k]);
+			}
 	if (aud[0]) {
-		char acmd[1800], tap[64] = "";
+		char acmd[1800], tap[64] = "", ainf[40] = "";
 		struct stat st;
 
 		/* the tap for the audio analysis (2026-11-04): one more output with
@@ -2215,15 +2256,22 @@ int dz_draw_movie_play_av(int i, const char *name, float fps, int audio)
 				 s->af[0] ? " -af '" : "", s->af, s->af[0] ? "'" : "");
 		else
 			tap[0] = 0;
+		if (ain)	/* read-write open: never blocks (dzaudio reads it) */
+			snprintf(ainf, sizeof(ainf), " 4<>" DZA_FIFO, i);
 		snprintf(acmd, sizeof(acmd),
 			 "ffprobe -v error -select_streams a:0 -show_entries stream=index "
 			 "-of csv=p=0 '%s' | grep -q . || exit 0; "
 			 "exec ffmpeg -hide_banner -loglevel error %s-re "
-			 "-i '%s'%s 0<>" DZ_FFA_CTL "%s%s 2>/dev/null", path,
+			 "-i '%s'%s 0<>" DZ_FFA_CTL "%s%s%s 2>/dev/null", path,
 			 s->once ? "" : "-stream_loop -1 ", path, aud, i,
-			 tap[0] ? " 3<>" : "", tap);
+			 tap[0] ? " 3<>" : "", tap, ainf);
 		pid = dz_spawn(acmd, 20);
 		s->aplayer = pid > 0 ? pid : 0;
+		if (ain && pid > 0) {
+			dz_ain_route(i, devmask);
+			fprintf(stderr, "dz_draw: slot %d movie audio -> dzaudio stream %d (devices 0x%x)\n",
+				i, i, devmask);
+		}
 	}
 	/*
 	 * MPEG-4 Part 2 (what mkmedia makes) goes through dzmosh (2026-10-30):
@@ -2989,6 +3037,21 @@ static int split(const char *path, const char *group, unsigned *mask, const char
 		*mask = 1u << v;
 	}
 	*tail = q ? q + 1 : "";
+	/* the black slot (frame store 2 of every display: blanking) is never
+	 * written (2026-11-22, edge.py: a movie or a draw on slot 11 made every
+	 * blank show it); read-only ops still reach it */
+	if (*mask & (1u << DZ_SLOT_BLANK)) {
+		static const char *const ro[] = { "stop", "stats", "peek", "status", "fx", "vf", "af", NULL };
+		int keep = 0;
+
+		for (int k = 0; ro[k]; k++)
+			if (!strcmp(*tail, ro[k]))
+				keep = 1;
+		if (!keep)
+			*mask &= ~(1u << DZ_SLOT_BLANK);
+		if (!*mask)
+			return 0;
+	}
 	return 1;
 }
 

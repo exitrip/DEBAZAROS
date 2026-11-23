@@ -2026,3 +2026,10 @@ void anim_state(state_cb cb, void *ctx)
 		pthread_mutex_unlock(&p->mu);
 	}
 }
+
+void anim_status_lines(void)
+{
+	for (int d = 0; d < DZ_DISPLAYS; d++)
+		if (P[d].run)
+			sline("display %d: anim %s, %.1f fps", d, P[d].name, P[d].fps_real);
+}

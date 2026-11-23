@@ -461,3 +461,10 @@ int lua_dispatch(const dz_msg *m)
 	}
 	return 1;
 }
+
+void lua_status_lines(void)
+{
+	for (int s = 0; s < DZ_SLOTS; s++)
+		if (LS[s].pid > 0)
+			sline("slot %d: lua %s (pid %d)", s, LS[s].last, (int)LS[s].pid);
+}

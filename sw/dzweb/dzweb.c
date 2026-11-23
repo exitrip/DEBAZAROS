@@ -15,6 +15,8 @@
  *   GET /osc        WebSocket. Each binary message is one OSC packet (or
  *                   bundle). Every browser gets its own UDP socket to debazd,
  *                   so replies and /subscribe events come back to it.
+ *   GET /status                    debazd's /run/debaz/status (what runs now, text)
+ *   GET /fonts/<name>              a TrueType font of the board (DZ_FONT_DIR, any subfolder)
  *   GET /media                     JSON: free bytes, files in img/, movies/, audio/, scripts/
  *   GET    /media/<img|movies|audio|scripts>/<name>  download a file (?dl: as attachment)
  *   PUT    /media/<img|movies|audio|scripts>/<name>  upload (raw body, Content-Length)
@@ -165,7 +167,13 @@ typedef struct {
 	char    part[320], final[320];	/* upload: temp and final path */
 	uint8_t in[WS_MAX + 16];
 	size_t  n;
+	time_t  seen;	/* last activity (idle HTTP clients are closed) */
 } client_t;
+/* 2026-11-22 (edge.py): 200 idle TCP connections took all 16 slots and the
+ * web app got no answer until they went. A plain HTTP client (no WebSocket,
+ * no transfer) that sends nothing for HTTP_IDLE_S is closed, and a new
+ * connection takes the place of the stalest one when all slots are used. */
+#define HTTP_IDLE_S	10
 
 enum { XFER_NONE, XFER_UP, XFER_DOWN };
 
@@ -254,6 +262,9 @@ static const char *mime(const char *p)
 	if (!strcasecmp(e, ".mov")) return "video/quicktime";
 	if (!strcmp(e, ".json") || !strcmp(e, ".webmanifest")) return "application/json";
 	if (!strcmp(e, ".lua") || !strcmp(e, ".txt")) return "text/plain; charset=utf-8";
+	if (!strcasecmp(e, ".ttf")) return "font/ttf";
+	if (!strcasecmp(e, ".otf")) return "font/otf";
+	if (!strcasecmp(e, ".ttc")) return "font/collection";
 	return "application/octet-stream";
 }
 
@@ -670,6 +681,70 @@ static int media_get(client_t *c, const char *url, int attach)
 	return 1;
 }
 
+/* ---- /fonts/<name>: the board's TrueType fonts for the web app (2026-11-22) ----
+ * the font pickers and text previews draw a font name in that font. Bare
+ * names, found in any subfolder of DZ_FONT_DIR (as debazd's /files fonts and
+ * the text ops do); the browser caches them for a day. */
+#ifndef DZ_FONT_DIR
+#define DZ_FONT_DIR	"/usr/share/fonts"
+#endif
+static int font_find(const char *dir, const char *name, int depth, char *out, size_t sz)
+{
+	DIR *d = opendir(dir);
+	struct dirent *e;
+	int found = 0;
+
+	while (d && !found && (e = readdir(d)) != NULL) {
+		char p[512];
+
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+		if (e->d_type == DT_DIR) {
+			if (depth > 0)
+				found = font_find(p, name, depth - 1, out, sz);
+		} else if (!strcmp(e->d_name, name)) {
+			snprintf(out, sz, "%s", p);
+			found = 1;
+		}
+	}
+	if (d)
+		closedir(d);
+	return found;
+}
+
+static int font_get(client_t *c, const char *url)
+{
+	const char *name = url + 7, *x = strrchr(name, '.');
+	char path[512], h[320];
+	struct stat st;
+	int fd, n;
+
+	if (!media_name_ok(name) || !x || (strcasecmp(x, ".ttf") && strcasecmp(x, ".otf") &&
+	    strcasecmp(x, ".ttc")) || !font_find(DZ_FONT_DIR, name, 3, path, sizeof(path)) ||
+	    (fd = open(path, O_RDONLY)) < 0) {
+		http_err(c, "404 Not Found", "not found\n");
+		return 0;
+	}
+	if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+		close(fd);
+		http_err(c, "404 Not Found", "not found\n");
+		return 0;
+	}
+	n = snprintf(h, sizeof(h), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\n"
+		     "Content-Length: %lld\r\nCache-Control: max-age=86400\r\n"
+		     "Access-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+		     mime(name), (long long)st.st_size);
+	if (send_all(c->fd, h, (size_t)n) < 0) {
+		close(fd);
+		return 0;
+	}
+	c->ffd = fd;
+	c->left = st.st_size;
+	c->xfer = XFER_DOWN;
+	return 1;
+}
+
 /* socket writable: send the next chunk. returns -1 when done or failed */
 static int media_pump(client_t *c)
 {
@@ -968,13 +1043,28 @@ static int on_tcp(client_t *c)
 			http_err(c, "405 Method Not Allowed", "method not allowed\n");
 			return -1;
 		}
+		if (!strncmp(path, "/fonts/", 7)) {
+			url_decode(path);
+			return font_get(c, path) ? 0 : -1;
+		}
 		if (!strcmp(path, "/osc")) {
 			if (ws_handshake(c, (char *)c->in) < 0)
 				return -1;
 			c->n = 0;
 			return 0;
 		}
-		if (!strcmp(path, "/units"))
+		if (!strcmp(path, "/status")) {	/* debazd's /run/debaz/status (2026-11-22) */
+			static char sb[16384];
+			FILE *f = fopen("/run/debaz/status", "r");
+			size_t n = f ? fread(sb, 1, sizeof(sb), f) : 0;
+
+			if (f)
+				fclose(f);
+			if (f)
+				http_reply(c, "200 OK", "text/plain; charset=utf-8", sb, n);
+			else
+				http_err(c, "404 Not Found", "no /run/debaz/status (debazd not running?)\n");
+		} else if (!strcmp(path, "/units"))
 			serve_units(c);
 		else if (!strcmp(path, "/media"))
 			serve_media_list(c);
@@ -1070,6 +1160,19 @@ int main(int argc, char **argv)
 					slot = i;
 					break;
 				}
+			if (slot < 0 && fd >= 0) {	/* full: evict the stalest plain HTTP client */
+				time_t old = 0;
+
+				for (int i = 0; i < MAX_CLIENTS; i++)
+					if (!C[i].ws && C[i].xfer == XFER_NONE && (slot < 0 || C[i].seen < old)) {
+						slot = i;
+						old = C[i].seen;
+					}
+				if (slot >= 0) {
+					logv("dzweb: full: client %d (idle %ld s) makes room\n", slot, (long)(time(NULL) - old));
+					client_close(&C[slot]);
+				}
+			}
 			if (slot < 0) {
 				if (fd >= 0)
 					close(fd);
@@ -1080,13 +1183,22 @@ int main(int argc, char **argv)
 				C[slot].ws = 0;
 				C[slot].xfer = XFER_NONE;
 				C[slot].n = 0;
+				C[slot].seen = time(NULL);
 			}
+		}
+		{
+			time_t now = time(NULL);
+
+			for (int i = 0; i < MAX_CLIENTS; i++)
+				if (C[i].fd >= 0 && !C[i].ws && C[i].xfer == XFER_NONE && now - C[i].seen > HTTP_IDLE_S)
+					client_close(&C[i]);
 		}
 		for (int k = 1; k < np; k++) {
 			client_t *c = &C[map[k] & 0xFF];
 
 			if (!pf[k].revents || c->fd < 0)
 				continue;
+			c->seen = time(NULL);
 			if (map[k] & 0x100) {		/* debazd -> browser */
 				uint8_t b[DZ_OSC_MAX_PKT];
 				ssize_t n = recv(c->udp, b, sizeof(b), 0);

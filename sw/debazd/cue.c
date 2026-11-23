@@ -2201,3 +2201,16 @@ int cue_dispatch(const dz_msg *m)
 	}
 	return 1;
 }
+
+void cue_status_lines(void)
+{
+	const cue_t *c = cur_s >= 0 && cur_c >= 0 && cur_c < S[cur_s].n ? &S[cur_s].c[cur_c] : NULL;
+
+	if (!c && !strcmp(show_name, "show"))	/* nothing loaded */
+		return;
+	if (c)
+		sline("cue: show %s, scene %s, cue %g \"%s\"%s", show_name, S[cur_s].name, c->num, c->name,
+		      fol.on ? ", follow on" : "");
+	else
+		sline("cue: show %s, no cue yet", show_name);
+}

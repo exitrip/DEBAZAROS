@@ -30,6 +30,7 @@
 #include "debazd.h"
 #include "dz_draw.h"
 #include "dz_fields.h"
+#include "dz_ain.h"
 
 #include <signal.h>
 #include <stdio.h>
@@ -220,21 +221,36 @@ static void stop_play(int out)
 	play[out].loop = 0;
 }
 
+/* while dzaudio runs it owns the PCMs: play into its stream input 12 + out
+ * (lib/dz_ain.h, 2026-11-22), at the file's pace (-re: a FIFO has no clock) */
 static int play_file(int out, const char *name, int loop)
 {
-	char cmd[512];
+	char cmd[600], who[48];
+	int st = DZA_SOUND + out, ain = dz_ain_ready(st);
 
 	stop_play(out);
-	snprintf(cmd, sizeof(cmd),
-		 "exec ffmpeg -nostdin -hide_banner -loglevel error %s-i '%s/%s' "
-		 "-map 0:a:0 -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d",
-		 loop ? "-stream_loop -1 " : "", DZ_AUDIO_DIR, name, pcm_of[out]);
+	if (ain)
+		snprintf(cmd, sizeof(cmd),
+			 "exec ffmpeg -nostdin -hide_banner -loglevel error -re %s-i '%s/%s' "
+			 "-map 0:a:0 -ac 2 -ar 48000 -f s16le pipe:4 4<>" DZA_FIFO,
+			 loop ? "-stream_loop -1 " : "", DZ_AUDIO_DIR, name, st);
+	else {
+		if (dz_pcm_owner(pcm_of[out], who, sizeof(who)))
+			dzd_log("sound: hw:DEBAZ,%d is busy (pid %s): no sound\n", pcm_of[out], who);
+		snprintf(cmd, sizeof(cmd),
+			 "exec ffmpeg -nostdin -hide_banner -loglevel error %s-i '%s/%s' "
+			 "-map 0:a:0 -ac 2 -ar 48000 -f alsa hw:DEBAZ,%d",
+			 loop ? "-stream_loop -1 " : "", DZ_AUDIO_DIR, name, pcm_of[out]);
+	}
 	play[out].pid = spawn(cmd);
 	if (!play[out].pid)
 		return -1;
+	if (ain)
+		dz_ain_route(st, 1u << pcm_of[out]);
 	snprintf(play[out].file, sizeof(play[out].file), "%s", name);
 	play[out].loop = loop;
-	dzd_log("sound: out %d plays %s%s\n", out, name, loop ? " (loop)" : "");
+	dzd_log("sound: out %d plays %s%s%s\n", out, name, loop ? " (loop)" : "",
+		ain ? " (into dzaudio)" : "");
 	return 0;
 }
 
@@ -434,4 +450,13 @@ void sound_close(void)
 		stop_pid(&rec_pid, SIGINT);
 		own_like_dir(rec_file);
 	}
+}
+
+void sound_status_lines(void)
+{
+	for (int o = 0; o < OUTS; o++)
+		if (play[o].pid > 0)
+			sline("audio out %d: plays %s%s", o, play[o].file, play[o].loop ? " (loop)" : "");
+	if (rec_pid > 0)
+		sline("audio: recording %s", rec_file);
 }

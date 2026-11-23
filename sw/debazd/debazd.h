@@ -49,6 +49,21 @@ int  anim_folder_names(void (*cb)(const char *name, void *ctx), void *ctx);
 /* ---- lfo.c: oscillators, wave shapers, step sequences ---- */
 void lfo_init(void);
 int  lfo_dispatch(const dz_msg *m);	/* 0 = not an /lfo address */
+int  mix_dispatch(const dz_msg *m);	/* /mix/... -> dzaudio (mix.c) */
+/* status.c: /run/debaz/status, what runs now (2026-11-22) */
+void status_tick(void);
+int  status_dispatch(const dz_msg *m);	/* /status -> s:text */
+void sline(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void stats_status_lines(void);
+void disp_status_lines(void);
+void lua_status_lines(void);
+void ascii_status_lines(void);
+void slit_status_lines(void);
+void anim_status_lines(void);
+void lfo_status_lines(void);
+void cue_status_lines(void);
+void react_status_lines(void);
+void sound_status_lines(void);
 void lfo_tick(double dt);		/* once per frame (or timer) */
 /* react.c: audio analysis (2026-11-01) */
 int   react_dispatch(const dz_msg *m);	/* 0 = not an /audio/react address */
@@ -159,6 +174,7 @@ int  pix_busy(void);			/* 1 = the pixel thread works or has messages */
 int  state_dispatch(const dz_msg *m);	/* /state, /state/snap|recall|diff */
 void disp_state(state_cb cb, void *ctx);
 void lfo_state(state_cb cb, void *ctx);
+void mix_state(state_cb cb, void *ctx);	/* dzaudio's matrix + gains (mix.c) */
 void react_state(state_cb cb, void *ctx);
 void dds_state(state_cb cb, void *ctx);
 void ascii_state(state_cb cb, void *ctx);

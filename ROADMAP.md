@@ -41,12 +41,37 @@ What is built but not yet exercised by hand. Bench board .236 (debaz-7130d5,
 HEAD software by hand). Tick an item with the date when it passes; add new
 untested work here, not in other sections.
 
+- [ ] LFO step editor lengths drag (2026-11-23, www/lfo.js minLen): the
+  bottom of a drag = the shortest step (1 frame / 1 fast tick / 1 clock
+  step), never 0; the "shortest" readout follows clock, fast, rate and the
+  board's frame rate. Playhead: board step <= 2 steps/s, own playhead
+  <= 12, then 1 step/s (headless check on .236: 1/3/6/11/30 steps/s as
+  planned). Flip button + values / lengths boxes (headless: board /state
+  matches). Per-card Copy from LFO k (page only) + Update (headless:
+  nothing sent before Update, board /state right after). On .236 / .137,
+  not tried by hand.
 - [ ] dzaudio (2026-11-21, sw/dzaudio): HEARD on both HDMI outputs?
   (tested only by status / tap / xrun counts on .137: no listening yet);
   `/mix/preset split` puts MIDI 1-8 / 9-16 on HDMI 0 / HDMI 1; reverb with
   `dzsynth.sh start 0,1 default.sf2 1`; a soak with movie video + synth.
-  Next: movie audio as a dzaudio source (today a synth on both outputs
-  blocks movie audio), /mix in debazd's state / cues, web mixer card.
+  /mix in debazd's state / cues DONE 2026-11-22 (mix.c). Next: web mixer card.
+- [ ] Edge-run fixes (2026-11-22, sw/README.md "Edge-case and stress
+  tests"; edge.py all = 0 anomalies on .236; debazd / dzaudio / dzweb /
+  dzctl / dzlua on .236 + .137): by hand with a live HDMI_2 input (the
+  laptop HDMI was disconnected: capture under load NOT covered), and the
+  web app in a real browser after the dzweb idle-eviction change.
+- [ ] LFO step sequencer (2026-11-22, lfo.c + web LFO card; on .137 +
+  .236; host tests + selftest pass, web editor checked headless on .236):
+  by eye on a display: a bpm step clock on a field, smooth glide, a clock
+  chain (3 against 4), every step firing a cue / an image per step, a
+  1024-step string from the web text box, state recall in a cue.
+- [ ] Movie audio + /audio/play INTO dzaudio (2026-11-22, stream inputs,
+  lib/dz_ain.h; on .137 + .236): HEARD on .137 with dzaudio running
+  (tested by counters only: stream s0 85-105 ms buffered, 0 short, 0
+  dropped in 30 s; /audio/play tone via s13)? Lip sync acceptable (about
+  +100 ms vs the direct path)? Two movies with sound at once; pause /
+  resume; a dzaudio stop while a movie plays (the movie's ffmpeg then
+  blocks on the full FIFO: restart the movie = direct path).
 - [ ] Image `debazaros-20261121-dzaudio.wic.xz` (2026-11-21, not booted):
   burn a card; check first boot (partitions, example scripts in
   /media/debaz/scripts), `lsmod | grep dzmem` + debazd "slot memory dzmem

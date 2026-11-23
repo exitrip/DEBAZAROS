@@ -4,6 +4,7 @@
 // changes, so several browsers (and later the cues) agree.
 import * as net from "./net.js";
 import { h, card, row, hexToRgb } from "./ui.js";
+import { fontPicker, fontFamily } from "./fonts.js";
 import { VIDEO, AUDIO, openFx, openCustom } from "./fxdialog.js";
 
 const hex = (v) => "#" + (v >>> 0).toString(16).padStart(6, "0").slice(-6);
@@ -192,11 +193,14 @@ export function asciiCard(slot, slotPicker) {
   const every = h("input", { type: "number", min: 1, max: 600, value: 2, title: "draw each k-th frame (2 = 30 fps at 60 Hz)\n/ascii/<d>/every k" });
   const chars = h("input", { type: "text", value: " .:ｦｱｳｴｵｶｷ01Zﾊﾐﾋｰ", style: "flex:1",
     title: "any UTF-8 characters; sorted by ink, so the order does not matter. Put a space in for black.\n/ascii/<d>/chars \"text\" [\"font\"]" });
-  const font = h("select", { style: "max-width:14em",
+  // the list and the chars box show the font itself (fonts.js, dzweb /fonts)
+  const font = fontPicker({
     title: "TrueType font on the board (/usr/share/fonts). A character the font lacks comes from " +
       "DejaVuSans, FreeSerif or DroidSansFallbackFull (sw/tools/pushfonts.sh)\n" +
-      "/ascii/<d>/chars \"text\" \"<font>\"  (list: /files fonts)" },
-    h("option", { value: "" }, "default font"));
+      "/ascii/<d>/chars \"text\" \"<font>\"  (list: /files fonts)",
+    onchange: () => { charsFont(); sendChars(); } });
+  const charsFont = () => { chars.style.fontFamily = fontFamily(font.value); };
+  charsFont();
   const st = h("span.hint", { title: "/ascii/<d>/status -> run src cols mode color fg bg level invert every " +
     "chars font ms drawn chars fps" }, "");
 
@@ -212,7 +216,6 @@ export function asciiCard(slot, slotPicker) {
   every.onchange = () => send("every", +every.value || 1);
   const sendChars = () => send("chars", chars.value, font.value);
   chars.onchange = sendChars;
-  font.onchange = sendChars;
 
   net.on("/ascii", (m) => {
     const r = /^\/ascii\/(\d+)\/status$/.exec(m.path);
@@ -225,8 +228,7 @@ export function asciiCard(slot, slotPicker) {
     put(mode, md); put(color, col); put(fg, hex(f)); put(bg, hex(b)); put(level, Math.round(lv * 100));
     put(invert, !!inv, "checked"); put(every, ev);
     if (document.activeElement !== chars) chars.value = ch;
-    if (fn && ![...font.options].some((o) => o.value === fn)) font.append(h("option", { value: fn }, fn));
-    if (document.activeElement !== font) font.value = fn;
+    if (!font.el.contains(document.activeElement) && font.value !== fn) { font.value = fn; charsFont(); }
     const miss = md === "chars" && nch !== undefined && drawn < nch
       ? ` · ${nch - drawn} of ${nch} characters in no font` : "";
     const rate = run && fps !== undefined ? ` · ${fps.toFixed(1)} fps` : "";
@@ -243,7 +245,7 @@ export function asciiCard(slot, slotPicker) {
     row("cols", cols, colsV),
     row("fg / bg", fg, bg, h("label", {}, invert, " invert")),
     row("level", level, h("label", {}, "every"), every),
-    row("chars", chars, font),
+    row("chars", chars, font.el),
     row(null, st),
     h("p.hint", {}, "The target slot shows text made from the source slot. Shade, braille and half are drawn " +
       "(no font). Chars draws your characters with the chosen TrueType font; characters it lacks come " +
@@ -316,12 +318,6 @@ export function slitRefresh(slot) {
 }
 
 export async function asciiRefresh(slot) {
-  if (fontSel) {           // the board's font list (bare names, any subfolder)
-    const list = await net.collect(net.message("/files", "fonts"), "/file", "/file/end");
-    const keep = fontSel.value;
-    fontSel.replaceChildren(h("option", { value: "" }, "default font"),
-      ...list.map((a) => a[0]).sort().map((n) => h("option", { value: n }, n.replace(/\.(ttf|otf|ttc)$/i, ""))));
-    fontSel.value = keep;
-  }
+  if (fontSel) await fontSel.refresh(true); // the board's font list (bare names, any subfolder)
   net.msg(`/ascii/${slot}/status`);
 }

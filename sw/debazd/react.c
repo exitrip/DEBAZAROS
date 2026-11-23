@@ -930,3 +930,9 @@ int react_dispatch(const dz_msg *m)
 	}
 	return 0;
 }
+
+void react_status_lines(void)
+{
+	if (src != SRC_OFF || want != SRC_AUTO)
+		sline("audio react: %s", status);
+}

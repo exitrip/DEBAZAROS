@@ -204,6 +204,7 @@ dzweb &      # -p 8080  -w <www>  -m /media/debaz  -d 127.0.0.1 -o 9000  -v   (d
 | `/` and other flat file names | static files from the www folder (no sub folders, `..` gives 404) |
 | `/units` | broadcasts `/info` on the LAN; JSON list of units (ip, variant, slots, host, MAC) |
 | `/osc` | WebSocket. Each binary frame is one OSC packet (message or bundle). |
+| `GET /fonts/<name>` | a TrueType font of the board (any subfolder of `/usr/share/fonts`, bare name as `/files fonts` lists it; cached 1 day). The web app's font pickers (`www/fonts.js`) show each name in its own font (only the rows in view load) and the text boxes / text previews use it, with the board's size, line pitch and baseline (hhea metrics, as stb_truetype) |
 | `GET /media` | JSON: free bytes on the disk, files in `img/`, `movies/`, `audio/` (name, size, mtime) |
 | `GET /media/<kind>/<name>` | download a file (`?dl`: as an attachment) |
 | `PUT /media/<kind>/<name>` | upload a file (raw body with Content-Length) |
@@ -436,6 +437,80 @@ dzctl /lfo/reset
 
 `every k` applies a target only on every k-th frame: use it for heavy
 targets (a full-frame fade takes 25–60 ms).
+
+**Step sequencer (2026-11-22, shape step):** up to 1024 steps
+(`/lfo/<n>/seq "v v ..."` as one string: an OSC message has max 32
+arguments). A step clock makes the cycle = the sum of the steps (adding a
+step makes it longer, the DDS AWG stretches instead): `/lfo/<n>/step frames
+k | hz f | bpm b [div] | clock k | off` (clock k = one step each time LFO k
+steps or wraps: polymeter on one tempo; off = the steps share rate /
+frames, as before). `/lfo/<n>/dur "w w ..."` = step lengths in steps (0 =
+skip). `/lfo/<n>/ease step|linear|smooth` + `/glide 0..1` (the part of the
+step the ease takes, at its end). The ease has no memory: a new seq, range
+or dur JUMPS at the next frame. `/lfo/<n>/every change` (once per new step
+value) / `every step` (each step start, also when the value repeats; other
+shapes: each wrap) turn a message target into an event sequencer.
+`/lfo/<n>` -> value on step. With a step clock `/phase` rotates the
+sequence. **Phase sync** (2026-11-22): `/lfo/<n>/sync k [delay]` = this
+LFO takes LFO k's place in its cycle instead of its own rate / step clock
+(any shapes, any step counts: 3 steps span k's 16), `delay` frames later
+(0..1023, from a phase history); `/lfo/<n>/delay f` alone (live, cues,
+LFO targets); `/sync off`. Own `/phase` adds an offset in cycle units.
+Step lengths count in phase mode too, and a step-clocked LFO's phase
+follows its step lengths, so a follower lines up with uneven steps.
+Host test: a 3-step follower of a 16-step leader in phase 60/60, 15
+frames delay at 4 frames/step = 3.75 steps behind 60/60.
+Two ways to follow another LFO: `sync` = the same place in the cycle
+(3 steps spread over the leader's 16: triplets over its cycle); `step
+clock k` = step when k steps (3 steps on 16 step together), with
+`/lfo/<n>/align 1` = back to step 0 at k's new cycle (0 1 2 0 1 2 .. 0,
+lined up; 0 = free polymeter) and `/delay` frames = step that much after
+k (both modes; step / wrap events kept in the history ring). Host test:
+align = leader step mod 3 on 150/150 samples, stepping on the same tick;
+free = drifts; delay 15 frames at 4 frames/step = 3-4 steps behind.
+**Fast LFOs (2026-11-22):** `/lfo/<n>/fast 1` = the LFO runs in a thread
+at `/lfo/fastrate` Hz (default 1000, 10..4000; query -> hz, measured hz,
+worst lateness ms, fast LFO count) and writes its FIELD targets at that
+rate: mid-frame writes = tearing bands, noisy by design. Message targets
+stay per frame (with the latest value); sync / clock followers run per
+frame (a fast leader's steps still clock them, gathered per frame). One
+recursive lock guards the LFO table (frame tick, dispatch, state, fast
+thread); the thread is SCHED_FIFO 20 when debazd is root and ends when no
+fast LFO is on. Measured on .236 (debazd 3.9 % idle): 1 fast LFO at 1 kHz
++2.2 %, 16 at 1 kHz +4.5 %, 16 at 4 kHz +17 %; rate exact, lateness max
+0.5 ms at 1 kHz. Web: "fast" box per LFO, fast rate + measured rate in
+the top row. Web: LFO card, shape step = step editor (drag values or
+lengths, eased curve, playhead), count, text, clock, ease, glide, apply.
+A lengths drag stops at the shortest step (one frame, one fast tick or one
+clock step, shown as "shortest" in dur units), never at 0: a 0 step has no
+width on the canvas and a drag cannot reach it again. 0 = skip only in the
+text box.
+Playhead: the page polls /lfo/<n> every 250 ms, so up to 2 steps/s it
+shows the board's step; up to 12 steps/s its own playhead at the step rate
+worked out from the settings (sequential, not in phase with the board:
+no aliasing); faster, one step per second, only to show that it runs.
+Once mode always shows the board's step.
+Flip (2026-11-23): reverses the values and / or the step lengths (two
+boxes) in the page and sends /seq and /dur = the sequence backwards, with
+no debazd change. A short repeating dur list is written out to the step
+count first.
+Copy / Update (2026-11-23, each LFO card): "copy from LFO k" + Copy puts
+k's settings into this card in the page only (all but target and on / off;
+a sync to itself becomes off); Update (marked ● while a copy is not sent)
+sends all the card's settings. Copy into several cards, tweak, then Update
+each (or "Send all settings").
+Measured (Cortex-A9): all 16 LFOs 13 us per frame on the slowest path
+(cos + pow), 1024 steps with glide 3 us; a field target costs nothing
+measurable, the same value from a 60 fps Lua osc() ~2.6 % of a core.
+
+```sh
+dzctl /lfo/0/seq "0 1 0.5 0.25"; dzctl /lfo/0/step bpm 120 4   # 16ths at 120
+dzctl /lfo/0/ease smooth; dzctl /lfo/0/glide 0.3
+dzctl /lfo/1/seq "0 0 1"; dzctl /lfo/1/step clock 0            # 3 against 4
+dzctl /lfo/2/seq "0 0.5 1"; dzctl /lfo/2/step frames 30
+dzctl /lfo/2/range 1 3; dzctl /lfo/2/every step
+dzctl /lfo/2/target "/cue/go main \$2"                         # a cue per step
+```
 
 Shape `audio` (2026-11-01): the value follows a feature of the audio
 analysis (`debazd/react.c`, source `/audio/react/source auto|movie|capture|peak|off`):
@@ -729,6 +804,36 @@ idle 5.4 % of a core (old fluidsynth program ~7 %), 12 voices 18 %
 (fluidsynth 15 %, mix NEON 3 %), RSS 18 MB. Not in debazd's state / cues
 yet. `sudo dzsynth.sh start [outs] [sf] [fx] [routing]` starts it;
 dzstart.conf `SYNTH="0,1"` at boot.
+Stream inputs (2026-11-22, `lib/dz_ain.h`): 16 stereo inputs (in 18-33 =
+s0..s15), each a FIFO `/tmp/dzin.<n>` (S16LE 48 kHz stereo) that dzaudio
+makes and holds open read-write. While dzaudio runs it owns hw:DEBAZ,0/1,
+so debazd's players write there instead: movie audio of slot s = stream s,
+`/audio/play` on out o = stream 12 + o (with -re: a FIFO has no clock).
+debazd sends `/mix/stream <n> <devmask> [gain]` (bit d = hw:DEBAZ,d) and
+dzaudio routes the stream to those sinks' pairs; the presets keep stream
+routes. "dzaudio runs" = the FIFO has a reader (`dz_ain_ready`, an
+O_NONBLOCK write open); else the players open the PCM as before, and a
+busy PCM is logged with its owner ("hw:DEBAZ,0 is busy (pid 2427
+dzaudio)": before, the audio ffmpeg failed into /dev/null). A ring per
+stream takes the writer's jitter: play starts at 100 ms buffered, the
+oldest frames are dropped above 200 ms, an empty ring = silence (pause,
+stop). `/mix/streams` = per stream: devmask, frames buffered / short
+periods / dropped frames. Measured on .137: a movie on slot 0 into both
+HDMI pairs, 30 s: 85-105 ms buffered, 0 short, 0 dropped, dzaudio CPU
+unchanged (7.5 %). Movie audio with dzaudio running now also reaches the
+react source synth (it is in the mix).
+**Mixer in state and cues (2026-11-22, `debazd/mix.c`):** debazd passes
+every `/mix/...` message on to dzaudio (so cues, `/cue/add` and LFO
+templates can use them; queries: ask port 9002), and while dzaudio runs
+its state holds `/mix/routes s:"ch1>0:1 ..."` (the matrix without the
+movie streams), `/mix/gain`, `/mix/pair/<p>/gain` (one `/mix/state` query
+per dump, < 50 ms; no dzaudio = no wait, no targets). dzaudio:
+`/mix/routes "<text>"` sets the matrix from its own text format (streams
+keep their routes), `/mix/state` = routes, master, pair gains. Tested on
+.236: snapshot / recall and a cue go restore routes and gains; a movie's
+stream route survives a routes change. Not tracked: the soundfont, the
+synth on/off (dzsynth.sh), dzaudio's matrix across a dzaudio restart
+(only stream routes persist; a cue go or a state recall puts it back).
 
 **MIDI out to a synth (2026-11-20):** fluidsynth 2.2.2 (meta-multimedia,
 ALSA only: a bbappend removes PulseAudio) + the TimGM6mb General MIDI
@@ -1307,6 +1412,103 @@ reboot) is ready in `PetaLinux/dtb/` - see its README.
 Register blocks: debazd maps only blocks listed in `include/hw_map.h`. Old
 addresses (and the speculative UIO nodes in the dtsi) are refused, because
 any access to them is a bus error.
+
+## What runs now: /run/debaz/status (2026-11-22)
+
+`cat /run/debaz/status` on the board (also OSC `/status` -> s:text, dzweb
+`GET /status`): only what is ACTIVE, unlike `/state` (~850 targets, mostly
+defaults). debazd rewrites it once per second from the frame tick (tmpfs,
+temp file + rename, a few hundred bytes); each module adds its lines from
+its own variables (no wait for the pixel thread; a line can be a frame
+old). Lines: debazd pid / RSS / free RAM; load (frame rate, tick / OSC /
+pixel-thread max); video mode; each display's slot, BLANK, crop, anim,
+sequence; every slot's writer (movie + where its audio goes, lua, ascii,
+slit, capture, black); running LFOs (shape, timing, fast, sync / clock,
+target); the cue position; audio react; /audio/play players; dzaudio.
+Cost: ~1 ms per build (two /proc reads) = ~0.1 % of a core at 1 Hz.
+`edge.py` logs any leftover activity from it after each group. Example:
+
+```
+debazd: 2026-11-23 03:24:45, pid 619, RSS 2096 kB, RAM available 95080 kB
+load: frame 59.98 Hz, frame tick max 0.82 ms, OSC max 0.00 ms, pixel thread max 0.1 ms
+video mode: 1280x720
+display 0: slot 0
+display 1: slot 2
+slot 4: capture
+slot 6: movie frac.mkv, audio -> HDMI
+slot 11: black (blanking)
+slot 9: lua fb-plasma.lua (pid 644)
+lfo 2: sine, 0.5 Hz, fast -> /hdmi/0/gain/r
+```
+
+## Edge-case and stress tests (2026-11-22)
+
+`tools/bench/stress/` (laptop side, a bench board on the LAN):
+
+- `edge.py GROUP...` (groups `osc args lfo slots modes audio web resume`,
+  `all`): short targeted cases; after every case an OSC ping (debazd must
+  answer in 2 s), after every group a board check (debazd pid / restarts,
+  new dmesg lines, taint, leftover ffmpeg / fbfeed / dzmosh / dzlua,
+  memory). Log: `~/debaz-stress/<date>/edge.log`. Destructive addresses
+  (show / cue / look editing, saves, deletes, records) are never fuzzed;
+  the board state is junk afterwards: reboot it. `modes` skips itself
+  while the capture has an input. A full run takes ~7 min.
+- `stress.sh setup | <phase> [min] | restore | report`: sustained loads
+  (show, lfo, combo, cues, audio, flood, restart, modes, reboot, power)
+  with 30 s samples (`sample.sh` on the board: CPU from /proc, memory,
+  tick / OSC / pixel-thread max, video events, dzaudio xruns / streams) and
+  a USB-capture picture check (`DZ_CAPDEV`, default /dev/video4).
+  `oscstate.py save|replay` keeps a board's state.
+
+Found and fixed by the first edge run (.236, 2026-11-22):
+- **OSC bundle with a negative element size crashed debazd** (and dzaudio,
+  dzweb, dzctl, dzlua: the same parser): `pos + size` wrapped on the 32-bit
+  board, passed the check and read far out of the packet. `lib/dz_osc.c`
+  now compares sizes with what is left (bundles, blobs; string padding
+  clamped), nesting depth max 8. Host fuzz (ASan + 32-bit): 1 M packets.
+- **NaN / inf were stored** by LFO parameters, movie trails / ghost, ASCII
+  level, DDS scope, anim fps, slit speed (NaN passes every clamp). Every
+  message with a non-finite float is refused at debazd's entry (`handle()`:
+  network, LFO templates, pixel thread) and in dzaudio; LFO seq / dur
+  strings map "nan" / "inf" to 0; an LFO never writes a NaN to a field.
+- **12 movies started at once: OOM killer for a minute, no ssh.** Each
+  movie takes ~11 MB (12.7 with audio) within 1-3 s; every start saw the
+  same free memory. A movie started in the last 3 s now counts as 12 MB
+  used (`MOVIE_COST_KB`): the burst gives 6-7 movies, no OOM.
+- **Slot 11 (black, blanking) could be written** by movies, images and
+  draws: the slot-mask parser drops it for every write (read-only ops keep
+  it).
+- **dzaudio restart: the playing movies lost their routes** (silent until
+  the movie restarted): stream routes are saved in /tmp/dzaudio.streams
+  and loaded at start.
+- **200 idle TCP connections locked dzweb out** (16 slots): a plain HTTP
+  client idle for 10 s is closed, and a new connection evicts the
+  stalest one when all slots are used (WebSocket pages are kept).
+
+Checked and fine: path traversal on /fonts, /media, /shows (all 404 /
+400); bad PUT lengths (413 / 411); WebSocket garbage; back-to-back mode
+switches (8 without waiting) and switches during a movie; 50 movie
+play/stop pairs without waiting (no leftovers); kill -9 of debazd during a
+fade (resume, no orphan processes); random / empty autosave (refused);
+cue follow 0 / negative, deleting the playing cue, recording during a
+fade; FIFO half frames / random bytes / a 10 MB flood into dzaudio;
+LFO clock loops, an LFO that triggers itself every step.
+Later the same day: ASCII runs could target slot 11 (black) and slot 4
+(capture): refused now; `/ascii/*/...` and `/slit/*/...` were "no such
+address" (a cleanup with them left 8 ASCII runs = the pixel thread at
+100 % for an hour, unseen by the ping checks): both take `*` now.
+**OSC rate from a Lua script (measured on .236, 2026-11-22):** a burst
+of `osc()` field writes = 6600 msg/s sent, debazd took ~4700/s (the rest
+dropped by the socket buffer: each field message matched the path against
+all ~700 fields). Since the field hash (debazd.c do_fields: exact paths by
+an FNV hash, patterns still scan; a field's write log line at most once
+per second): 18 700 msg/s sent, 0 dropped. Paced with FFI `usleep`:
+1 kHz asked = 858/s real, interval p50 1.14 ms, p99 1.7 ms, max 5.8 ms;
+2 kHz asked = 1540/s, p99 1.0 ms, max 7.9 ms (not a real-time kernel).
+Open (not fixed): a movie may play on the capture slot 4; a truncated
+autosave resumes the part it can read without a warning; scene names are
+not checked (stored inside show.json only); `/stats` CPU covers the time
+since ANY client's last `/stats` (a polling page makes it noise).
 
 ## Debugging (no Eclipse)
 

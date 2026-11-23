@@ -22,6 +22,13 @@
  * Inputs (stereo pairs, index = OSC <in>):
  *   0..15  MIDI channel 1..16 (fluidsynth renders channel c to pair c)
  *   16     reverb return      17  chorus return  (only with -f)
+ *   18..33 streams 0..15 (2026-11-22, lib/dz_ain.h): FIFO /tmp/dzin.<n>,
+ *          S16LE 48 kHz stereo, made and held open here. debazd writes
+ *          movie audio (stream = slot) and /audio/play (12 + out) there
+ *          while dzaudio runs, and routes it with /mix/stream. A ring per
+ *          stream takes up the writer's jitter (ffmpeg -re); above
+ *          STRM_HIGH frames the oldest are dropped (latency stays low), an
+ *          empty ring plays silence.
  * Input CHANNEL (mono) = 2 * in + 0 (L) / 1 (R).
  * Output channels are numbered over the sinks in order: -o 0,1 gives
  * 0 = HDMI 0 L, 1 = HDMI 0 R, 2 = HDMI 1 L, 3 = HDMI 1 R; output PAIR p =
@@ -49,16 +56,25 @@
  *   /mix/gain [f]                      master gain (query without argument)
  *   /mix/pair/<p>/gain [f]             output pair trim
  *   /mix/routes                        s: "in>pair:gain ..." (+ mono entries)
+ *   /mix/routes s:"in>pair:gain ..."   set the matrix from that text (2026-11-22:
+ *                                      cues; the stream inputs keep their
+ *                                      /mix/stream routes; "none" = all off)
+ *   /mix/state                         s:routes (no streams) f:master f:pair gains...
+ *                                      (debazd: the mixer in its state / cues)
  *   /mix/status                        s: sinks, xruns, CPU, voices
  *   /mix/sf s:file                     load a soundfont (replaces the old one)
  *   /mix/panic                         all notes / sounds off, controllers reset
+ *   /mix/stream <n> <devmask> [gain]   stream n -> the pairs of the DEBAZ
+ *                                      devices in devmask (bit d = hw:DEBAZ,d;
+ *                                      0 = off); kept by the presets
+ *   /mix/streams                       s: "s<n>:<frames buffered>/<under>/<drop>"
  *   /mix/ping                          -> /mix/pong
  *
  * libfluidsynth and libasound are opened with dlopen (the Vitis toolchain
  * has no headers; as dzlua): the prototypes below are the libraries' own.
  * The DEBAZ PCM of a sink has ONE owner: while dzaudio holds HDMI 0 and 1,
- * no movie audio / pcmplay / aplay plays there (movie audio as a source of
- * this matrix = the next step), and plreload.sh refuses to load.
+ * movie audio and /audio/play come in as streams (above); pcmplay / aplay
+ * do not play there, and plreload.sh refuses to load.
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -76,14 +92,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "dz_osc.h"
+#include "dz_ain.h"
 
 #define RATE		48000
 #define N_MIDI		16			/* stereo inputs from the MIDI channels */
-#define N_IN		(N_MIDI + 2)		/* + reverb, chorus */
+#define N_FX		2			/* reverb, chorus returns */
+#define IN_STRM		(N_MIDI + N_FX)		/* first stream input */
+#define N_IN		(IN_STRM + DZA_STREAMS)
 #define N_INCH		(2 * N_IN)
 #define MAX_SINKS	8
 #define MAX_OUTCH	32
@@ -196,6 +216,23 @@ static float    mtx[MAX_OUTCH][N_INCH];
 static float    pair_gain[MAX_OUTCH / 2];
 static float    master = 1.0f;
 static unsigned gen = 1;
+
+/* stream inputs: FIFO -> ring (audio thread only), routes (under mu) */
+#define STRM_RING	16384			/* frames, power of 2 (341 ms) */
+#define STRM_HIGH	9600			/* above: drop the oldest down to STRM_LOW */
+#define STRM_LOW	4800			/* 100 ms */
+typedef struct {
+	int      fd;
+	int16_t  ring[STRM_RING * 2];
+	unsigned wr, rd;			/* frames, free running */
+	uint8_t  carry[4];			/* a part frame from the last read */
+	int      ncarry;
+	int      primed;			/* buffered STRM_LOW once: playing */
+	volatile unsigned under, drop;		/* periods short / frames dropped */
+	unsigned mask;				/* /mix/stream devmask (mu) */
+	float    gain;
+} strm_t;
+static strm_t strm[DZA_STREAMS];
 
 /* stats (audio thread writes, control thread reads: approximate is fine) */
 static volatile double cpu_avg, cpu_max, render_avg;
@@ -431,6 +468,121 @@ static void to_s16(int16_t *d, const float *b, int n)
 }
 #endif
 
+/* ---- stream inputs --------------------------------------------------------- */
+/* the routes survive a dzaudio restart (2026-11-22, edge.py: after a restart
+ * the playing movies' streams had no route = silent until the movie
+ * restarted); a route for a movie that ended is harmless (silent input) */
+#define STRM_SAVE	"/tmp/dzaudio.streams"
+
+static void strm_save(void)	/* mu held */
+{
+	FILE *f = fopen(STRM_SAVE ".tmp", "w");
+
+	if (!f)
+		return;
+	for (int n = 0; n < DZA_STREAMS; n++)
+		if (strm[n].mask)
+			fprintf(f, "%d %u %g\n", n, strm[n].mask, (double)strm[n].gain);
+	if (fclose(f) == 0)
+		rename(STRM_SAVE ".tmp", STRM_SAVE);
+}
+
+static void strm_load(void)	/* before the audio thread */
+{
+	FILE *f = fopen(STRM_SAVE, "r");
+	int n, k = 0;
+	unsigned mask;
+	double g;
+
+	if (!f)
+		return;
+	while (fscanf(f, "%d %u %lf", &n, &mask, &g) == 3)
+		if (n >= 0 && n < DZA_STREAMS && isfinite(g)) {
+			strm[n].mask = mask;
+			strm[n].gain = (float)g;
+			k++;
+		}
+	fclose(f);
+	if (k)
+		logf_("%d stream routes from %s\n", k, STRM_SAVE);
+}
+
+static void strm_open_all(void)
+{
+	for (int n = 0; n < DZA_STREAMS; n++) {
+		char p[32];
+		struct stat st;
+
+		snprintf(p, sizeof(p), DZA_FIFO, n);
+		if (lstat(p, &st) == 0 && !S_ISFIFO(st.st_mode))
+			unlink(p);
+		if (mkfifo(p, 0660) < 0 && errno != EEXIST) {
+			logf_("%s: %s\n", p, strerror(errno));
+			strm[n].fd = -1;
+			continue;
+		}
+		/* read-write: the writer's open never blocks, and no EOF when it
+		 * goes (a pipe with no writer would read 0 for ever) */
+		strm[n].fd = open(p, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+		strm[n].gain = 1.0f;
+	}
+}
+
+/* drain the FIFO into the ring, then one period (zeros if short) into L, R */
+static int strm_read(strm_t *t, float *l, float *r)
+{
+	uint8_t b[16384];
+	ssize_t k;
+	unsigned fill;
+
+	if (t->fd < 0)
+		return 0;
+	memcpy(b, t->carry, (size_t)t->ncarry);	/* a part frame first */
+	while ((k = read(t->fd, b + t->ncarry, sizeof(b) - (size_t)t->ncarry)) > 0) {
+		size_t all = (size_t)k + (size_t)t->ncarry, fr = all / 4;
+
+		for (size_t i = 0; i < fr; i++) {
+			memcpy(&t->ring[(t->wr & (STRM_RING - 1)) * 2], b + i * 4, 4);
+			t->wr++;
+		}
+		t->ncarry = (int)(all - fr * 4);
+		memcpy(t->carry, b + fr * 4, (size_t)t->ncarry);
+		memcpy(b, t->carry, (size_t)t->ncarry);
+		if (t->wr - t->rd > STRM_RING - 1) {	/* overrun: keep the newest */
+			t->drop += t->wr - t->rd - (STRM_RING - 1);
+			t->rd = t->wr - (STRM_RING - 1);
+		}
+	}
+	fill = t->wr - t->rd;
+	if (!t->primed) {			/* start with some reserve */
+		if (fill < STRM_LOW)
+			return 0;
+		t->primed = 1;
+	}
+	if (fill > STRM_HIGH) {			/* the writer runs ahead: catch up */
+		t->drop += fill - STRM_LOW;
+		t->rd = t->wr - STRM_LOW;
+		fill = STRM_LOW;
+	}
+	if (fill == 0) {			/* ran dry (stopped, paused): wait */
+		t->primed = 0;
+		return 0;
+	}
+	if (fill < (unsigned)period)
+		t->under++;
+	for (int i = 0; i < period; i++) {
+		if ((unsigned)i < fill) {
+			const int16_t *f = &t->ring[((t->rd + (unsigned)i) & (STRM_RING - 1)) * 2];
+
+			l[i] = f[0] * (1.0f / 32768.0f);
+			r[i] = f[1] * (1.0f / 32768.0f);
+		} else
+			l[i] = r[i] = 0.0f;
+	}
+	t->rd += fill < (unsigned)period ? fill : (unsigned)period;
+	return 1;
+}
+
 /* ---- the audio thread ------------------------------------------------------ */
 typedef struct { uint8_t in, out; float g; } route_t;
 
@@ -469,13 +621,16 @@ static void *audio_thread(void *arg)
 			pthread_mutex_unlock(&mu);
 		}
 		clock_gettime(CLOCK_MONOTONIC, &t0);
-		for (int i = 0; i < N_INCH; i++)
+		for (int i = 0; i < 2 * IN_STRM; i++)
 			memset(inb[i], 0, sizeof(float) * (size_t)period);
 		F.process(synth, period, fxon ? 4 : 0, fxon ? fx : NULL, 2 * N_MIDI, dry);
 		clock_gettime(CLOCK_MONOTONIC, &tr);
 		/* a MIDI channel with no voice renders zeros: skip it in the mix */
-		for (int i = 0; i < N_INCH; i++)
+		for (int i = 0; i < 2 * IN_STRM; i++)
 			live[i] = !silent(inb[i], period);
+		for (int n = 0; n < DZA_STREAMS; n++)
+			live[2 * (IN_STRM + n)] = live[2 * (IN_STRM + n) + 1] =
+				strm_read(&strm[n], inb[2 * (IN_STRM + n)], inb[2 * (IN_STRM + n) + 1]);
 		for (int o = 0; o < noutch; o++)
 			memset(outb[o], 0, sizeof(float) * (size_t)period);
 		for (int k = 0; k < nplan; k++)
@@ -539,6 +694,17 @@ static void route_stereo(int in, int pair, float g)	/* mu held */
 	mtx[2 * pair + 1][2 * in + 1] = g;
 }
 
+/* stream n -> every pair whose sink is a DEBAZ device in its mask (mu held) */
+static void strm_route(int n)
+{
+	for (int q = 0; 2 * q + 1 < noutch; q++)
+		route_stereo(IN_STRM + n, q, 0.0f);
+	for (int k = 0; k < nsink; k++)
+		if (sink[k].debaz >= 0 && sink[k].debaz < 32 && (strm[n].mask >> sink[k].debaz & 1u))
+			for (int c = 0; c + 1 < sink[k].ch; c += 2)
+				route_stereo(IN_STRM + n, (sink[k].first + c) / 2, strm[n].gain);
+}
+
 static int preset(const char *name)	/* mu held */
 {
 	int npair = noutch / 2, p = 0;
@@ -547,7 +713,9 @@ static int preset(const char *name)	/* mu held */
 	    !(sscanf(name, "pair%d", &p) == 1 && p >= 0 && p < npair))
 		return -1;
 	memset(mtx, 0, sizeof(mtx));
-	for (int in = 0; in < N_IN; in++) {
+	for (int n = 0; n < DZA_STREAMS; n++)	/* the streams keep their routes */
+		strm_route(n);
+	for (int in = 0; in < IN_STRM; in++) {
 		if (!strcmp(name, "both"))
 			for (int q = 0; q < npair; q++)
 				route_stereo(in, q, 1.0f);
@@ -569,9 +737,71 @@ static const char *in_name(int in, char *b, size_t n)
 {
 	if (in < N_MIDI)
 		snprintf(b, n, "ch%d", in + 1);
+	else if (in >= IN_STRM)
+		snprintf(b, n, "s%d", in - IN_STRM);
 	else
 		snprintf(b, n, "%s", in == N_MIDI ? "rev" : "cho");
 	return b;
+}
+
+/* the matrix as text: "ch1>0:1.00 ... m5>2:0.50" (mu held); streams optional */
+static size_t routes_text(char *s, size_t cap, int streams)
+{
+	size_t o = 0;
+	char nb[8];
+	int nin = streams ? N_IN : IN_STRM;
+
+	for (int in = 0; in < nin; in++)	/* stereo routes first */
+		for (int q = 0; 2 * q + 1 < noutch; q++)
+			if (mtx[2 * q][2 * in] != 0.0f && mtx[2 * q][2 * in] == mtx[2 * q + 1][2 * in + 1] && o < cap - 40)
+				o += (size_t)snprintf(s + o, cap - o, "%s%s>%d:%.3g", o ? " " : "",
+						      in_name(in, nb, sizeof(nb)), q, mtx[2 * q][2 * in]);
+	for (int q = 0; q < noutch; q++)	/* the rest as mono entries */
+		for (int i = 0; i < 2 * nin; i++) {
+			float g = mtx[q][i];
+			int st = (i & 1) == (q & 1) && g == mtx[q ^ 1][i ^ 1];
+
+			if (g != 0.0f && !st && o < cap - 40)
+				o += (size_t)snprintf(s + o, cap - o, "%sm%d>%d:%.3g", o ? " " : "", i, q, g);
+		}
+	if (!o)
+		o = (size_t)snprintf(s, cap, "none");
+	return o;
+}
+
+/* set the non-stream part of the matrix from routes_text's format (mu held) */
+static void routes_set(const char *t)
+{
+	char tok[48];
+	int k;
+
+	for (int o = 0; o < MAX_OUTCH; o++)
+		for (int i = 0; i < 2 * IN_STRM; i++)
+			mtx[o][i] = 0.0f;
+	while (sscanf(t, " %47s%n", tok, &k) == 1) {
+		int in = -1, q, ch;
+		float g;
+		char *gt = strchr(tok, '>');
+
+		t += k;
+		if (!gt || sscanf(gt + 1, "%d:%f", &q, &g) != 2 || !isfinite(g) || q < 0)
+			continue;
+		*gt = 0;
+		if (tok[0] == 'm' && sscanf(tok + 1, "%d", &ch) == 1) {	/* mono */
+			if (ch >= 0 && ch < 2 * IN_STRM && q < noutch)
+				mtx[q][ch] = g;
+			continue;
+		}
+		if (!strncmp(tok, "ch", 2))
+			in = atoi(tok + 2) - 1;
+		else if (!strcmp(tok, "rev"))
+			in = N_MIDI;
+		else if (!strcmp(tok, "cho"))
+			in = N_MIDI + 1;
+		if (in >= 0 && in < IN_STRM)	/* s<n>: streams keep their own routes */
+			route_stereo(in, q, g);
+	}
+	gen++;
 }
 
 /* ---- control (main thread): OSC over UDP ------------------------------------ */
@@ -609,6 +839,11 @@ static void on_msg(dz_msg *m, void *ctx)
 	int p;
 	(void)ctx;
 
+	for (int k = 0; k < m->n; k++)		/* no NaN / inf (a NaN gain = silence) */
+		if (m->a[k].type == 'f' && !isfinite(m->a[k].f)) {
+			reply("/error", "ss", m->path, "not a finite number (nan / inf)");
+			return;
+		}
 	if (!strcmp(m->path, "/mix/ping")) {
 		reply("/mix/pong", "");
 	} else if (!strcmp(m->path, "/mix/route") && m->n >= 2) {
@@ -625,7 +860,7 @@ static void on_msg(dz_msg *m, void *ctx)
 			gen++;
 			pthread_mutex_unlock(&mu);
 		} else
-			reply("/error", "ss", m->path, "inch 0..35, outch 0..outputs-1");
+			reply("/error", "ss", m->path, "inch 0..67, outch 0..outputs-1");
 	} else if (!strcmp(m->path, "/mix/preset") && m->n >= 1 && m->a[0].type == 's') {
 		pthread_mutex_lock(&mu);
 		p = preset(m->a[0].s);
@@ -649,24 +884,28 @@ static void on_msg(dz_msg *m, void *ctx)
 		}
 		reply(m->path, "f", (double)pair_gain[p]);
 	} else if (!strcmp(m->path, "/mix/routes")) {
-		char nb[8];
+		pthread_mutex_lock(&mu);
+		if (m->n >= 1 && m->a[0].type == 's')
+			routes_set(m->a[0].s);
+		routes_text(s, sizeof(s), 1);
+		pthread_mutex_unlock(&mu);
+		reply("/mix/routes", "s", s);
+	} else if (!strcmp(m->path, "/mix/state")) {
+		dz_arg a[DZ_OSC_MAX_ARGS];
+		int na = 0;
+		uint8_t b[DZ_OSC_MAX_PKT];
+		size_t len;
 
 		pthread_mutex_lock(&mu);
-		for (int in = 0; in < N_IN; in++)	/* stereo routes first */
-			for (int q = 0; 2 * q + 1 < noutch; q++)
-				if (mtx[2 * q][2 * in] != 0.0f && mtx[2 * q][2 * in] == mtx[2 * q + 1][2 * in + 1] && o < sizeof(s) - 40)
-					o += (size_t)snprintf(s + o, sizeof(s) - o, "%s%s>%d:%.2f", o ? " " : "",
-							      in_name(in, nb, sizeof(nb)), q, mtx[2 * q][2 * in]);
-		for (int q = 0; q < noutch; q++)	/* the rest as mono entries */
-			for (int i = 0; i < N_INCH; i++) {
-				float g = mtx[q][i];
-				int st = (i & 1) == (q & 1) && g == mtx[q ^ 1][i ^ 1];
-
-				if (g != 0.0f && !st && o < sizeof(s) - 40)
-					o += (size_t)snprintf(s + o, sizeof(s) - o, "%sm%d>%d:%.2f", o ? " " : "", i, q, g);
-			}
+		routes_text(s, sizeof(s), 0);
+		a[na++] = (dz_arg){ .type = 's', .s = s };
+		a[na++] = (dz_arg){ .type = 'f', .f = master };
+		for (int q = 0; 2 * q + 1 < noutch && na < DZ_OSC_MAX_ARGS; q++)
+			a[na++] = (dz_arg){ .type = 'f', .f = pair_gain[q] };
 		pthread_mutex_unlock(&mu);
-		reply("/mix/routes", "s", o ? s : "none");
+		len = dz_osc_build_args(b, sizeof(b), "/mix/state", a, na);
+		if (len)
+			sendto(sock, b, len, 0, (struct sockaddr *)&peer, peerlen);
 	} else if (!strcmp(m->path, "/mix/status")) {
 		o = (size_t)snprintf(s, sizeof(s), "cpu %.1f%% max %.1f%% (render %.1f%%), voices %d, period %d, outputs %d,",
 				     cpu_avg, cpu_max, render_avg, F.voices(synth), period, noutch);
@@ -688,6 +927,29 @@ static void on_msg(dz_msg *m, void *ctx)
 			sfid = id;
 			reply("/mix/sf", "s", m->a[0].s);
 		}
+	} else if (!strcmp(m->path, "/mix/stream") && m->n >= 2) {
+		int n = argi(&m->a[0]);
+
+		if (n < 0 || n >= DZA_STREAMS) {
+			reply("/error", "ss", m->path, "stream 0..15");
+			return;
+		}
+		pthread_mutex_lock(&mu);
+		strm[n].mask = (unsigned)argi(&m->a[1]);
+		if (m->n > 2 && isfinite(argf(&m->a[2])))
+			strm[n].gain = argf(&m->a[2]);
+		strm_route(n);
+		strm_save();
+		gen++;
+		pthread_mutex_unlock(&mu);
+		if (verbose)
+			logf_("stream %d -> devices 0x%x, gain %.2f\n", n, strm[n].mask, strm[n].gain);
+	} else if (!strcmp(m->path, "/mix/streams")) {
+		for (int n = 0; n < DZA_STREAMS && o < sizeof(s) - 60; n++)
+			if (strm[n].mask || strm[n].wr != strm[n].rd || strm[n].under || strm[n].drop)
+				o += (size_t)snprintf(s + o, sizeof(s) - o, "%ss%d:dev0x%x:%u/%u/%u", o ? " " : "", n,
+						      strm[n].mask, strm[n].wr - strm[n].rd, strm[n].under, strm[n].drop);
+		reply("/mix/streams", "s", o ? s : "none");
 	} else if (!strcmp(m->path, "/mix/panic")) {
 		F.system_reset(synth);
 	} else {
@@ -754,6 +1016,12 @@ int main(int argc, char **argv)
 	}
 	if (load_libs() < 0)
 		return 1;
+	strm_open_all();
+	strm_load();
+	for (int n = 0; n < DZA_STREAMS; n++)	/* routes from before a restart */
+		if (strm[n].mask)
+			strm_route(n);
+	gen++;
 
 	set = F.new_settings();
 	F.setnum(set, "synth.sample-rate", RATE);

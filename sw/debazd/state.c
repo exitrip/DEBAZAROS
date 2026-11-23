@@ -240,6 +240,7 @@ void state_dump(state_cb cb, void *ctx)
 	pix_unlock();
 	dds_state(cb, ctx);
 	react_state(cb, ctx);
+	mix_state(cb, ctx);
 	lfo_state(cb, ctx);
 	pwm_state(cb, ctx);
 	fx_state(cb, ctx);
@@ -398,7 +399,7 @@ static int rank_of(const char *a)
 		{ "/ascii/", "/chars", 40 }, { "/ascii/", "/run", 42 }, { "/ascii/", "", 41 },
 		{ "/slit/", "/run", 44 }, { "/slit/", "", 43 },
 		{ "/lua/", "/run", 46 }, { "/lua/", "", 45 },
-		{ "/dds/", "", 50 }, { "/audio/react/", "", 55 },
+		{ "/dds/", "", 50 }, { "/audio/react/", "", 55 }, { "/mix/", "", 56 },
 		{ "/lfo/", "/rate", 60 }, { "/lfo/", "/frames", 61 }, { "/lfo/", "/on", 63 },
 		{ "/lfo/", "", 62 },
 		{ "/fan/", "/pwm", 70 }, { "/fx/", "", 80 } };

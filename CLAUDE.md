@@ -104,8 +104,14 @@ plreload.sh, dzrun.sh, dzsetup.sh = repo versions and the units in
 UNITS (Restart, watchdog, resume; logs: journalctl -u debazd).
 Nov 21 (both): dzaudio (sw/dzaudio: fluidsynth + routing matrix, OSC UDP
 9002, default HDMI 0 + 1 = 4 ch; sw/README.md "dzaudio") in /home/ebaz/bin;
-dzsynth.sh starts it (running on .137, stopped on .236: it owns both HDMI
-audio outputs = no movie audio while it runs).
+dzsynth.sh starts it (running on .137, stopped on .236). It owns both
+HDMI audio outputs; since Nov 22 movie audio and /audio/play go INTO it as
+stream inputs (FIFOs /tmp/dzin.<n>, lib/dz_ain.h, /mix/stream), so movie
+sound + synth play together (before: no movie audio while it ran).
+Nov 22: debazd forwards /mix/* to dzaudio and keeps /mix/routes, /mix/gain,
+/mix/pair/<p>/gain in its state while dzaudio runs (debazd/mix.c): cues
+record the mixer. A new tracked feature = a *_state() emitter in the
+state dump (state.c) + a rank in rank_of if order matters.
 /usr/bin/dzstart.sh with SYNTH= (repo), /usr/bin/dzsynth.sh
 (sudo dzsynth.sh works), /etc/debaz/dzstart.conf = repo; no
 /data/debaz/dzstart.conf yet (SYNTH off at boot). .137 /etc/asound.conf =
@@ -1418,6 +1424,24 @@ Goal: live-performance control of mixers/DDS. Agreed pain points and direction:
   CDP (scratchpad cdpshot.mjs pattern: --remote-debugging-port, Page.navigate,
   wait, captureScreenshot), not --virtual-time-budget (lists come back
   empty); the snap Chromium ignores kill: close it with CDP Browser.close.
+- **Edge tests (Nov 22 2026): `sw/tools/bench/stress/edge.py all`** (~7 min,
+  laptop; sw/README.md "Edge-case and stress tests"). First run found +
+  fixed: OSC bundle negative size = debazd crash (32-bit wrap in
+  lib/dz_osc.c, all OSC programs), NaN/inf stored by many handlers (now
+  refused at debazd handle() + dzaudio), 12-movie burst = OOM storm + no
+  ssh for 1 min (pending-claim guard), writes to black slot 11, dzaudio
+  restart lost stream routes, dzweb locked by idle connections. Run it
+  after parser / dispatch / slot changes. Burn-in (stress.sh) is not the
+  point (user): edge cases are.
+- **`cat /run/debaz/status` (Nov 22 2026, debazd/status.c):** what runs now
+  (slot writers, displays, running LFOs, cue, audio, load), rewritten 1/s;
+  OSC `/status`, dzweb `GET /status`. Check it before assuming a board is
+  idle (fuzz / tests leave ASCII runs, LFOs, movies behind). A new module
+  that runs things: add a *_status_lines() (sline()).
+- **Field lookup + fast LFOs (Nov 22 2026):** exact field addresses go
+  through a hash (debazd.c do_fields; Lua burst 4.7k -> 18.7k msg/s, 0
+  drops); `/lfo/<n>/fast 1` + `/lfo/fastrate` = a SCHED_FIFO thread writes
+  field targets at up to 4 kHz (lfo.c, one recursive lock over L[]).
 - **dzweb (Oct 24, sw/README.md "Web app")**: board-side HTTP + WebSocket→UDP OSC bridge
   (port 8080, runs as ebaz, pages in /home/ebaz/www, `make install` copies them). One UDP
   socket per browser; WS frame = OSC packet. `/units` = LAN /info broadcast, dedupe by MAC

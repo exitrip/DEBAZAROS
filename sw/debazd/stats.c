@@ -175,3 +175,9 @@ int stats_dispatch(const dz_msg *m)
 		  load, (int)mem_avail_kb(), temp_c(), last_pix_max, pix_queued());
 	return 1;
 }
+
+void stats_status_lines(void)
+{
+	sline("load: frame %.2f Hz, frame tick max %.2f ms, OSC max %.2f ms, pixel thread max %.1f ms",
+	      last_hz, last_tick_max, last_osc_max, last_pix_max);
+}

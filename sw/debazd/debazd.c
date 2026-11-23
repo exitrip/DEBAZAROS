@@ -65,6 +65,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
+#include <math.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -299,16 +300,74 @@ static void send_value(const dz_field *f)
 	reply("/value", "sif", f->path, (int)raw, (double)dz_field_to_float(f, raw));
 }
 
+/* exact field addresses by hash (2026-11-22: a field message matched its
+ * path against every field, ~700 dz_osc_match calls = ~0.2 ms; a Lua or
+ * LFO stream of 1000+ msg/s spent a quarter of a core there). Patterns
+ * (* ? [ {) still scan every field. */
+static int *fh;				/* field index + 1, 0 = empty */
+static unsigned fh_mask;
+static double *flog_t;			/* last write log per field (1 per s) */
+
+static uint32_t fnv(const char *s)
+{
+	uint32_t h = 2166136261u;
+
+	while (*s)
+		h = (h ^ (uint8_t)*s++) * 16777619u;
+	return h;
+}
+
+static void fields_hash_build(void)
+{
+	unsigned cap = 64;
+	int n = dz_fields_count();
+
+	while (cap < 2u * (unsigned)n)
+		cap <<= 1;
+	fh = calloc(cap, sizeof(*fh));
+	flog_t = calloc((size_t)n + 1, sizeof(*flog_t));
+	if (!fh || !flog_t)
+		return;
+	fh_mask = cap - 1;
+	for (int i = 0; i < n; i++) {
+		unsigned k = fnv(dz_field_at(i)->path) & fh_mask;
+
+		while (fh[k])
+			k = (k + 1) & fh_mask;
+		fh[k] = i + 1;
+	}
+}
+
+/* -1 = no such exact field */
+static int field_find(const char *path)
+{
+	for (unsigned k = fnv(path) & fh_mask; fh[k]; k = (k + 1) & fh_mask)
+		if (!strcmp(dz_field_at(fh[k] - 1)->path, path))
+			return fh[k] - 1;
+	return -1;
+}
+
 static int do_fields(const dz_msg *m)
 {
-	int hits = 0;
+	int hits = 0, lo = 0, hi = dz_fields_count(), exact = 0;
 
-	for (int i = 0; i < dz_fields_count(); i++) {
+	if (!fh)
+		fields_hash_build();
+	if (fh && flog_t && !strpbrk(m->path, "*?[{")) {
+		int k = field_find(m->path);
+
+		if (k < 0)
+			return 0;
+		lo = k;
+		hi = k + 1;
+		exact = 1;
+	}
+	for (int i = lo; i < hi; i++) {
 		const dz_field *f = dz_field_at(i);
 		uint32_t raw = 0;
 		int rc;
 
-		if (!dz_osc_match(m->path, f->path))
+		if (!exact && !dz_osc_match(m->path, f->path))
 			continue;
 		hits++;
 		if (m->n == 0) {
@@ -320,8 +379,11 @@ static int do_fields(const dz_msg *m)
 			reply("/error", "ss", "read only", f->path);
 		else if (rc < 0)
 			reply("/error", "ss", "bad value", f->path);
-		else
+		else if (!flog_t || stats_now() - flog_t[i] >= 1000.0) {	/* a stream logs 1 line / s */
+			if (flog_t)
+				flog_t[i] = stats_now();
 			dzd_log("debazd: %-28s <- 0x%08X (%u)\n", f->path, raw, raw);
+		}
 	}
 	return hits;
 }
@@ -413,6 +475,15 @@ static void handle(dz_msg *m, void *ctx)
 	int hits = 0;
 
 	(void)ctx;
+	/* no message takes NaN or inf (2026-11-22, edge.py: LFO, movie trails /
+	 * ghost, ASCII level, DDS scope, anim fps and slit speed stored them,
+	 * and NaN slips past every clamp). Refused here: network, internal
+	 * (LFO templates) and pixel-thread messages all pass this point. */
+	for (int k = 0; k < m->n; k++)
+		if (m->a[k].type == 'f' && !isfinite(m->a[k].f)) {
+			reply("/error", "ss", "not a finite number (nan / inf)", m->path);
+			return;
+		}
 	if (pix_owns(m->path)) {	/* pixel domain: the pixel thread (pix.c) */
 		int rc = pix_here() ? -1 : pix_post(m, &cur_from, cur_internal);
 
@@ -529,7 +600,7 @@ static void handle(dz_msg *m, void *ctx)
 	}
 
 	if (stats_dispatch(m) || react_dispatch(m) || lfo_dispatch(m) || disp_dispatch(m) || anim_dispatch(m) || trans_dispatch(m) || state_dispatch(m) || cue_dispatch(m) || fx_dispatch(m) || dds_dispatch(m) || io_dispatch(m) ||
-	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m))
+	    audio_dispatch(m) || sound_dispatch(m) || pwm_dispatch(m) || mix_dispatch(m) || status_dispatch(m))
 		return;
 	{	/* /io/press/<bit>, /io/release/<bit>, /io/simulate (sim only) */
 		int bit, n0 = 0, press = 0;
@@ -1259,6 +1330,7 @@ int main(int argc, char **argv)
 				anim_tick();
 				pix_frame();	/* ASCII, movie ticks: the pixel thread */
 				resume_tick();	/* state autosave, 5 s, on change */
+				status_tick();	/* /run/debaz/status, 1 s */
 				stats_tick(stats_now() - t0);
 				last_tick = t;
 				next_tick = t + 50;	/* fallback if vsync stops */

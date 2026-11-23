@@ -515,6 +515,18 @@ int slit_dispatch(const dz_msg *m)
 	slit_t *s;
 	const char *op;
 
+	if (!strncmp(m->path, "/slit/*/", 8)) {	/* every slot (2026-11-22) */
+		char p[64];
+		dz_msg one = *m;
+
+		for (int k = 0; k < DZ_SLOTS; k++) {
+			snprintf(p, sizeof(p), "/slit/%d/%s", k, m->path + 8);
+			one.path = p;
+			if (k + 1 < DZ_SLOT_BLANK || strcmp(m->path + 8, "run"))
+				slit_dispatch(&one);
+		}
+		return 1;
+	}
 	if (sscanf(m->path, "/slit/%d/%n", &d, &off) != 1 || !off)
 		return 0;
 	op = m->path + off;
@@ -611,4 +623,12 @@ int slit_dispatch(const dz_msg *m)
 		dzd_reply("/error", "ss", "unknown (see sw/debazd/slit.c)", m->path);
 	}
 	return 1;
+}
+
+void slit_status_lines(void)
+{
+	for (int d = 0; d < DZ_SLOTS; d++)
+		if (S[d].run)
+			sline("slot %d: slit %s from %s %d", d, MODE[S[d].mode], S[d].src == SRC_CAPTURE ? "capture" : "slot",
+			      S[d].src == SRC_CAPTURE ? 4 : S[d].src);
 }

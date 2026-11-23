@@ -47,11 +47,11 @@ int dz_osc_parse(const uint8_t *b, size_t len, dz_msg *m)
 	step = rd_str(b, len, 0, &m->path);
 	if (!step)
 		return -1;
-	pos = step;
+	pos = step > len ? len : step;
 	if (pos < len) {
 		step = rd_str(b, len, pos, &tags);
 		if (step && tags[0] == ',')
-			pos += step;
+			pos = pos + step > len ? len : pos + step;
 		else
 			tags = NULL;
 	}
@@ -61,7 +61,7 @@ int dz_osc_parse(const uint8_t *b, size_t len, dz_msg *m)
 		memset(a, 0, sizeof(*a));
 		switch (*t) {
 		case 'i':
-			if (pos + 4 > len)
+			if (len - pos < 4)
 				return -1;
 			a->type = 'i';
 			a->i = (int32_t)rd32(b + pos);
@@ -71,7 +71,7 @@ int dz_osc_parse(const uint8_t *b, size_t len, dz_msg *m)
 		case 'f': {
 			uint32_t u;
 
-			if (pos + 4 > len)
+			if (len - pos < 4)
 				return -1;
 			u = rd32(b + pos);
 			a->type = 'f';
@@ -92,12 +92,20 @@ int dz_osc_parse(const uint8_t *b, size_t len, dz_msg *m)
 				return -1;
 			a->type = 's';
 			pos += step;
+			if (pos > len)		/* padding past the end: nothing more */
+				pos = len;
 			break;
-		case 'b':
-			if (pos + 4 > len)
+		case 'b': {		/* skipped; the size is checked (no wrap) */
+			uint32_t sz;
+
+			if (len - pos < 4)
 				return -1;
-			pos += 4 + pad4(rd32(b + pos));
+			sz = rd32(b + pos);
+			if (sz > len - pos - 4 || pad4(sz) > len - pos - 4)
+				return -1;
+			pos += 4 + pad4(sz);
 			continue;
+		}
 		default:
 			return 0;	/* unknown width: keep what we have */
 		}
@@ -106,7 +114,13 @@ int dz_osc_parse(const uint8_t *b, size_t len, dz_msg *m)
 	return 0;
 }
 
-int dz_osc_walk(const uint8_t *b, size_t len, dz_osc_cb cb, void *ctx)
+/* 2026-11-22 (edge.py): an element size near 2^32 (a "negative" size)
+ * wrapped pos + sz on the 32-bit board, passed the check and read far past
+ * the packet: debazd crashed. Sizes are now checked against what is left,
+ * and nesting is limited. */
+#define WALK_DEPTH	8
+
+static int walk(const uint8_t *b, size_t len, dz_osc_cb cb, void *ctx, int depth)
 {
 	dz_msg m;
 	int count = 0;
@@ -114,13 +128,15 @@ int dz_osc_walk(const uint8_t *b, size_t len, dz_osc_cb cb, void *ctx)
 	if (len >= 16 && memcmp(b, "#bundle", 8) == 0) {
 		size_t pos = 16;
 
-		while (pos + 4 <= len) {
+		if (depth >= WALK_DEPTH)
+			return 0;
+		while (len - pos >= 4) {
 			uint32_t sz = rd32(b + pos);
 
 			pos += 4;
-			if (!sz || pos + sz > len)
+			if (!sz || sz > len - pos)
 				break;
-			count += dz_osc_walk(b + pos, sz, cb, ctx);
+			count += walk(b + pos, sz, cb, ctx, depth + 1);
 			pos += sz;
 		}
 		return count;
@@ -129,6 +145,11 @@ int dz_osc_walk(const uint8_t *b, size_t len, dz_osc_cb cb, void *ctx)
 		return 0;
 	cb(&m, ctx);
 	return 1;
+}
+
+int dz_osc_walk(const uint8_t *b, size_t len, dz_osc_cb cb, void *ctx)
+{
+	return walk(b, len, cb, ctx, 0);
 }
 
 /* ---- pattern matching ---------------------------------------------------- */

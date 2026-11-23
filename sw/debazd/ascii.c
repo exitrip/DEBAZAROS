@@ -623,11 +623,28 @@ void ascii_state(state_cb cb, void *ctx)
 	}
 }
 
+static int wild;			/* dispatching /ascii/<asterisk>: quiet refusals */
+
 int ascii_dispatch(const dz_msg *m)
 {
 	int d, off = 0;
 	asc_t *a;
 
+	/* /ascii/<asterisk>/<op>: every slot (2026-11-22: "/ascii/<asterisk>/run -1" was
+	 * "no such address", and a cleanup left 8 ASCII runs going) */
+	if (!strncmp(m->path, "/ascii/*/", 9)) {
+		char p[64];
+		dz_msg one = *m;
+
+		wild = 1;
+		for (int k = 0; k < DZ_SLOTS; k++) {
+			snprintf(p, sizeof(p), "/ascii/%d/%s", k, m->path + 9);
+			one.path = p;
+			ascii_dispatch(&one);
+		}
+		wild = 0;
+		return 1;
+	}
 	if (sscanf(m->path, "/ascii/%d/%n", &d, &off) != 1 || !off)
 		return 0;
 	const char *op = m->path + off;
@@ -643,6 +660,14 @@ int ascii_dispatch(const dz_msg *m)
 		if (n >= 1 && i0 < 0 && op[0] == 'r') {	/* run -1 = stop (the state model) */
 			a->run = 0;
 			status(d, a);
+			return 1;
+		}
+		/* never into the black slot (blanking) or the capture slot
+		 * (2026-11-22, edge.py: the fuzz started ASCII runs in both) */
+		if (d == DZ_SLOT_BLANK || d == DZ_SLOT_CAPTURE) {
+			if (!wild)
+				dzd_reply("/error", "ss", d == DZ_SLOT_BLANK ? "slot 11 is the black slot (blanking)" :
+					  "slot 4 is the capture slot", m->path);
 			return 1;
 		}
 		a->used = 1;
@@ -722,4 +747,11 @@ int ascii_dispatch(const dz_msg *m)
 		a->ckvalid = 0;		/* a new setting: draw everything */
 	status(d, a);
 	return 1;
+}
+
+void ascii_status_lines(void)
+{
+	for (int d = 0; d < DZ_SLOTS; d++)
+		if (A[d].run)
+			sline("slot %d: ascii %s from slot %d, %d cols", d, MODE[A[d].mode], A[d].src, A[d].cols);
 }

@@ -966,3 +966,31 @@ int disp_dispatch(const dz_msg *m)
 	}
 	return hits;
 }
+
+void disp_status_lines(void)
+{
+	sline("video mode: %dx%d", dz_geom_w(), dz_geom_h());
+	for (int d = 0; d < DZ_DISPLAYS; d++) {
+		uint32_t a;
+		int slot, bl, seq, cx, cy;
+
+		pthread_mutex_lock(&mu);
+		a = D[d].want ? D[d].want_addr : D[d].front;
+		slot = slot_of(a);
+		bl = D[d].want_blank >= 0 ? D[d].want_blank : D[d].blanked;
+		seq = D[d].seqon && !D[d].seqstop && D[d].seqn > 0;
+		cx = D[d].cx;
+		cy = D[d].cy;
+		pthread_mutex_unlock(&mu);
+		if (anim_on(d))
+			sline("display %d: anim", d);
+		else if (seq)
+			sline("display %d: slot sequence", d);
+		else if (a && a == dz_capture_addr() && slot < 0)
+			sline("display %d: capture%s", d, bl ? ", BLANK" : "");
+		else
+			sline("display %d: slot %d%s", d, slot, bl ? ", BLANK" : "");
+		if (cx || cy)
+			sline("display %d: crop %d %d", d, cx, cy);
+	}
+}

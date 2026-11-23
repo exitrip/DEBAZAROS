@@ -13,6 +13,7 @@ import * as net from "./net.js";
 import { h, card, row, hexToRgb, store, toast } from "./ui.js";
 import * as anim from "./anim.js";
 import { colorPicker } from "./colorpick.js";
+import { fontPicker, fontFamily, boardText } from "./fonts.js";
 
 const W = 1920, H = 1080; // a whole slot (sw/lib/dz_hw.h: 7680-byte lines)
 const SIZES = [[640, 480], [800, 600], [1024, 768], [1280, 720]]; // output modes (debazd disp.c video_modes)
@@ -330,12 +331,18 @@ const dragAngle = (a, b) => Math.round((Math.atan2(b[1] - a[1], b[0] - a[0]) * 1
 // slider), type into it, Shift+Enter (or Ctrl+Enter) draws it on the board.
 // The text wraps at the box width and shrinks until it fits the box height
 // (max = the ttf px / pixel × slider). "live" = draw every change at once (the
-// box is erased with colour 2 first). The board measures ttf text with its
-// own font; the wrap here uses the browser's sans-serif with a 6 % margin, so
-// a ttf line can end a little short or long. The pixel font is exact (8 × 16).
+// box is erased with colour 2 first). The wrap here measures ttf text with the
+// same font file as the board (dzweb /fonts, fonts.js boardText: the board's
+// size, pitch and baseline); a 2 % margin covers shaping differences. The
+// pixel font is exact (8 × 16).
 let lbox = null, livein = null, liveInfo = null;
+// the Text card's text box in the font it draws with (2026-11-22): the pixel
+// tool = monospace, else the chosen TrueType font of the board
+let textBox = null;
+function textFont() {
+  if (textBox) textBox.style.fontFamily = s.tool === "text" ? "var(--mono)" : fontFamily(s.font);
+}
 const mctx = document.createElement("canvas").getContext("2d");
-const TTF_LH = 1.17; // line height / px of LiberationSans (dz_text.c line_metrics)
 // lines + where each line starts in the text (out.starts: for the caret)
 function liveWrap(text, maxW, width) {
   const out = [], starts = [];
@@ -371,12 +378,13 @@ function liveLayout() {
     }
   }
   for (let px = Math.max(8, s.ttf | 0); ; px = Math.max(8, Math.floor(px * 0.94))) {
-    mctx.font = `${px}px sans-serif`;
+    const B = boardText(px, s.font, liveRedraw);
+    mctx.font = B.font;
     const width = (x) => mctx.measureText(x).width;
-    const lines = liveWrap(t, lbox.w * 0.94, width), lh = Math.ceil(px * TTF_LH);
+    const lines = liveWrap(t, lbox.w * 0.98, width), lh = B.lh;
     if (lines.length * lh <= lbox.h || px === 8) {
       const tw = Math.max(1, ...lines.map(width));
-      return { pix, lines, size: px, lh, tw, th: lines.length * lh, font: `${px}px sans-serif` };
+      return { pix, lines, size: px, lh, asc: B.asc, tw, th: lines.length * lh, font: B.font };
     }
   }
 }
@@ -410,10 +418,10 @@ function liveDraw(ctx, L, erase, caret) {
   ctx.rotate(rad(s.rot));
   if (erase) { ctx.fillStyle = s.color2; ctx.fillRect(-lbox.w / 2, -lbox.h / 2, lbox.w, lbox.h); }
   ctx.font = L.font;
-  ctx.textBaseline = "top";
+  ctx.textBaseline = L.pix ? "top" : "alphabetic"; // ttf: the board's baseline = top + ascent
   ctx.fillStyle = s.color;
   const x0 = -lbox.w / 2, y0 = -lbox.h / 2;
-  L.lines.forEach((l, k) => ctx.fillText(l, x0, y0 + k * L.lh));
+  L.lines.forEach((l, k) => ctx.fillText(l, x0, y0 + (L.pix ? 0 : L.asc) + k * L.lh));
   if (caret) {
     ctx.strokeStyle = "#fff";
     ctx.setLineDash([]);
@@ -607,15 +615,17 @@ function down(e) {
       bmsg(`${D()}/ttf`, r, g, b, p[0], p[1], s.ttf | 0, s.text, net.float(s.angle));
     previewStyle();
     cx.fillStyle = s.color;
-    cx.font = s.tool === "text" ? `${16 * s.scale}px monospace` : `${s.ttf}px sans-serif`;
-    cx.textBaseline = "top";
+    // ttf: the board's font, size, pitch and baseline (fonts.js boardText)
+    const pix = s.tool === "text", B = pix ? null : boardText(s.ttf | 0, s.font);
+    cx.font = pix ? `${16 * s.scale}px monospace` : B.font;
+    cx.textBaseline = pix ? "top" : "alphabetic";
     // the same rules as the board (lib/dz_text.c text_norm): line breaks, tabs, controls
-    const lines = normText(s.text, s.tool === "text").split("\n"), lh = s.tool === "text" ? 16 * s.scale : s.ttf;
+    const lines = normText(s.text, pix).split("\n"), lh = pix ? 16 * s.scale : B.lh, a0 = pix ? 0 : B.asc;
     const tw = Math.max(...lines.map((l) => cx.measureText(l).width)), th = lh * lines.length;
     cx.save();
     cx.translate(p[0] + tw / 2, p[1] + th / 2);
     cx.rotate(rad(s.angle));
-    lines.forEach((l, k) => cx.fillText(l, -tw / 2, -th / 2 + k * lh));
+    lines.forEach((l, k) => cx.fillText(l, -tw / 2, -th / 2 + a0 + k * lh));
     cx.restore();
   } else if (s.tool === "sprite") {
     bmsg(`/sprite/${sprites.selected()}/draw`, s.slot, p[0], p[1], net.float(s.sscale), net.float(s.angle), net.float(s.alpha));
@@ -803,6 +813,7 @@ export function init(root) {
     h("button", { title: tip + (key ? `  [${key}]` : ""), onclick: () => setTool(t) }, label));
   setTool = (t) => {
     s.tool = t; save(); tools.forEach((b, i) => b.classList.toggle("on", TOOLS[i][0] === t));
+    textFont();
     if (ox) { ox.clearRect(0, 0, W, H); if (t === "live") liveFocus(); }
   };
   toolKeys = Object.fromEntries(TOOLS.filter((x) => x[2]).map((x) => [x[2].toLowerCase(), x[0]]));
@@ -826,7 +837,7 @@ export function init(root) {
   const blend = h("select", { title: "/draw/<slot>/blend normal|add|lighten|multiply", onchange: () => { s.blend = blend.value; save(); if (!s.batch) net.msg(`${D()}/blend`, s.blend); } },
     ["normal", "add", "lighten", "multiply"].map((b) => h("option", { value: b, selected: b === s.blend }, b)));
   // a text area (2026-11-19): Enter = a new line; \n \t \\ typed also work
-  const text = h("textarea", { rows: 2, spellcheck: false, style: "width:100%;min-width:16em;resize:vertical;font-family:monospace",
+  const text = textBox = h("textarea", { rows: 2, spellcheck: false, style: "width:100%;min-width:16em;resize:vertical;font-size:16px",
     title: "the text of /draw/<slot>/text and /ttf (UTF-8 for ttf)\n" +
       "Enter or \\n = a new line, Tab or \\t = to the next 4-column stop, \\\\ = a backslash;\n" +
       "other control and invisible characters are not drawn; the pixel font draws ? for a non-ASCII character",
@@ -840,23 +851,16 @@ export function init(root) {
       s.text = text.value; save();
     } });
   text.value = s.text;
-  // TrueType font of the Aa ttf tool (the board's fonts: /files fonts); the
-  // preview here stays sans-serif
-  const fontSel = h("select", { style: "max-width:14em",
-    title: "font of the Aa ttf tool (/usr/share/fonts on the board; default LiberationSans).\n" +
+  // TrueType font of the Aa ttf tool and live text (the board's fonts: /files
+  // fonts); the list, the text box and the previews show the font itself
+  const fontSel = fontPicker({
+    title: "font of the Aa ttf tool and the live text (/usr/share/fonts on the board; default LiberationSans).\n" +
       "A character the font lacks comes from DejaVuSans, FreeSerif or DroidSansFallbackFull.\n" +
       "/draw/<slot>/ttf r g b x y size \"text\" \"<font>\" angle",
-    onchange: () => { s.font = fontSel.value; save(); } },
-    h("option", { value: "" }, "default font"));
-  const listFonts = async () => {
-    try {
-      const list = await net.collect(net.message("/files", "fonts"), "/file", "/file/end");
-      fontSel.replaceChildren(h("option", { value: "" }, "default font"),
-        ...list.map((a) => a[0]).sort().map((n) => h("option", { value: n }, n.replace(/\.(ttf|otf|ttc)$/i, ""))));
-      fontSel.value = s.font || "";
-    } catch { /* the default font still works */ }
-  };
-  listFonts();
+    onchange: (v) => { s.font = v; save(); textFont(); liveRedraw(); } });
+  fontSel.value = s.font || "";
+  fontSel.refresh();
+  textFont();
   const fade = h("input", { type: "number", min: 0, max: 1, step: 0.05, value: 0.2, title: "/draw/<slot>/fade <amount 0..1>" });
   // hover text = the OSC message the button sends (<slot> = the target slot above)
   const ACT_TIP = { "Clear": "/draw/<slot>/clear r g b", "Clear black": "/draw/<slot>/clear 0 0 0",
@@ -1028,7 +1032,7 @@ export function init(root) {
           "(Ctrl+Shift: 15° steps). Shape: n sides; star: n points, inner ratio; star polygon: n and k. " +
           "The fill (solid, linear, radial) is also the paint bucket's.")),
       card("Text and sprite",
-        row("text", text, fontSel),
+        row("text", text, fontSel.el),
         slider("scale", 1, 8, 1, "pixel ×"),
         slider("ttf", 8, 300, 1, "ttf px"),
         spriteRow(),

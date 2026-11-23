@@ -268,14 +268,14 @@ check wave-zero    "/pixel 10 0 0 0 0 255"        q /surface/10/peek 0 0
 # --- button bindings (active low: 1 -> 0 = press) ---
 q /io/simulate 255 >/dev/null
 sleep 0.1
-q /io/press/2 "/draw/11/solid 9 8 7 0 0 4 4" >/dev/null
-q /io/release/2 "/draw/11/solid 1 2 3 0 0 4 4" >/dev/null
+q /io/press/2 "/draw/10/solid 9 8 7 0 0 4 4" >/dev/null
+q /io/release/2 "/draw/10/solid 1 2 3 0 0 4 4" >/dev/null
 q /io/simulate 251 >/dev/null
 sleep 0.15
-check io-press     "/pixel 11 0 0 9 8 7"          q /surface/11/peek 0 0
+check io-press     "/pixel 10 0 0 9 8 7"          q /surface/10/peek 0 0
 q /io/simulate 255 >/dev/null
 sleep 0.15
-check io-release   "/pixel 11 0 0 1 2 3"          q /surface/11/peek 0 0
+check io-release   "/pixel 10 0 0 1 2 3"          q /surface/10/peek 0 0
 check io-badbit    "bit must be"                   q /io/press/9 "/ping"
 
 # --- LFOs: constant step value 0.2 in range 0..100 = 20 ---
@@ -292,6 +292,38 @@ check lfo-value    "/lfo/0 20"                     q /lfo/0
 check lfo-field    "/value \"/hdmi/0/gain/r\" 20" q /hdmi/0/gain/r
 check lfo-template "/pixel 6 10 10 20 100 7"       q /surface/6/peek 10 10
 check lfo-bad      "matches no field"              q /lfo/2/target nothing
+# step sequencer (2026-11-22): a seq as one string jumps at once, step clock, every
+q /lfo/2/range 0 100 >/dev/null
+q /lfo/2/seq "0.3 0.7 0.5" >/dev/null
+q /lfo/2/step frames 100000 >/dev/null
+q /lfo/2/on 1 >/dev/null
+check lfo-seqstr   "/lfo/2 30"                     q /lfo/2
+q /lfo/2/seq "0.9 0.1" >/dev/null
+check lfo-jump     "/lfo/2 90"                     q /lfo/2
+check lfo-stepbad  "step off | frames"             q /lfo/2/step sideways
+check nan-refused  "not a finite number"           q /lfo/2/rate nan
+check inf-refused  "not a finite number"           q /movie/6/trails inf
+check blank-safe   "no such address"                   q /draw/11/solid 255 0 0
+check lfo-everybad "every: k, change or step"      q /lfo/2/every sometimes
+q /lfo/2/every change >/dev/null; q /lfo/2/ease smooth >/dev/null; q /lfo/2/dur "1 2" >/dev/null
+check lfo-stepstate '"/lfo/2/step" "frames" 100000' sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/2/step\"' | cut -d' ' -f3-"
+check lfo-everystate '"/lfo/2/every" "change"'      sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/2/every\"' | cut -d' ' -f3-"
+check lfo-durstate '"/lfo/2/dur" "1 2"'             sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/2/dur\"' | cut -d' ' -f3-"
+check lfo-syncbad  "sync k [delay frames]"         q /lfo/2/sync 2
+q /lfo/3/sync 2 15 >/dev/null
+check lfo-syncstate '"/lfo/3/sync" 2 15'           sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/3/sync\"' | cut -d' ' -f3-"
+q /lfo/3/align 1 >/dev/null
+check lfo-align    '"/lfo/3/align" 1'              sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/3/align\"' | cut -d' ' -f3-"
+q /lfo/3/delay 4 >/dev/null
+check lfo-delay    '"/lfo/3/delay" 4'              sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/3/delay\"' | cut -d' ' -f3-"
+q /lfo/4/fast 1 >/dev/null
+check lfo-faststate '"/lfo/4/fast" 1'              sh -c "$BIN/dzctl -p $PORT -t 300 /state | grep '\"/lfo/4/fast\"' | cut -d' ' -f3-"
+check lfo-fastrate "/lfo/fastrate 1000"            q /lfo/fastrate
+q /lfo/4/fast 0 >/dev/null
+check field-pattern "/value \"/hdmi/0/gain/r\""    q "/hdmi/0/gain/[r]"
+q /lfo/6/target /hdmi/0/gain/r >/dev/null; q /lfo/6/on 1 >/dev/null
+check status-osc   "lfo 6: sine, 1 Hz -> /hdmi/0/gain/r" q /status
+q /lfo/6/on 0 >/dev/null; q /lfo/6/target >/dev/null
 q /lfo/reset >/dev/null
 check lfo-reset    "/lfo/0 0 0"                    q /lfo/0
 
