@@ -99,7 +99,7 @@ image-install: all
 	install -d $(DESTDIR)/usr/bin $(DESTDIR)/usr/share/debaz/www $(DESTDIR)/etc/debaz \
 		$(DESTDIR)/lib/systemd/system $(DESTDIR)/etc/udev/rules.d \
 		$(DESTDIR)/etc/systemd/logind.conf.d $(DESTDIR)/etc/sysctl.d \
-		$(DESTDIR)/usr/share/debaz/scripts
+		$(DESTDIR)/usr/share/debaz/scripts $(DESTDIR)/usr/share/debaz/shows/passthrough/looks
 	install -m 0755 $(BINS) $(OUT)/hdmi2.elf $(DESTDIR)/usr/bin/
 	install -m 0755 $(IMG_SCRIPTS) $(DESTDIR)/usr/bin/
 	install -m 0644 dzweb/www/* $(DESTDIR)/usr/share/debaz/www/
@@ -107,6 +107,7 @@ image-install: all
 	install -m 0644 tools/image/debaz.service tools/image/debazd.service \
 		tools/image/debaz-video.service tools/image/dzweb.service $(DESTDIR)/lib/systemd/system/
 	install -m 0644 dzlua/examples/*.lua $(DESTDIR)/usr/share/debaz/scripts/
+	install -m 0644 tools/image/shows/passthrough/*.json $(DESTDIR)/usr/share/debaz/shows/passthrough/
 	install -m 0644 tools/image/99-debaz-hw.rules $(DESTDIR)/etc/udev/rules.d/
 	install -m 0644 tools/image/debaz-logind.conf $(DESTDIR)/etc/systemd/logind.conf.d/debaz.conf
 	install -m 0644 tools/image/debaz-sysctl.conf $(DESTDIR)/etc/sysctl.d/debaz.conf

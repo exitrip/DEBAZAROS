@@ -126,6 +126,25 @@ folders() {
 		ln -s "$MEDIA/$k" "$old"
 		chown -h "$uid:$gid" "$old" 2>/dev/null
 	done
+	# sprite sigils of the image (recipe debaz-sigils, /usr/share/debaz/img):
+	# once per media folder (marker), missing names only: a reflash or a
+	# deleted sigil never overwrites or brings back the card's own files
+	if [ -d /usr/share/debaz/img ] && [ ! -e "$MEDIA/.debaz-sigils" ]; then
+		cp -n /usr/share/debaz/img/*.png "$MEDIA/img/" 2>/dev/null &&
+			log "sigils -> $MEDIA/img"
+		touch "$MEDIA/.debaz-sigils"
+		mountpoint -q "$MEDIA" || chown "$uid:$gid" "$MEDIA/img"/sigil-*.png 2>/dev/null
+	fi
+	# example shows of the image (/usr/share/debaz/shows: passthrough =
+	# both outputs at unity gain): only show folders that do not exist yet
+	if [ -d /usr/share/debaz/shows ] && [ -d "$DATA/shows" ]; then
+		for sh in /usr/share/debaz/shows/*/; do
+			n=$(basename "$sh")
+			[ -e "$DATA/shows/$n" ] && continue
+			cp -r "$sh" "$DATA/shows/$n" && chown -R "$uid:$gid" "$DATA/shows/$n" &&
+				log "show $n -> $DATA/shows"
+		done
+	fi
 }
 
 make_parts

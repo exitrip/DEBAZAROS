@@ -30,6 +30,60 @@ const awg = [0, 1].map(() => new Array(NPTS).fill(32768));
 const steps = [0, 1].map(() => Array.from({ length: 16 }, () => [0, 0, 0, 0, 0, 0]));
 const views = [];
 let rasterText;
+// the running raster (/dds/raster), for the register info lines; 720p60 until read
+let raster = { line: 45000, frame: 60, ht: 1650, vt: 750, w: 1280, h: 720 };
+const CLK = 100e6; // FCLK0 = the phase accumulator clock (DZ_DDS_CLK_HZ)
+const g = (v) => (Number.isFinite(v) ? +v.toPrecision(4) : 0).toString();
+const infoTimer = [];
+const hzs = (v) => (v >= 1e6 ? `${g(v / 1e6)} MHz` : v >= 1e3 ? `${g(v / 1e3)} kHz` : `${g(v)} Hz`);
+
+// what the registers of channel n do in the pattern the board runs
+function infoText(pat, rows, pinc, ls, fs) {
+  const r = raster, hz = (pinc * CLK) / 4294967296;
+  const lc = ls / 4294967296, fc = fs / 4294967296; // LINESTEP / FRAMESTEP in cycles (signed)
+  const cpl = hz / r.line; // cycles per line (the phase also runs in the blanking)
+  const vis = (cpl * r.w) / r.ht; // cycles across the visible width
+  const out = [];
+  const pincLine = `PINC ${pinc} → ${hzs(hz)}`;
+  if (pat === "none") {
+    out.push(`free running · ${pincLine}`,
+      hz > 0 ? `= ${g(hz / r.frame)} cycles per frame, period ${g(1 / hz)} s` : "PINC 0 = stopped");
+  } else if (pat === "bars" || pat === "slant") {
+    out.push(`${pat === "bars" ? "vertical bars" : "diagonal bars"} · ${pincLine}`,
+      `= ${g(cpl)} cycles per line, ${g(vis)} across the visible width (${g(r.ht / cpl)} px per cycle)`);
+    if (pat === "slant") out.push(`LINESTEP ${ls} = ${g(lc)} cycles per line ≈ ${g((lc * r.ht) / cpl)} px sideways per line`);
+  } else if (pat === "hbars") {
+    out.push(`horizontal bands · PINC ${pinc} (0 = one value per line)`,
+      `LINESTEP ${ls} = ${g(lc)} cycles per line → ${g(lc * r.h)} cycles down the picture` +
+        (lc ? ` (${g(Math.abs(1 / lc))} lines per cycle)` : ""));
+  } else if (pat === "checker") {
+    out.push(`checkerboard · ${pincLine}`,
+      `= ${g(cpl)} cycles per line → ${g(2 * vis)} columns (${g(r.ht / cpl / 2)} px each)` +
+        (rows ? `, ${rows} rows of ${Math.max(1, Math.floor(r.h / rows))} lines (sequencer steps)` : ""));
+  } else {
+    out.push(`${pat} · ${pincLine}`);
+  }
+  if (ls && pat !== "slant" && pat !== "hbars") out.push(`LINESTEP ${ls} = ${g(lc)} cycles per line`);
+  if (fs) out.push(`FRAMESTEP ${fs} = ${g(fc)} cycles per frame = scroll ${g(fc * r.frame)} cycles/s`);
+  out.push(`raster ${r.w}×${r.h} of ${r.ht}×${r.vt}, ${g(r.line / 1000)} kHz lines, ${g(r.frame)} Hz frames`);
+  return out.join("\n");
+}
+
+// read the registers back and fill the card's info line (debounced: a slider sends many)
+function refreshInfo(n, delay = 250) {
+  clearTimeout(infoTimer[n]);
+  infoTimer[n] = setTimeout(async () => {
+    const el = views[n]?.info;
+    if (!el || !net.connected()) return;
+    const p = `/dds/${n}`;
+    const pm = await net.ask(net.message(`${p}/pattern`), (m) => m.path === `${p}/pattern`);
+    const [a, b, c] = [await net.getField(`${p}/pinc`), await net.getField(`${p}/linestep`),
+      await net.getField(`${p}/framestep`)];
+    if (!a || !b || !c) { el.textContent = "registers: no reply"; return; }
+    const pat = pm ? pm.args[0] : state[n].pattern;
+    el.textContent = infoText(pat, pm ? pm.args[2] : 0, a.raw >>> 0, b.raw | 0, c.raw | 0);
+  }, delay);
+}
 const scopeUi = [];
 let srcUi = null, scopeTimer = null;
 
@@ -56,6 +110,7 @@ function apply(n) {
   if (s.shape === "pulse") m.push(net.message(`${p}/pulse`, net.float(s.duty)));
   net.throttled(`dds${n}`, () => net.bundle(...m));
   save(n);
+  refreshInfo(n);
 }
 
 function num(n, key, attrs, onset = () => apply(n)) {
@@ -94,15 +149,21 @@ function patternCard(n) {
   // the shift alone: /dds/<n>/shift sets only LINESTEP (an LFO can drive it too)
   const rShift = row("Diagonal shift", num(n, "shift", { step: "any",
     title: `cycles per line, signed (full precision)\n${p}/shift <cycles>   (LFO target: "${p}/shift $f0")` },
-    () => { net.throttled(`${p}/shift`, () => net.message(`${p}/shift`, net.float(s.shift))); save(n); }));
+    () => { net.throttled(`${p}/shift`, () => net.message(`${p}/shift`, net.float(s.shift))); save(n); refreshInfo(n); }));
   const outS = h("span"), outP = h("span"), outD = h("span"), outL = h("span");
   const scroll = slider(n, "scroll", { min: -10, max: 10, step: 0.1, title: `${p}/scroll <cycles per second>` }, outS, () => {
-    net.throttled(`${p}/scroll`, () => net.message(`${p}/scroll`, net.float(s.scroll))); save(n); });
+    net.throttled(`${p}/scroll`, () => net.message(`${p}/scroll`, net.float(s.scroll))); save(n); refreshInfo(n); });
   const phase = slider(n, "phase", { min: 0, max: 359, step: 1, title: `${p}/poff <0..1 = 0..360°>` }, outP, () => {
     net.throttled(`${p}/poff`, () => net.message(`${p}/poff`, net.float(s.phase / 360))); save(n); });
   const duty = slider(n, "duty", { min: 0, max: 1, step: 0.01, title: `${p}/pulse <duty 0..1>` }, outD, () => {
     net.throttled(`${p}/pulse`, () => net.message(`${p}/pulse`, net.float(s.duty))); save(n); });
   const rDuty = row("Duty", duty, outD);
+  const info = h("p.hint", { style: "white-space: pre-line; font-variant-numeric: tabular-nums",
+    title: `the registers as the board has them now (fields ${p}/pinc, /linestep, /framestep)\n` +
+      "Hz = PINC × 100 MHz / 2^32; LINESTEP and FRAMESTEP: 2^32 = one cycle (signed)\n" +
+      "click: read again (an LFO or the step table can change them)",
+    onclick: () => refreshInfo(n, 0) }, "registers: not read yet");
+  views[n].info = info;
   function showRows() {
     rHz.hidden = s.pattern !== "wave";
     rCount.hidden = s.pattern === "wave";
@@ -118,9 +179,10 @@ function patternCard(n) {
     row("Scroll", scroll, outS),
     row("Phase", phase, outP),
     rDuty,
+    info,
     row("", h("button.primary", { onclick: () => apply(n), title: "the pattern message, then scroll / poff / pulse" }, "Apply"),
-      h("button.ghost", { onclick: () => { net.msg(`${p}/off`); }, title: `${p}/off` }, "Off"),
-      h("button.ghost", { onclick: () => net.msg(`${p}/wave`, "sine", net.float(0.1)), title: `${p}/wave sine 0.1` }, "Slow sine")),
+      h("button.ghost", { onclick: () => { net.msg(`${p}/off`); refreshInfo(n); }, title: `${p}/off` }, "Off"),
+      h("button.ghost", { onclick: () => { net.msg(`${p}/wave`, "sine", net.float(0.1)); refreshInfo(n); }, title: `${p}/wave sine 0.1` }, "Slow sine")),
   ];
   if (n === 1) {
     // HDMI_1: the sine layer's level, and a solo (video + feedback gains to 0)
@@ -415,6 +477,7 @@ async function loadRaster() {
   const m = await net.ask(net.message("/dds/raster"), (m) => m.path === "/dds/raster");
   if (!m) { rasterText.textContent = "no reply: needs debazd with dds.c and an osc bitstream"; return; }
   const [line, frame, ht, vt, w, hh] = m.args;
+  if (line > 0 && frame > 0) { raster = { line, frame, ht, vt, w, h: hh }; for (const n of [0, 1]) refreshInfo(n); }
   rasterText.textContent = `raster ${w}×${hh} active, ${ht}×${vt} total, ` +
     `${frame.toFixed(2)} Hz frames, ${(line / 1000).toFixed(2)} kHz lines`;
 }

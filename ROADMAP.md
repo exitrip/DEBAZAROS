@@ -41,6 +41,12 @@ What is built but not yet exercised by hand. Bench board .236 (debaz-7130d5,
 HEAD software by hand). Tick an item with the date when it passes; add new
 untested work here, not in other sections.
 
+- [ ] Image `debazaros-20261123-sigils` first boot (2026-11-23): sigils
+  copied once into /media/debaz/img (73 sigil-*.png, marker
+  /media/debaz/.debaz-sigils; a second boot copies nothing), show
+  passthrough in /data/shows; `/show/load passthrough` + `/cue/go main 1`
+  with a movie in slot 0 and 2: both outputs show the movie as rendered
+  (the show itself passed on .236, by OSC readback only, not by eye).
 - [ ] LFO step editor lengths drag (2026-11-23, www/lfo.js minLen): the
   bottom of a drag = the shortest step (1 frame / 1 fast tick / 1 clock
   step), never 0; the "shortest" readout follows clock, fast, rate and the

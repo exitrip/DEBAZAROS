@@ -70,7 +70,18 @@ started by hand over ssh (setsid too: debazd restart, dzstart.sh,
 plreload.sh, dzweb) was stopped at the logout. Fix: /etc/systemd/logind.conf.d/
 debaz.conf KillUserProcesses=no (sw/tools/image/debaz-logind.conf, recipe
 debaz-sw; set by hand on .236 - cards burnt from the Nov 5 image lack it).
-NEWEST image (Nov 21): `debazaros-20261121-dzaudio.wic.xz` (build machine
+NEWEST image (Nov 23, 13:00): `debazaros-20261123-sigils.wic.xz` (sha256
+2ab16bdd3483de21…, build machine ~/dz-sandbox/build-20261123b.sh) = the
+-lfo image below + recipe debaz-sigils (73 sprites in /usr/share/debaz/img)
++ example show passthrough (/usr/share/debaz/shows) + debaz-firstboot
+copying both once into /media/debaz/img and /data/shows; checked in
+rootfs.ext4, NOT yet booted from a card. Before: Nov 23 `debazaros-20261123-lfo.wic.xz` (build machine
+~/dz-sandbox/build-20261123.sh, laptop build/images/; sha256 46fbf5fe0085c531…;
+same kernel / BOOT.BIN / XSA _dsp, no XSA import) = the laptop WORKING TREE
+of Nov 23 (uncommitted): LFO step sequencer + sync/align/fast, /run/debaz/status,
+dzaudio stream inputs + /mix in state, edge-run fixes, web fonts / LFO editor;
+checked in rootfs.ext4, NOT yet booted from a card.
+Before: Nov 21 `debazaros-20261121-dzaudio.wic.xz` (build machine
 ~/dz-sandbox/, laptop build/images/; sha256 a08c4315a9f311d4…; = the
 `-fonts` image of the same evening (5faa93fc…) + dzaudio; same kernel
 and BOOT.BIN 26dd6362) = main + the cached-slot software, dzmem v2 in the

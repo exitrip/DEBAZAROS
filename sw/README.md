@@ -580,6 +580,18 @@ about 6 % of a core per channel for the waveform and 9 % for the spectrum
 (the 2048 uncached writes take most of it). DDS 1 shows on HDMI_1 through
 the oscillator layers (`/hdmi/1/osc/sin/gain`).
 
+Register info on the DDS tab (2026-11-23, www/dds.js infoText): each
+pattern card shows the registers that the board has now (fields
+`/dds/<n>/pinc`, `/linestep`, `/framestep`, read back 250 ms after a change,
+and on connect, tab show or a click) and what they mean in the pattern that
+`/dds/<n>/pattern` names. Free running: Hz (PINC × 100 MHz / 2^32), cycles per
+frame, period. Vertical / diagonal bars: Hz, cycles per line (the phase also
+runs in the blanking), cycles across the visible width, px per cycle; diagonal
+also LINESTEP in cycles and px sideways per line. Horizontal bands: LINESTEP,
+cycles down the picture, lines per cycle. Checkerboard: columns, px per
+column, rows of lines. FRAMESTEP (scroll): cycles per frame and per second.
+The raster line comes from `/dds/raster`.
+
 ## Video mode and video wall
 
 `/video/mode 800x600` restarts hdmi2 with `-r 800x600` (both outputs share
@@ -1064,6 +1076,22 @@ a folder `/data/shows/<show>/` (`show.json`, `baseline.json`,
 [cut|fade|dip]`, `/cue/next`, `/look/save|apply`, `/show/save|load`. The
 Cues tab has all of it. LFOs are free running: cues set them up or switch
 them; an LFO left on may fight a fade.
+
+Example show `passthrough` (2026-11-23, `tools/image/shows/passthrough/`;
+image: /usr/share/debaz/shows, debaz-firstboot copies it into /data/shows
+when no folder of that name exists): one keyframe, a cut, both outputs
+independent at unity gain, so a movie in slot 0 / 2 shows as rendered.
+HDMI_0: colour matrix = exact identity (mixer mode 5 signed constants,
+chans 0/7/5 = 0x10000, the others 0; key off; `/fx/signed 1`), gain
+255; HDMI_1: own gain 255, feedback 0, both osc layers 0; all 16 LFOs off;
+displays 0 / 1 show slots 0 / 2, no crop, no blank; slots 0 and 2: no
+movie filters, trails, ghost or ASCII. Its targets are in baseline.json
+(the cue's own set is empty), so `/show/check` is clean, and it does not
+name movie files: a movie that plays keeps playing. The 8 x 8 gain stages
+take bits [15:8] of pixel x gain, so 255 gives 254 at the top (1 LSB low;
+the hardware limit, there is no exact 1.0 there). Use: `/show/load
+passthrough`, `/cue/go main 1`. Tested on .236 (0 issues, go 6 ms,
+`/fx/matrix` = 1 0 0 0 1 0 0 0 1).
 
 Auto follow and playlists (2026-11-04): `/cue/follow <scene> <n> <secs>` =
 the next cue of the scene goes by itself that many seconds after this

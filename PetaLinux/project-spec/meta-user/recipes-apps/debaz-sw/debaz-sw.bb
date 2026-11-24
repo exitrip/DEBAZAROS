@@ -81,6 +81,10 @@ RDEPENDS:${PN} += "fluidsynth fluidsynth-bin debaz-soundfonts"
 # loaded at boot, udev rule (group video). Display / script fonts (pushfonts
 # set: scripts, Typodermic, Pastor of Muppets) in /usr/share/fonts/debaz.
 RDEPENDS:${PN} += "dzmem debaz-fonts"
+# sprite sigils (2026-11-23, recipe debaz-sigils: /usr/share/debaz/img, copied
+# into /media/debaz/img by debaz-firstboot) and the example show passthrough
+# (/usr/share/debaz/shows, copied into /data/shows the same way)
+RDEPENDS:${PN} += "debaz-sigils"
 
 # bitstreams are data, not ELF for this machine
 INSANE_SKIP:${PN} += "arch"

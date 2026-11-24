@@ -1,0 +1,24 @@
+{
+ "show": "passthrough",
+ "format": 2,
+ "scenes": [
+  {
+   "name": "main",
+   "loop": false,
+   "cues": [
+    {
+     "n": 1.0,
+     "name": "PASSTHROUGH",
+     "kind": "keyframe",
+     "looks": [],
+     "fade": 0.0,
+     "curve": "linear",
+     "transition": "cut",
+     "follow": 0.0,
+     "follow_end": false,
+     "set": {}
+    }
+   ]
+  }
+ ]
+}

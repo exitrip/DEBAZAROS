@@ -19,3 +19,8 @@ S.L. MacGregor Mathers and Aleister Crowley (1904), licence: public domain.
 On the board they are in `/media/debaz/img/` (sprite and image names are plain file
 names: no folders). Load: `/sprite/<id>/load "sigil-01-bael.png"`, draw:
 `/sprite/<id>/draw slot x y [scale] [angle] [alpha]`.
+
+In the image (2026-11-23): recipe `debaz-sigils` installs the 73 sprites in
+`/usr/share/debaz/img`; debaz-firstboot copies them once into
+`/media/debaz/img` (missing names only; marker `/media/debaz/.debaz-sigils`,
+so a deleted sigil does not come back).
